@@ -1,4 +1,4 @@
-function dataGenerate(Exp, S, varargin)
+function fname = dataGenerate(Exp, S, varargin)
 % simple spike-triggered analysis of neuron responses
 % simpleSTAanalyses(Exp, S, varargin)
 % 
@@ -63,6 +63,8 @@ if (numel(ephysTrials)/numel(Exp.D)) < 0.6
     ephysTrials = 1:numel(Exp.D);
 end
 
+fprintf('Reconstructing [%s] stimuli...\n', stimulusSet)
+
 switch stimulusSet
     case {'Grating'}
         validTrials = intersect(find(strcmp(trialProtocols, 'ForageProceduralNoise')), ephysTrials);
@@ -125,9 +127,13 @@ else
 end
 
 if ip.Results.testmode
-    fprintf('**** TEST MODE ****\nOnly using 10 trials\n')
-%     validTrials = randsample(validTrials, 20);
-    validTrials = validTrials(1:20);
+    if ip.Results.testmode > 1
+        fprintf('**** TEST MODE ****\nOnly using %d trials\n', ip.Results.testmode)
+        validTrials = randsample(validTrials, ip.Results.testmode);
+    else
+        fprintf('**** TEST MODE ****\nOnly using 10 trials\n')
+        validTrials = validTrials(1:10);
+    end
 end
 
 binSize = ip.Results.binsize; % pixel
@@ -239,7 +245,7 @@ opts = ip.Results;
 %% save
 
 fname = sprintf('%s_%s.mat', strrep(Exp.FileTag, '.mat', ''), ip.Results.stimulus);
-fprintf('saving output to [$s]\n', fname)
+fprintf('saving output to [%s]\n', fname)
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 save(fullfile(dataDir, fname), '-v7.3', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist');
 fprintf('Done\n')
