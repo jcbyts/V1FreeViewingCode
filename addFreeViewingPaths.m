@@ -6,6 +6,19 @@ if nargin < 1
 end
 
 switch user
+
+    case 'jakesigur'
+        % we need marmoview in the path for the stimulus objects to
+        % regenerate properly
+        marmoViewPath = '~/Repos/MarmoV5/';
+        % we only need marmopipe to import raw data
+        marmoPipePath = [];
+        % where the data live
+        dataPath = '~/Data';
+        
+        % processed data:
+        setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
+
     case 'jakelaptop'
         % we need marmoview in the path for the stimulus objects to
         % regenerate properly
