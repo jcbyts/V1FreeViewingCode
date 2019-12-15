@@ -80,7 +80,7 @@ The ouput of the function is the name of the file with the saved stimulus. That 
 ```
 
 
-#####There are multiple optional arguments:
+##### There are multiple optional arguments:
     
     ('stimulus', 'Gabor')       % BackImage, Dots, Gabor,Grating
     ('testmode', true)          % true or false (uses 10 trials if true)
@@ -90,7 +90,7 @@ The ouput of the function is the name of the file with the saved stimulus. That 
     ('s_downsample', 1)         % spatial downsampling
     ('includeProbe', true)      % true or false, include the probe stimuli in the reconstruction (slower, but more accurate, still not completely debugged)
 
-#####Example:
+##### Example:
 Recreate the Gabor stimulus with downsampling and smoothing on the eye position.
 
 ``` matlab
