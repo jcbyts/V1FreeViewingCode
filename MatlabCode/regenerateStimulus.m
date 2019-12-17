@@ -131,7 +131,7 @@ for iTrial = 1:nTrials
             
             % zero mean
             Im = mean(Im,3)-127.5;
-            
+            Im = imresize(Im, Exp.S.screenRect(3:4));
             % no probe
             probeX = nan(nFrames,1);
             probeY = nan(nFrames,1);
@@ -145,7 +145,7 @@ for iTrial = 1:nTrials
     
     % --- loop over frames and get noise from that frame
     for iFrame = 1:nFrames
-        
+
         % find the index into eye position that corresponds to this frame
         eyeIx = find(eyeTimes >= frameRefreshesOe(iFrame) + ip.Results.Latency,1);
         
@@ -281,6 +281,8 @@ for iTrial = 1:nTrials
         end
         
         frameCounter = frameCounter + 1;
+        
+        
     end
     
 end

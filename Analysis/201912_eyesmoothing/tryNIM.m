@@ -21,14 +21,9 @@ end
 sessId = 8;
 [Exp, S] = io.dataFactory(sessId);
 
-fname = strrep(Exp.FileTag, '.mat', '_Gabor.mat');
-dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-fprintf('Loading stimulus\n')
-load(fullfile(dataDir, fname))
-fprintf('Done\n')
-
-
 %% regenerate data with new parameters?
+regenerate = false;
+if regenerate
 options = {'stimulus', 'Gabor', ...
     'testmode', false, ...
     'eyesmooth', 3, ... % bins
@@ -37,6 +32,18 @@ options = {'stimulus', 'Gabor', ...
     'includeProbe', true};
 
 fname = io.dataGenerate(Exp, S, options{:});
+end
+
+%% load stimulus
+
+fname = strrep(Exp.FileTag, '.mat', '_Gabor.mat');
+dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
+fprintf('Loading stimulus\n')
+load(fullfile(dataDir, fname))
+fprintf('Done\n')
+
+
+
 %%
 
 ix = valdata == 1 & labels == 1;% & probeDist > 50;
