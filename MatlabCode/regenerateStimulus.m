@@ -97,6 +97,10 @@ for iTrial = 1:nTrials
             nFrames = min(numel(noiseFrames), nFrames);
             
             % this is our noise object
+            if ~isfield(Exp.D{thisTrial}.PR, 'hNoise')
+                continue
+            end
+            
             hNoise = copy(Exp.D{thisTrial}.PR.hNoise);
             hNoise.rng.reset(); % reset the random seed to the start of the trial
             hNoise.frameUpdate = 0; % reset the frame counter
@@ -131,6 +135,7 @@ for iTrial = 1:nTrials
             % no probe
             probeX = nan(nFrames,1);
             probeY = nan(nFrames,1);
+            probeId = nan(nFrames,1);
         otherwise
             
             fprintf('regenerateStimulus: [%s] is an unrecognized protocol. Skipping trial %d\n', Exp.D{thisTrial}.PR.name, iTrial)
