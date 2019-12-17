@@ -223,6 +223,8 @@ end
 X = double(reshape(Stim, prod(frameInfo.dims), NTall))';
 
 probeDist = frameInfo.probeDistance;
+eyeAtFrameX = frameInfo.eyeAtFrame(:,2); % eye position at each frame
+eyeAtFrameY = frameInfo.eyeAtFrame(:,3); % eye position at each frame
 %% Temporal downsample
 if ip.Results.t_downsample > 1
 	X = downsample_time(X, ip.Results.t_downsample) / ip.Results.t_downsample;
@@ -232,7 +234,10 @@ if ip.Results.t_downsample > 1
     labels = downsample_time(labels, ip.Results.t_downsample) / ip.Results.t_downsample;
     slist = ceil(slist / ip.Results.t_downsample);
     probeDist = downsample_time(probeDist, ip.Results.t_downsample) / ip.Results.t_downsample;
+    eyeAtFrameX =  downsample_time(eyeAtFrameX, ip.Results.t_downsample) / ip.Results.t_downsample;
+    eyeAtFrameY =  downsample_time(eyeAtFrameY, ip.Results.t_downsample) / ip.Results.t_downsample;
 end
+eyeAtFrame = [eyeAtFrameX eyeAtFrameY];
 dt = spikeBinSize * ip.Results.t_downsample;
 NX = size(Stim,1);
 
@@ -247,7 +252,7 @@ opts = ip.Results;
 fname = sprintf('%s_%s.mat', strrep(Exp.FileTag, '.mat', ''), ip.Results.stimulus);
 fprintf('saving output to [%s]\n', fname)
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-save(fullfile(dataDir, fname), '-v7.3', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist');
+save(fullfile(dataDir, fname), '-v7.3', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist', 'eyeAtFrame');
 fprintf('Done\n')
 
 % if your're dugging, you can look at this code below to make sure things
