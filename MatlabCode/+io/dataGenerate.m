@@ -33,6 +33,7 @@ ip.addParameter('eyesmooth', 3)
 ip.addParameter('t_downsample', 1)
 ip.addParameter('s_downsample', 1)
 ip.addParameter('includeProbe', true)
+ip.addParameter('correctEyePos', false)
 ip.parse(varargin{:})
 
 %% manual adjustment to rect
@@ -104,7 +105,12 @@ if numValidTrials == 0
 end
 
 % smooth the eye position with an sgolay filter
-eyePos = Exp.vpx.smo(:,2:3);
+if ip.Results.correctEyePos
+    eyePos = io.getCorrectedEyePos(Exp, 'usebilinear', true);
+else
+    eyePos = Exp.vpx.smo(:,2:3);
+end
+
 if ip.Results.eyesmooth > 1 
     
     % smoothing window must be odd

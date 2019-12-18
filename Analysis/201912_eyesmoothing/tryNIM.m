@@ -21,15 +21,17 @@ end
 sessId = 8;
 [Exp, S] = io.dataFactory(sessId);
 
+S.rect = [-10 0 30 30];
 %% regenerate data with new parameters?
-regenerate = false;
+regenerate = true;
 if regenerate
 options = {'stimulus', 'Gabor', ...
     'testmode', false, ...
     'eyesmooth', 3, ... % bins
     't_downsample', 2, ...
     's_downsample', 2, ...
-    'includeProbe', true};
+    'includeProbe', true, ...
+    'correctEyePos', true};
 
 fname = io.dataGenerate(Exp, S, options{:});
 end
@@ -45,8 +47,7 @@ fprintf('Done\n')
 
 
 %%
-
-ix = valdata == 1 & labels == 1;% & probeDist > 50;
+eyePosAtFrame = eyeAtFrame - mean(eyeAtFrame);
 
 NY = size(stim,2)/NX;
 nlags = ceil(.05/dt);
@@ -65,6 +66,10 @@ fprintf('Done [%02.2f]\n', toc)
 %%
 C = X'*X;
 %%
+ix = valdata == 1 & labels == 1; % & (hypot(eyePosAtFrame(:,1), eyePosAtFrame(:,2)) < 100);% & probeDist > 50;
+% ix = valdata == 1 & labels == 1 & eyePosAtFrame(:,1) > 0 & eyePosAtFrame(:,2) > 0;
+
+%%
 NTall = size(X,1);
 cids = [1 3 4 9 13 18:23 26:28 34:NC];
 % cids = 28;
@@ -79,14 +84,14 @@ nsaclags = numel(saclags);
 stassac = cell(nsaclags,1);
 d = size(X,2);
 for i = 1:nsaclags
-    inds = intersect(find(valdata), unique(bsxfun(@plus, slist(:,2), saclags(i)+(0:10)))); 
+%     inds = intersect(find(valdata), unique(bsxfun(@plus, slist(:,2), saclags(i)+(0:10)))); 
 %     inds = unique(slist(:,2) + saclags(i) + (0:2);
     inds = find(ix);
     fprintf('lag: %d, %d valid samples\n', i, numel(inds))
     xy = [(X(inds,:)) ones(numel(inds),1)]'*Robs(inds,cids);
-    stasac{i} = (C + 10e6*eye(d))\xy(1:end-1,:);
-    
-    figure(i); clf
+%     stasac{i} = (C + 10e6*eye(d))\xy(1:end-1,:);
+    stasac{i} = xy(1:end-1,:);
+    figure; clf
     for cc = 1:N
         a = reshape(stasac{i}(:,cc), [nlags prod(dims)]);
         a = (a - min(a(:))) / (max(a(:)) - min(a(:)));
@@ -100,14 +105,14 @@ for i = 1:nsaclags
 %         subplot(6,6,cc, 'align')
 %         imagesc(a)
 %         axis off
-    colormap(gray)
+    colormap(parula)
 %     end
     drawnow
 end
 
 
 %%
-f = @(x) abs(x);
+f = @(x) (x);
 C = f(X)'*f(X);
 fprintf('Running STA...')
 xy = [f(X(ix,:)) ones(sum(ix),1)]'*Robs(ix,:);

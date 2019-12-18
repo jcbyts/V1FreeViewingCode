@@ -35,6 +35,18 @@ switch stimulusSet
     case {'BackImage'}
         validTrials = intersect(find(strcmp(trialProtocols, 'BackImage')), ephysTrials);
         
+    case {'Forage'}
+        
+        validTrials = intersect(find(strcmp(trialProtocols, 'ForageProceduralNoise')), ephysTrials);
+    
+    case {'FixFlash'}
+        
+        validTrials = find(strcmp(trialProtocols, 'FixFlash'));
+        
+    case {'FaceCal'}
+        
+        validTrials = find(strcmp(trialProtocols, 'FaceCal'));
+        
     otherwise
         % use all valid conditions (BackImage or
         validTrials = find(strcmp(trialProtocols, 'BackImage') | strcmp(trialProtocols, 'ForageProceduralNoise'));
