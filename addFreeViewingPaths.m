@@ -49,6 +49,11 @@ switch user
         % processed data:
         setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
         
+    case 'dansigur'
+        marmoViewPath = '~/Marmo/MarmoV5/';
+        marmoPipePath = [];
+        dataPath = '~/Marmo/Data';
+        
     otherwise
         error('addFreeViewingPaths: I don''t know this user')
 end
