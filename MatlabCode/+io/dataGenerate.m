@@ -258,7 +258,7 @@ opts = ip.Results;
 fname = sprintf('%s_%s.mat', strrep(Exp.FileTag, '.mat', ''), ip.Results.stimulus);
 fprintf('saving output to [%s]\n', fname)
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-save(fullfile(dataDir, fname), '-v7.3', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist', 'eyeAtFrame');
+save(fullfile(dataDir, fname), '-v7', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist', 'eyeAtFrame');
 fprintf('Done\n')
 
 % if your're dugging, you can look at this code below to make sure things
