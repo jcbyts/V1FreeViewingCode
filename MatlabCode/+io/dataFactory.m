@@ -103,8 +103,7 @@ switch sessionId
         S.importFun = @io.importFreeViewing;
         S.probeNum = 1;
         S.cids = [1:9, 12:15, 17:20, 21:22, 25:37, 39:41];
-        S.rect = [0 10 40 60];
-        
+        S.rect = [-10 0 30 40];
     case {9, 'L20191206'}
         S.processedFileName = 'L20191206.mat';
         S.rawFilePath = 'Logan_2019-12-06_11-41-05_NeuronexusD10';

@@ -62,22 +62,28 @@ end
 
 % regress
 if ip.Results.usebilinear
-    X = [xy xy.^2 ones(numel(id), 1)];
+    X = [xy xy.^2 xy.^3];
 else
-    X = [xy ones(numel(id), 1)];
+    X = [xy];
 end
 
 Y = [xx(id) yy(id)];
 
-w = (X'*X)\(X'*Y);
+mdlx = fitlm(X, Y(:,1), 'RobustOpts','on');
+mdly = fitlm(X, Y(:,2), 'RobustOpts','on');
+
+xcoef = mdlx.Coefficients.Variables;
+ycoef = mdly.Coefficients.Variables;
 
 if ip.Results.usebilinear
-    Xeye = [Exp.vpx.smo(:,2:3) Exp.vpx.smo(:,2:3).^2 ones(size(Exp.vpx.smo,1),1)];
+    Xeye = [Exp.vpx.smo(:,2:3) Exp.vpx.smo(:,2:3).^2 Exp.vpx.smo(:,2:3).^3];
 else
-    Xeye = [Exp.vpx.smo(:,2:3) ones(size(Exp.vpx.smo,1),1)];
+    Xeye = [Exp.vpx.smo(:,2:3)];
 end
 
-eyePos = Xeye*w;
+x = xcoef(1) + Xeye*xcoef(2:end,1);
+y = ycoef(1) + Xeye*ycoef(2:end,1);
+eyePos = [x y];
 
 
 if ip.Results.plot

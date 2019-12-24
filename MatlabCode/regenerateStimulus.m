@@ -26,6 +26,7 @@ function [Stim, frameInfo] = regenerateStimulus(Exp, validTrials, rect, varargin
 %   ExclusionRadius, 500
 %   Latency, 0
 %   EyePos, []
+%   includeProbe
 % [Stim, frameInfo] = regenerateStimulus(Exp, validTrials, rect)
 
 ip = inputParser();
@@ -130,7 +131,7 @@ for iTrial = 1:nTrials
             end
             
             % zero mean
-            Im = mean(Im,3)-127.5;
+            Im = mean(Im,3)-127;
             Im = imresize(Im, Exp.S.screenRect(3:4));
             % no probe
             probeX = nan(nFrames,1);
@@ -212,6 +213,10 @@ for iTrial = 1:nTrials
             
             % get image from noise object
             I = hNoise.getImage(tmprect, spatialBinSize);
+%             figure(1); clf
+%             imagesc(I);
+%             drawnow
+%             keyboard
             
         elseif useBackImage
             imrect = [tmprect(1:2) (tmprect(3)-tmprect(1))-1 (tmprect(4)-tmprect(2))-1];
