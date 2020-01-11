@@ -19,7 +19,9 @@ sessionList = {'L2019119', ...
     'L20191204', ...
     'L20191205', ...
     'L20191206', ...
-    'L20191209'};
+    'L20191209', ...
+    'L20191226', ...
+    'L20191231'};
 
 if nargin < 2
     
@@ -115,6 +117,19 @@ switch sessionId
         S.rawFilePath = 'Logan_2019-12-09_10-38-50_NeuronexusD11';
         S.importFun = @io.importFreeViewing;
         S.probeNum = 1;
+        
+    case {11, 'L20191226'}
+        S.processedFileName = 'L20191226.mat';
+        S.rawFilePath = 'Logan_2019-12-02_10-29-07_NeuronexusD16';
+        S.importFun = @io.importFreeViewing;
+        S.probeNum = 2;
+        
+    case {12, 'L20191231'}
+        S.processedFileName = 'L20191231.mat';
+        S.rawFilePath = 'Logan_2019-12-02_10-29-07_NeuronexusD19';
+        S.importFun = @io.importFreeViewing;
+        S.probeNum = 3;
+        S.rect = [-20 0 20 40];
 
     otherwise
         error('dataFactory: unrecognized session')
@@ -151,6 +166,10 @@ end
 varargout{1} = Exp;
 
 if nargout > 1
+    if ~isfield(S, 'cids')
+        S.cids = Exp.osp.cids;
+    end
+
     varargout{2} = S;
 end
     

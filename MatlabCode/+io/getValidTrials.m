@@ -1,6 +1,15 @@
 function validTrials = getValidTrials(Exp, stimulusSet)
 % validTrials = getValidTrials(Exp, stimulusSet)
 
+if nargin < 1
+    fprintf('Recognized stimulus sets are:\n')
+    stimList = {'Grating', 'Gabor', 'Dots', 'BackImage', ...
+        'Forage', ...
+        'FixRsvpStim', ...
+        'FixCalib'};
+    fprintf('%s\n', stimList{:})
+end
+        
 trialProtocols = cellfun(@(x) x.PR.name, Exp.D, 'uni', 0);
 
 % --- find the trials that we want to analyze
@@ -46,11 +55,21 @@ switch stimulusSet
     case {'FaceCal'}
         
         validTrials = find(strcmp(trialProtocols, 'FaceCal'));
+    
+    case {'FixCalib'}
         
-    otherwise
+        validTrials = find(strcmp(trialProtocols, 'FixCalib'));
+        
+    case {'All'}
         % use all valid conditions (BackImage or
         validTrials = find(strcmp(trialProtocols, 'BackImage') | strcmp(trialProtocols, 'ForageProceduralNoise'));
         validTrials = intersect(validTrials, ephysTrials);
+        
+    otherwise
+        % use all valid conditions (BackImage or
+        validTrials = find(strcmp(trialProtocols, stimulusSet));
+        validTrials = intersect(validTrials, ephysTrials);
+        
 end
 
 

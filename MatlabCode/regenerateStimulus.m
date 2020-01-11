@@ -137,6 +137,21 @@ for iTrial = 1:nTrials
             probeX = nan(nFrames,1);
             probeY = nan(nFrames,1);
             probeId = nan(nFrames,1);
+            
+        case 'FixRsvpStim'
+            useNoiseObject = false;
+            useBackImage = false;
+            
+            hObj = stimuli.gaussimages(0, 'bkgd', Exp.S.bgColour, 'gray', false);
+            hObj.loadimages('rsvpFixStim.mat');
+            
+            noiseFrames = Exp.D{thisTrial}.PR.NoiseHistory(:,1);
+            
+            nFrames = min(numel(noiseFrames), nFrames);
+            probeX = nan(nFrames,1);
+            probeY = nan(nFrames,1);
+            probeId = nan(nFrames,1);
+            
         otherwise
             
             fprintf('regenerateStimulus: [%s] is an unrecognized protocol. Skipping trial %d\n', Exp.D{thisTrial}.PR.name, iTrial)
@@ -222,6 +237,15 @@ for iTrial = 1:nTrials
             imrect = [tmprect(1:2) (tmprect(3)-tmprect(1))-1 (tmprect(4)-tmprect(2))-1];
             I = imcrop(Im, imrect); % requires the imaging processing toolbox
             I = I(1:spatialBinSize:end,1:spatialBinSize:end);
+        
+        else % fix rsvp stim
+            posx = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2);
+            posy = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,3);
+            hObj.imagenum = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,4);
+            hObj.position = [posx posy];
+            I = hObj.getImage(tmprect, spatialBinSize)-Exp.S.bgColour;
+            
+            
         end
     
         % save info
