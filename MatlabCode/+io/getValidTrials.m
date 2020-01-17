@@ -8,9 +8,17 @@ if nargin < 1
         'FixRsvpStim', ...
         'FixCalib'};
     fprintf('%s\n', stimList{:})
+    validTrials = [];
+    return
 end
         
 trialProtocols = cellfun(@(x) x.PR.name, Exp.D, 'uni', 0);
+if nargin < 2
+    stims = unique(trialProtocols);
+    fprintf('%s\n', stims{:})
+    validTrials = [];
+    return
+end
 
 % --- find the trials that we want to analyze
 ephysTrials = find(cellfun(@(x) ~isnan(x.START_EPHYS) | ~isnan(x.END_EPHYS), Exp.D));

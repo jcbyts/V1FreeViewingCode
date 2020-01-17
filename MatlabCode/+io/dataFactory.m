@@ -130,7 +130,19 @@ switch sessionId
         S.importFun = @io.importFreeViewing;
         S.probeNum = 3;
         S.rect = [-20 0 20 40];
-
+        
+     case {13, 'L20200102'}
+        S.processedFileName = 'L20200102.mat';
+        S.rawFilePath = 'Logan_2019-12-02_10-29-07_NeuronexusD20';
+        S.importFun = @io.importFreeViewing;
+        S.probeNum = 3;
+        S.rect = [-20 0 20 40];
+    case {14, 'L20200107'}
+        S.processedFileName = 'L20200107.mat';
+        S.rawFilePath = 'Logan_2020-01-07_10-32-12_neuronexusD23';
+        S.importFun = @io.importFreeViewing;
+        S.probeNum = 3; 
+        
     otherwise
         error('dataFactory: unrecognized session')
 end

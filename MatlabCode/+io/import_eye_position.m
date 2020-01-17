@@ -40,6 +40,8 @@ FileSort = sortrows(DoFileSort,2); % sort them by date
 %***** read and append files in order by date *********
 BigN = 0;
 
+figure(10); clf
+
 for zk = FileSort(:,1)'
     fname = VpxFiles(zk).name;
     vpx_filename = [DataFolder,filesep,VpxFiles(zk).name];
@@ -62,6 +64,8 @@ for zk = FileSort(:,1)'
             end
             %******* concatenate large file stream **********
             Exp.vpx.raw = [Exp.vpx.raw ; vpx.raw];
+            figure(10); 
+            plot(vpx.raw(:,1), vpx.raw(:,2)); hold on
             Exp.vpx.smo = [Exp.vpx.smo ; vpx.smo];
             Exp.vpx.tstrobes = [Exp.vpx.tstrobes ; vpx.tstrobes];
             Exp.vpx.strobes = [Exp.vpx.strobes ; vpx.strobes];
