@@ -1,4 +1,3 @@
-% Make stimulus files for encoding models
 
 %% add paths
 
@@ -12,10 +11,10 @@ sessId = 12;
 
 
 %% check that the session looks reasonable
-sessionQAfigures(Exp, S)
+% sessionQAfigures(Exp, S)
 
 %% try correcting the calibration using FixCalib protocol
-eyePos = io.getCorrectedEyePosFixCalib(Exp);
+eyePos = io.getCorrectedEyePosFixCalib(Exp, 'plot', true);
 
 % smooth eye position with 3rd order sgolay filter, preserves tremor
 eyePos(:,1) = sgolayfilt(eyePos(:,1), 3, 9);
@@ -26,7 +25,7 @@ Exp.vpx.smo(:,2:3) = eyePos;
 %% regenerate data with the following parameters
 eyesmoothing = 9;
 t_downsample = 2;
-s_downsample = 2;
+s_downsample = 1;
 
 % Gabor reverse correlation
 stim = 'Gabor';
@@ -53,7 +52,7 @@ options = {'stimulus', stim, ...
 io.dataGenerate(Exp, S, options{:});
 
 % Static Natural images
-stim = 'BackImage';
+stim = 'FixRsvpStim';
 options = {'stimulus', stim, ...
     'testmode', false, ...
     'eyesmooth', eyesmoothing, ... % bins
@@ -65,7 +64,7 @@ options = {'stimulus', stim, ...
 io.dataGenerate(Exp, S, options{:});
 
 % Static Natural images
-stim = 'FixRsvpStim';
+stim = 'BackImage';
 options = {'stimulus', stim, ...
     'testmode', false, ...
     'eyesmooth', eyesmoothing, ... % bins
@@ -75,4 +74,6 @@ options = {'stimulus', stim, ...
     'correctEyePos', false};
 
 io.dataGenerate(Exp, S, options{:});
+
+
 

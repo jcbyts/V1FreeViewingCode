@@ -201,10 +201,13 @@ X = double(reshape(Stim, prod(frameInfo.dims), NTall))';
 probeDist = frameInfo.probeDistance;
 eyeAtFrameX = frameInfo.eyeAtFrame(:,2); % eye position at each frame
 eyeAtFrameY = frameInfo.eyeAtFrame(:,3); % eye position at each frame
+frameTimes = frameInfo.frameTimesOe;
+
 %% Temporal downsample
 if ip.Results.t_downsample > 1
 	X = downsample_time(X, ip.Results.t_downsample) / ip.Results.t_downsample;
 	Y = downsample_time(Y, ip.Results.t_downsample);
+    frameTimes = downsample_time(frameTimes, ip.Results.t_downsample) / ip.Results.t_downsample;
 	valdata = downsample_time(valdata, ip.Results.t_downsample) / ip.Results.t_downsample;
 	valdata(valdata < 1) = 0;
     labels = downsample_time(labels, ip.Results.t_downsample) / ip.Results.t_downsample;
@@ -223,12 +226,13 @@ fprintf('Size of Robs: [%d x %d]\n', size(Y,1), size(Y,2))
 stim = X;  Robs = full(Y); 
 opts = ip.Results;
 
+
 %% save
 
 fname = sprintf('%s_%s.mat', strrep(Exp.FileTag, '.mat', ''), ip.Results.stimulus);
 fprintf('saving output to [%s]\n', fname)
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-save(fullfile(dataDir, fname), '-v7', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist', 'eyeAtFrame');
+save(fullfile(dataDir, fname), '-v7', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist', 'eyeAtFrame', 'frameTimes');
 fprintf('Done\n')
 
 % if your're dugging, you can look at this code below to make sure things

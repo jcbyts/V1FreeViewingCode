@@ -4,6 +4,7 @@ function eyePos = getCorrectedEyePosFixCalib(Exp, varargin)
 
 ip = inputParser();
 ip.addParameter('plot', false)
+ip.addParameter('usePolynomial', false)
 ip.parse(varargin{:})
 
 fprintf('Correcting eye pos by reanalyzing FaceCal\n')
@@ -98,8 +99,13 @@ for iTarg = 1:nTargs
     
 end
 
-% build design matrix for cubic fit
-X = [fixXY fixXY.^2 fixXY.^3];
+if ip.Results.usePolynomial
+    % build design matrix for cubic fit
+    X = [fixXY fixXY.^2 fixXY.^3];
+else
+    X = fixXY;
+end
+
 Y = [xx(:) yy(:)];
 
 % remove non-fixated targets
@@ -114,8 +120,11 @@ mdly = fitlm(X, Y(:,2), 'RobustOpts','on');
 xcoef = mdlx.Coefficients.Variables;
 ycoef = mdly.Coefficients.Variables;
 
-Xeye = [Exp.vpx.smo(:,2:3) Exp.vpx.smo(:,2:3).^2 Exp.vpx.smo(:,2:3).^3];
-
+if ip.Results.usePolynomial
+    Xeye = [Exp.vpx.smo(:,2:3) Exp.vpx.smo(:,2:3).^2 Exp.vpx.smo(:,2:3).^3];
+else
+    Xeye = Exp.vpx.smo(:,2:3);
+end
 
 % correct eye position
 x = xcoef(1) + Xeye*xcoef(2:end,1);

@@ -137,6 +137,7 @@ switch sessionId
         S.importFun = @io.importFreeViewing;
         S.probeNum = 3;
         S.rect = [-20 0 20 40];
+        
     case {14, 'L20200107'}
         S.processedFileName = 'L20200107.mat';
         S.rawFilePath = 'Logan_2020-01-07_10-32-12_neuronexusD23';

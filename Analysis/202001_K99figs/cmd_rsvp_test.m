@@ -1,56 +1,79 @@
+% We have a RSVP fixation point that flashes processed natural images in
+% the central 
 
+%% Load dataset
 
 [Exp, S] = io.dataFactory(12);
 
-%%
+%% get valid trials
 validTrials = io.getValidTrials(Exp, 'FixRsvpStim');
-%%
-numTrials = numel(validTrials);
-iTrial = 1;
-thisTrial = validTrials(iTrial);
 
 
-%%
+%% bin spikes and eye pos
+binsize = 1e-3; % 1 ms bins for rasters
+win = [-.1 2]; % -100ms to 2sec after fixation onset
+% resample the eye position at the rate of the time-resolution of the
+% ephys. When upsampling, use linear or spline (pchip) interpolation
+eyePosInterpolationMethod = 'linear'; %'pchip'
+
+
+% --- get eye position
+eyeTime = Exp.vpx2ephys(Exp.vpx.smo(:,1)); % time
+remove = find(diff(eyeTime)==0); % bad samples
+
+% filter eye position with 3rd order savitzy-golay filter
+eyeX = sgolayfilt(Exp.vpx.smo(:,2), 3, 9); % smooth (preserving tremor)
+eyeX(isnan(eyeX)) = 0;
+eyeY = sgolayfilt(Exp.vpx.smo(:,3), 3, 9);
+eyeY(isnan(eyeY)) = 0;
+
+% remove bad samples
+eyeTime(remove) = [];
+eyeX(remove) = [];
+eyeY(remove) = [];
+
+% --- get spike times
+
+% trial length
 n = cellfun(@(x) numel(x.PR.NoiseHistory(:,1)), Exp.D(validTrials));
+
+% time fixation start
 tstart = Exp.ptb2Ephys(cellfun(@(x) x.PR.NoiseHistory(1,1), Exp.D(validTrials)));
+tend = Exp.ptb2Ephys(cellfun(@(x) x.PR.NoiseHistory(end,1), Exp.D(validTrials)));
+
+% trials < 100 frames remove
 bad = n < 100;
 tstart(bad) = [];
+tend(bad) = [];
 n(bad) = [];
 
-win = [-.1 2];
-
-figure(1); clf
-
+% sort trials by fixation duration
 [~, ind] = sort(n, 'descend');
 
-
-binsize = 2e-3;
-
+% bin spike times at specific lags
 lags = win(1):binsize:win(2);
 nlags = numel(lags);
 nt = numel(tstart);
 NC = numel(S.cids);
 spks = zeros(nt,NC,nlags);
-for i = 1:nlags
-    y = binNeuronSpikeTimesFast(Exp.osp,tstart+lags(i), binsize);
-    spks(:,:,i) = full(y(:,S.cids));
+xpos = zeros(nt,nlags);
+ypos = zeros(nt,nlags);
+
+% Do the binning here
+for i = 1:nt
+    y = binNeuronSpikeTimesFast(Exp.osp,tstart(i)+lags, binsize);
+    spks(i,:,:) = full(y(:,S.cids))';
+    % resample eye position at the time resolution of the spike trains
+    xpos(i,:) = interp1(eyeTime, eyeX, tstart(i)+lags, eyePosInterpolationMethod);
+    ypos(i,:) = interp1(eyeTime, eyeY, tstart(i)+lags, eyePosInterpolationMethod);
 end
-k = 1;
 
-
-
-%% 
-tic
-binTimes =  min(Exp.osp.st):binsize:max(Exp.osp.st);
-% valid = getTimeIdx(fixon, tstart, tstop);
-% binTimes = binTimes(valid);
-Y = binNeuronSpikeTimesFast(Exp.osp, binTimes, binsize);
-toc
-cc = 0;
+% initialize iterator for plotting cells
+cc = 19;
 %%
 
 cc = mod(cc + 1, NC); cc = max(cc, 1);
-cc = 20;
+% cc = 20;
 
 figure(1); clf
 set(gcf, 'Color', 'w')
@@ -71,92 +94,60 @@ xlim(lags([1 end]))
 xlabel('Time from fixation onset')
 ylabel('Firing Rate')
 
+%% plot eye position aligned to fixation onset
 
+% image of x and y position to see the pattern
+figure(2); clf
+subplot(1,2,1)
+imagesc(lags, 1:nt, xpos(ind,:), [-.5 .5]); axis xy
+xlabel('Time from fixation onset')
+ylabel('Fixation #')
+title('X position')
 
+subplot(1,2,2)
+imagesc(ypos(ind,:), [-.5 .5]); axis xy
+xlabel('Time from fixation onset')
+ylabel('Fixation #')
+title('Y position')
 
-%%
-
-
-figure(1); clf
-set(gcf, 'Color', 'w')
-for cc = 1:NC
-    subplot(6, ceil(NC/6), cc, 'align')
-    [i, j] = find(spks(ind,cc,:));
-    plot.raster(lags(j), i, 10); hold on
-    plot([0 0], ylim, 'r')
-    plot(fixdur(ind), 1:numel(ind), 'g')
-    xlim(win)
-    ylim([1 numel(ind)])
-    title(sprintf('Unit: %d', cc))
-    axis off
-%     ylim(ind(end)-[400 0])
+% plot the individual traces from each trial
+figure(3); clf
+subplot(2,1,1)
+for i = 1:nt
+    iix = lags < (n(i)/Exp.S.frameRate);
+    plot(lags(iix), xpos(i,iix)); hold on
 end
-
-
-
-
-%%
-
-
-
-
-ori = cell2mat(cellfun(@(x) x.PR.NoiseHistory(:,2), Exp.D(validTrials), 'uni', 0));
-cpd = cell2mat(cellfun(@(x) x.PR.NoiseHistory(:,3), Exp.D(validTrials), 'uni', 0));
-frameTime = Exp.ptb2Ephys(cell2mat(cellfun(@(x) x.PR.NoiseHistory(:,1), Exp.D(validTrials), 'uni', 0)));
-
-
-ix = ~isnan(cpd);
-cpds = unique(cpd(ix));
-oris = unique(ori(ix));
-ncpd = numel(cpds);
-nori = numel(oris);
-
-[~, oriid] = max(ori==oris', [], 2);
-[~, cpdid] = max(cpd==cpds', [], 2);
-blank = cpdid==1;
-ncpd = ncpd - 1;
-cpdid = cpdid - 1;
-cpds(1) = [];
-
-ind = sub2ind([nori ncpd], oriid(~blank), cpdid(~blank));
-
-binsize = 1./Exp.S.frameRate;
-
-NT = numel(frameTime);
-ft = (1:NT)';
-stim = sparse(ft(~blank), ind, ones(numel(ind),1), NT, nori*ncpd);
-Robs = binNeuronSpikeTimesFast(Exp.osp, frameTime, binsize);
-
-%%
-nlags = 30;
-Xd = makeStimRows(stim, nlags);
-
-sta = [Xd ones(NT,1)]'*Robs;
-sta = sta(1:end-1,:);
-
-figure
-plot(sta)
-% sta = sta./sum(X)';
-%%
-NC = size(Robs,2);
-sx = ceil(sqrt(NC));
-sy = round(sqrt(NC));
-figure(1); clf
-
-[~, cid] = sort(Exp.osp.clusterDepths);
-cids = Exp.osp.cids(cid);
-for ci = 1:NC
-    subplot(sx, sy, ci, 'align')
-    cc = cids(ci);
-    
-%     cc = mod(cc+1, NC); cc(cc==0)=1;
-    a = reshape(sta(:,cc), [nlags, nori*ncpd]);
-
-    plot(oris, reshape(mean(a), [nori, ncpd]))
-    ylim([0 40])
-    title(cc)
+plot(win, .5*[1 1], 'k--')
+plot(win, -.5*[1 1], 'k--')
+xlim(win)
+ylim([-1 1])
+xlabel('Time from fixation onset')
+ylabel('X position (d.v.a)')
+title('Marmoset "Fixations"')
+subplot(2,1,2)
+for i = 1:nt
+    iix = lags < (n(i)/Exp.S.frameRate);
+    plot(lags(iix), ypos(i,iix)); hold on
 end
-%%
-% 
+plot(win, .5*[1 1], 'k--')
+plot(win, -.5*[1 1], 'k--')
+
+xlim(win)
+ylim([-1 1])
+xlabel('Time from fixation onset')
+ylabel('Y position (d.v.a)')
+
+% looks like there are TONS of microsaccades, but they happen at similar
+% times. Plot eye velocity
+clf
+spd = hypot(diff(xpos, [], 2), diff(ypos, [], 2));
+imagesc(lags, 1:nt, spd(ind,:), [0 .15]); hold on
+plot(n(ind)/Exp.S.frameRate, 1:numel(ind), 'g')
+axis xy
+xlabel('Time from fixation onset')
+ylabel('Fixation #')
+title('Eye speed')
+
+
 
 
