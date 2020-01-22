@@ -1,7 +1,7 @@
 
 %% add paths
 
-user = 'jakelaptop';
+user = 'jakework';
 addFreeViewingPaths(user);
 
 
@@ -25,16 +25,16 @@ sessId = 12;
 % plot([0 0], ylim)
 %% try correcting the calibration using FixCalib protocol
 eyePos = io.getCorrectedEyePosFixCalib(Exp, 'plot', false);
-% eyeTime = Exp.vpx.smo(:,1);
+eyeTime = Exp.vpx.smo(:,1);
 win = [574480 574600];
-% eyeTime = eyeTime - eyeTime(win(1)); 
+eyeTime = eyeTime - eyeTime(win(1)); 
 % smooth eye position with 3rd order sgolay filter, preserves tremor
 figure(1); clf
-plot(eyePos(:,1)*60, '-o', 'MarkerSize', 2); hold on
+plot(eyeTime*1e3, eyePos(:,1)*60, '-o', 'MarkerSize', 2); hold on
 
 eyePos(:,1) = sgolayfilt(eyePos(:,1), 2, 9);
 eyePos(:,2) = sgolayfilt(eyePos(:,2), 2, 9);
-plot(eyePos(:,1)*60, '-o', 'MarkerSize', 2);
+plot(eyeTime*1e3, eyePos(:,1)*60, '-o', 'MarkerSize', 2);
 xlim(win)
 legend({'Raw', 'Smoothed'})
 ylabel('arcmin')
@@ -53,7 +53,8 @@ if exist('Data/Marmo20191231_eyecor1.mat', 'file') && sessId ==12
     CorrectionY =  GridCentersY + ec.corr_list(:,4) / ppd;
     
     % learn interpolatant function
-    rbfOpts = {'cubic'};
+%     rbfOpts = {'cubic'};
+    rbfOpts = {'multiquadric', 'RBFConstant', 1, 'RBFSmooth', 10};
 %     rbfOpts = {'multiquadric', 'RBFConstant', 2};
     opX = rbfcreate([CorrectionX(:)'; CorrectionY(:)'], GridCentersX(:)', 'RBFFunction', rbfOpts{:});
     rbfcheck(opX);
@@ -73,9 +74,37 @@ if exist('Data/Marmo20191231_eyecor1.mat', 'file') && sessId ==12
 %     hold on
 %     plot(CorrectionX, CorrectionY, 'o')
 %     plot(Fx(CorrectionX, CorrectionY), Fy(CorrectionX, CorrectionY), 'o')
+
+% %%     
+% %     rbfOpts = {'cubic','RBFSmooth', 500};
+%     rbfOpts = {'multiquadric', 'RBFConstant', 1, 'RBFSmooth', 10};
+% %     rbfOpts = {'multiquadric', 'RBFConstant', 2000, 'RBFSmooth', 5000};
+%     opX = rbfcreate([CorrectionX(:)'; CorrectionY(:)'], GridCentersX(:)', 'RBFFunction', rbfOpts{:});
+%     rbfcheck(opX);
+%     opY = rbfcreate([CorrectionX(:)'; CorrectionY(:)'], GridCentersY(:)', 'RBFFunction', rbfOpts{:});
+%     rbfcheck(opY);
+%     gxHat = rbfinterp([CorrectionX(:)'; CorrectionY(:)'], opX);
+%     figure(7); clf
+%     plot3(CorrectionX, CorrectionY, GridCentersX, '.'); hold on;
+%     plot3(CorrectionX, CorrectionY, gxHat', 'o')
+%     
+%     %%
+%     rbfOpts = {'cubic','RBFSmooth', 10000};
+%     rbfOpts = {'multiquadric', 'RBFConstant', 1, 'RBFSmooth', 10};
+%     X = [GridCentersX(:)'; GridCentersY(:)'];
+%     op = rbfcreate(X, CorrectionX(:)'-GridCentersX(:)','RBFFunction', rbfOpts{:}); 
+%     rbfcheck(op)
+%     gxHat = rbfinterp(X, op);
 %     
 %     figure(7); clf
-%     surf(reshape(Fx(CorrectionX, CorrectionY), [25 25]))
+%     plot3(GridCentersX, GridCentersY, CorrectionX-GridCentersX, '.'); hold on;
+%     plot3(GridCentersX, GridCentersY, gxHat', 'o')
+%     
+%     figure(8); clf
+%     subplot(1,2,1)
+%     imagesc(reshape(gxHat, [25 25]), [-.1 .2])
+%     subplot(1,2,2)
+%     imagesc(reshape(CorrectionX(:)'-GridCentersX(:)', [25 25]),[-.1 .2])
 %     %%
 end
 %% regenerate data with the following parameters
@@ -106,6 +135,8 @@ options = {'stimulus', stim, ...
     'correctEyePos', false};
 
 io.dataGenerate(Exp, S, options{:});
+
+%%
 
 % Static Natural images
 stim = 'FixRsvpStim';
