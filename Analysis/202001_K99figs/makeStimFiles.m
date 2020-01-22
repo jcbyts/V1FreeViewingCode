@@ -24,11 +24,22 @@ sessId = 12;
 % plot(xlim, [0 0])
 % plot([0 0], ylim)
 %% try correcting the calibration using FixCalib protocol
-eyePos = io.getCorrectedEyePosFixCalib(Exp, 'plot', true);
-
+eyePos = io.getCorrectedEyePosFixCalib(Exp, 'plot', false);
+% eyeTime = Exp.vpx.smo(:,1);
+win = [574480 574600];
+% eyeTime = eyeTime - eyeTime(win(1)); 
 % smooth eye position with 3rd order sgolay filter, preserves tremor
-eyePos(:,1) = sgolayfilt(eyePos(:,1), 3, 9);
-eyePos(:,2) = sgolayfilt(eyePos(:,2), 3, 9);
+figure(1); clf
+plot(eyePos(:,1)*60, '-o', 'MarkerSize', 2); hold on
+
+eyePos(:,1) = sgolayfilt(eyePos(:,1), 2, 9);
+eyePos(:,2) = sgolayfilt(eyePos(:,2), 2, 9);
+plot(eyePos(:,1)*60, '-o', 'MarkerSize', 2);
+xlim(win)
+legend({'Raw', 'Smoothed'})
+ylabel('arcmin')
+xlabel('sample')
+title('Tremor preserved')
 
 Exp.vpx.smo(:,2:3) = eyePos;
 
@@ -38,22 +49,34 @@ if exist('Data/Marmo20191231_eyecor1.mat', 'file') && sessId ==12
     ppd = Exp.S.pixPerDeg;
     GridCentersX = ec.corr_list(:,1) / ppd;
     GridCentersY = ec.corr_list(:,2) / ppd;
-    CorrectionX = GridCentersX + ec.corr_list(:,3) / ppd;
-    CorrectionY = GridCentersY + ec.corr_list(:,4) / ppd;
+    CorrectionX =  GridCentersX + ec.corr_list(:,3) / ppd;
+    CorrectionY =  GridCentersY + ec.corr_list(:,4) / ppd;
     
     % learn interpolatant function
-    Fx = scatteredInterpolant(CorrectionX, CorrectionY, GridCentersX);
-    Fy = scatteredInterpolant(CorrectionX, CorrectionY, GridCentersY);
-    
+    rbfOpts = {'cubic'};
+%     rbfOpts = {'multiquadric', 'RBFConstant', 2};
+    opX = rbfcreate([CorrectionX(:)'; CorrectionY(:)'], GridCentersX(:)', 'RBFFunction', rbfOpts{:});
+    rbfcheck(opX);
+    opY = rbfcreate([CorrectionX(:)'; CorrectionY(:)'], GridCentersY(:)', 'RBFFunction', rbfOpts{:});
+    rbfcheck(opY);
+
     % only fix the central points
     iix = hypot(eyePos(:,1), eyePos(:,2)) < 5*ppd;
     
     eyePos2 = eyePos;
-    
-    eyePos2(iix, 1) = Fx(eyePos(iix,1), eyePos(iix,2));
-    eyePos2(iix, 2) = Fy(eyePos(iix,1), eyePos(iix,2));
+    eyePos2(iix,1) = rbfinterp(eyePos(iix,:)', opX)';
+    eyePos2(iix,2) = rbfinterp(eyePos(iix,:)', opY)';    
     
     Exp.vpx.smo(:,2:3) = eyePos2;
+%     %%
+%     figure(6); clf, plot(GridCentersX, GridCentersY, '.')
+%     hold on
+%     plot(CorrectionX, CorrectionY, 'o')
+%     plot(Fx(CorrectionX, CorrectionY), Fy(CorrectionX, CorrectionY), 'o')
+%     
+%     figure(7); clf
+%     surf(reshape(Fx(CorrectionX, CorrectionY), [25 25]))
+%     %%
 end
 %% regenerate data with the following parameters
 eyesmoothing = 9;
