@@ -18,58 +18,80 @@ switch user
 end
 
 %% load data
-sessId = 8;
+sessId = 12;
 [Exp, S] = io.dataFactory(sessId);
 
-S.rect = [-10 0 30 30];
+eyePos = io.getCorrectedEyePosFixCalib(Exp);
+eyePos(:,1) = sgolayfilt(eyePos(:,1), 3, 9);
+eyePos(:,2) = sgolayfilt(eyePos(:,2), 3, 9);
+Exp.vpx.smo(:,2:3) = eyePos;
+S.rect = [-20 0 20 40];
+stimulus = 'Gabor';
 %% regenerate data with new parameters?
 regenerate = true;
+
 if regenerate
-options = {'stimulus', 'Gabor', ...
+options = {'stimulus', stimulus, ...
     'testmode', false, ...
-    'eyesmooth', 3, ... % bins
+    'eyesmooth', 1, ... % bins
     't_downsample', 2, ...
     's_downsample', 2, ...
     'includeProbe', true, ...
-    'correctEyePos', true};
+    'correctEyePos', false, ...
+    'binsize', 1};
 
 fname = io.dataGenerate(Exp, S, options{:});
 end
 
 %% load stimulus
 
-fname = strrep(Exp.FileTag, '.mat', '_Gabor.mat');
+fname = strrep(Exp.FileTag, '.mat', ['_' stimulus '.mat']);
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 fprintf('Loading stimulus\n')
 load(fullfile(dataDir, fname))
+
 fprintf('Done\n')
 
 
-
 %%
-eyePosAtFrame = eyeAtFrame - mean(eyeAtFrame);
+eyePosAtFrame = eyeAtFrame - Exp.S.centerPix;
+
 
 NY = size(stim,2)/NX;
-nlags = ceil(.05/dt);
+nlags = ceil(.07/dt);
 NC = size(Robs,2);
 %% Test RFs?
 dims = [NX NY];
 
 fprintf('Building time-embedded stimulus\n')
 tic
-spar = NIM.create_stim_params([nlags dims], 'tent_spacing', 2);
+spar = NIM.create_stim_params([nlags dims]); %, 'tent_spacing', 1);
 X = NIM.create_time_embedding(stim, spar);
-X = X-mean(X);
-X = zscore(X);
+X = X./std(X);
+% X = zscore(X);
 fprintf('Done [%02.2f]\n', toc)
 
 %%
-C = X'*X;
+% C = X'*X;
 %%
-ix = valdata == 1 & labels == 1; % & (hypot(eyePosAtFrame(:,1), eyePosAtFrame(:,2)) < 100);% & probeDist > 50;
-% ix = valdata == 1 & labels == 1 & eyePosAtFrame(:,1) > 0 & eyePosAtFrame(:,2) > 0;
-
-%%
+% fixation = false(size(labels));
+% [bw, num] = bwlabel(labels==1);
+% for i = 1:num
+%     
+%     inds = find(bw==i);
+%     if numel(inds) > 10
+%         inds = inds(1:10);
+%         fixation(inds) = true;
+%     end
+%     
+% end
+fixation = labels==1;
+% ix = valdata == 1 & fixation & (hypot(eyePosAtFrame(:,1), eyePosAtFrame(:,2)) < .5*Exp.S.pixPerDeg);% & probeDist > 50;
+eyeix = eyePosAtFrame(:,1) > 0 & eyePosAtFrame(:,2) > 0 & ...
+     eyePosAtFrame(:,1) < 200 & eyePosAtFrame(:,2) < 200;
+ix = valdata == 1 & fixation == 1 & eyeix;
+ix = valdata == 1 & labels == 1;
+%
 NTall = size(X,1);
 cids = [1 3 4 9 13 18:23 26:28 34:NC];
 % cids = 28;
@@ -105,36 +127,71 @@ for i = 1:nsaclags
 %         subplot(6,6,cc, 'align')
 %         imagesc(a)
 %         axis off
-    colormap(parula)
+    colormap(gray)
 %     end
     drawnow
 end
 
+ 
+
 
 %%
 f = @(x) (x);
-C = f(X)'*f(X);
+C = f(X(ix,:))'*f(X(ix,:));
 fprintf('Running STA...')
-xy = [f(X(ix,:)) ones(sum(ix),1)]'*Robs(ix,:);
+
+%%
+inds = find(ix);
+nt = numel(inds);
+t = ceil(nt/10);
+% iinds = [1:t:nt nt];
+% i = i + 1;
+% inds = inds(iinds(i):iinds(i+1));
+% inds = inds(1:end);
+xy = [f(X(inds,:)) ones(numel(inds),1)]'*Robs(inds,:);
 fprintf('[%02.2f]\n', toc)
 xy = xy(1:end-1,:);
 
-
-
 %%
+ppa = 60/Exp.S.pixPerDeg;
 d = size(X,2);
-stas = (C + 10e5*eye(d))\xy;
+stas = (C + 10e4*eye(d))\xy;
 % stas = xy;
 
-
-%% plot
+figure; clf
 for cc = 1:NC
     a = reshape(stas(:,cc),[nlags prod(dims)]);  
     a = (a - min(a(:))) ./ (max(a(:)) - min(a(:)));
-    figure(1); 
+    subplot(ceil(sqrt(NC)), round(sqrt(NC)), cc, 'align')
+    imagesc(xax*ppa, yax*ppa, reshape(a(5,:), dims), [0 1])
+    
+end
+
+colormap gray
+%% plot all
+figure(10); clf
+for cc = 1:NC
+    a = reshape(stas(:,cc),[nlags prod(dims)]);  
+    a = (a - min(a(:))) ./ (max(a(:)) - min(a(:)));
+    subplot(ceil(sqrt(NC)), round(sqrt(NC)), cc, 'align')
+    plot(a)
+    title(cc)
+%     plot(a)
+end
+
+
+%% plot one by one
+figure
+for cc = 1:NC
+    a = reshape(stas(:,cc),[nlags prod(dims)]);  
+    a = (a - min(a(:))) ./ (max(a(:)) - min(a(:)));
+    
     for i = 1:nlags
         subplot(1, nlags, i, 'align')
-        imagesc(xax/Exp.S.pixPerDeg/2, yax/Exp.S.pixPerDeg/2, reshape(a(i,:), dims), [0 1])
+        imagesc(xax*ppa, yax*ppa, reshape(a(i,:), dims), [0 1])
+%         xlim([0 25])
+%         ylim([15 40])
+%         imagesc(xax/Exp.S.pixPerDeg/2, yax/Exp.S.pixPerDeg/2, reshape(a(i,:), dims), [0 1])
     end
 %     subplot(2,1,1); hold off; plot(a,'b')
     
@@ -158,17 +215,33 @@ NL_types = {'rectlin', 'rectlin'}; % define subunit as linear (note requires cel
 subunit_signs = [1, -1]; % determines whether input is exc or sup (mult by +1 in the linear case)
 x_targs = [1, 1];
 % Set initial regularization as second temporal derivative of filter
-lambda_d2t = [10e1 10e2];
-lambda_d2x = [20e2 10e4];
-lambda_l1 = [1 1];
+lambda_d2t = [5e2 5e2 10e2];
+lambda_d2x = [5e2 5e2 10e4];
+lambda_l1 = [1 1 0.0001];
             
 f = @(x) x;
 NT = length(Robs);
 
-test_inds = ceil(NT*2/5):ceil(NT*3/5);
-train_inds = setdiff(1:NT,test_inds);
-         
-nsubs = 1;
+fixation = false(size(labels));
+[bw, num] = bwlabel(labels==1);
+for i = 1:num
+    
+    inds = find(bw==i);
+    if numel(inds) > 7
+        inds = inds(6:end);
+        fixation(inds) = true;
+    end
+    
+end
+% ix = valdata == 1 & fixation & (hypot(eyePosAtFrame(:,1), eyePosAtFrame(:,2)) < 4*Exp.S.pixPerDeg);% & probeDist > 50;
+% ix = valdata == 1 & labels == 1 & eyePosAtFrame(:,1) > 0 & eyePosAtFrame(:,2) < 0;
+
+
+train_inds0 = find(ix);
+train_inds = randsample(train_inds0, ceil(.8*numel(train_inds0)));
+test_inds = setdiff(train_inds0,train_inds);
+
+nsubs = 2;
 LN0 = NIM( spar, NL_types(1:nsubs), subunit_signs(1:nsubs), ...
     'xtargets', x_targs(1:nsubs), ...
     'd2t', lambda_d2t(1:nsubs), ...
@@ -177,28 +250,43 @@ LN0 = NIM( spar, NL_types(1:nsubs), subunit_signs(1:nsubs), ...
 
 
 %% fit filters
-cc = 13;
-LN0.subunits(1).filtK = stas(:,cc);
-if nsubs > 1
-LN0.subunits(2).filtK = stas(:,cc);
+f = @(x) (x);
+
+for cc = 36%1:size(Robs,2)
+% LN0.subunits(1).filtK = stas(:,cc)/norm(stas(:,cc));
+% if nsubs > 1
+% LN0.subunits(2).filtK = stas(:,cc);
+% end
+LN = LN0.fit_filters(Robs(:,cc), {f(X)}, train_inds);
+LN.display_model
+drawnow
 end
-LN = LN0.fit_filters(Robs(:,cc), {f(X)}, find(ix));
-
-
 %%
+for cc = 28%1:size(Robs,2)
+LN.set_reg_params('d2t', .1)
+LN = LN.fit_filters(Robs(:,cc), {f(X)}, train_inds);
+LN.display_model
+drawnow
+end
+%%
+LN = LN.reg_path( Robs(:,cc), f(X), train_inds, test_inds, 'lambdaID', 'l1' );
 LN.display_model
 
+
 %%
-cc = 13
-LN.subunits(1).reg_lambdas.d2x = 2e3;
-LN.subunits(1).reg_lambdas.d2t = 10e1;
-LN.subunits(1).reg_lambdas.l1 = 20;
-LN = LN.fit_filters(Robs(:,cc), {f(X)}, find(ix));
+
+LN = LN.reg_path( Robs(:,cc), X, train_inds, test_inds, 'lambdaID', 'l1' );
 LN.display_model
+drawnow
+
+% LN.set_reg_params('l1', 10)
+% LN = LN0.fit_filters(Robs(:,cc), {f(X)}, train_inds);
+% LN.display_model
 %%
-NIM0 = LN.add_subunits( {'rectlin'}, -1);
-NIM0 = NIM0.fit_filters(Robs(:,cc), {f(X)}, find(ix));
+NIM0 = LN.add_subunits( {'quad'}, 1);
+NIM0 = NIM0.fit_filters(Robs(:,cc), {f(X)}, train_inds);
 NIM0.display_model
+
 
 
 %%
@@ -206,7 +294,7 @@ sLN = sNIM(LN, 1, spar);
 sLN.subunits.reg_lambdas.d2x = 10e4;
 sLN.subunits.reg_lambdas.d2t = 10e2;
 sLN.subunits.reg_lambdas.l1 = 100;
-sLN = sLN.fit_filters(Robs(:,cc), {stim}, find(ix))
+sLN = sLN.fit_filters(Robs(:,cc), {stim}, train_inds)
 sLN.display_model
 
 sLN.add_subunits({'quad'}, 1)

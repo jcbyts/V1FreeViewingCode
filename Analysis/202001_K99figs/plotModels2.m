@@ -1,10 +1,26 @@
-model = load('Data/snim22texport_1231.mat');
-out = load('Data/gmodsac0_output.mat');
+model = load('Data/export1231_csn1.mat');
+
+
+% out = load('Data/gmodsac0_output.mat');
 
 %%
 
 figure(1); clf
-imagesc(model.ws02)
+imagesc(model.ws10); colormap jet
+
+NX = 24;
+nlags = 10;
+
+isub = isub+1;
+w = reshape(model.ws00(:,isub), [nlags, NX, NX]);
+w = (w - min(w(:))) / (max(w(:)) - min(w(:)));
+for ilag = 1:nlags
+    subplot(1,nlags,ilag)
+    imagesc(squeeze(w(ilag,:,:)), [0 1])
+end
+colormap gray
+% model.ws00*model.ws01
+
 
 %%
 figure(1); clf

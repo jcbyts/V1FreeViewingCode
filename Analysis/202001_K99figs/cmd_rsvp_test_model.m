@@ -4,7 +4,7 @@
 %% Load dataset
 
 [Exp, S] = io.dataFactory(12);
-out = load('Data/gmodsac0_output.mat');
+out = load('Data/model1231_predictions2.mat');
 
 %% get valid trials
 validTrials = io.getValidTrials(Exp, 'FixRsvpStim');
@@ -63,13 +63,20 @@ NC = 58;
 Robs = zeros(nt,NC,nlags);
 Ypred = zeros(nt,NC,nlags);
 
-ft = out.frameTimes;
+ft = double(out.frameTimesRsvp(1:end-1));
 bad = ft==0;
-R = out.Robs;
-Rhat = out.predrate;
+R = double(out.RobsRsvp(2:end,:));
+Rhat = double(out.pred1Rsvp(1:end-1,:));
 R(bad,:) = [];
 Rhat(bad,:) = [];
 ft(bad) = [];
+
+
+%%
+figure(1); clf
+plot(ft, R(:,1), 'k'); hold on
+plot([1; 1]*tstart', ylim'*ones(1,nt), 'r')
+%%
 % Do the binning here
 for i = 1:nt
     y = binNeuronSpikeTimesFast(Exp.osp,tstart(i)+lags, binsize);
@@ -95,6 +102,7 @@ end
 
 %%
 cc = mod(cc + 1, NC); cc = max(cc, 1);
+% cc = 47;
 figure(10); clf
 set(gcf, 'Color', 'w')
 
@@ -124,14 +132,59 @@ title('Data')
 subplot(1,2,2)
 I1 = squeeze(Ypred(ind,cc,:));
 I1(12,:) = [];
-imagesc(I1,[0 .3])
+imagesc(I1)
 colormap parula
 title('Model')
 
 figure(2); clf
-plot(nanmean(I0)); hold on
-plot(nanmean(I1)); hold on
-title(cc)
+nfun = @(x) x; %zscore(x);
+rtrue = nfun(nanmean(I0));
+rhat = nfun(nanmean(I1));
+plot(rtrue*120); hold on
+plot(rhat*120); hold on
+title([cc rsquared(rtrue, rhat)])
+
+
+nt = size(I0,1);
+I2 = repmat(rtrue, nt,1);
+I2(isnan(I1)) = nan;
+
+figure(3); clf
+r0 = reshape(I0', [], 1);
+r1 = reshape(I1', [], 1);
+r2 = reshape(I2', [], 1);
+plot(r0); hold on
+plot(r1)
+plot(r2)
+
+rtmodel = zeros(nt,1);
+rtpsth = zeros(nt, 1);
+for t = 1:nt
+    ix = ~isnan(I0(t,:));
+    rtmodel(t) = rsquared(I0(t,ix), I1(t,ix));
+    rtpsth(t) = rsquared(I0(t,ix), I2(t,ix));
+end
+
+[~, id] = sort(rtmodel, 'descend');
+
+%
+figure(10); clf
+i = 1
+% i = i+1;
+% cc = 47;
+% i = 1;
+subplot(2,1,1)
+plot(squeeze(spks(id(i),cc,:))); hold on
+plot(squeeze(Ypred(id(i),cc,:)))
+plot(I2(id(i),:))
+subplot(2,1,2)
+plot(xpos(id(i),:)); hold on
+plot(ypos(id(i),:));
+ylim([-.5 .5])
+
+%%
+plot.fixfigure(gcf, 8, [6 3], 'offsetAxes', false)
+saveas(gcf, fullfile('Figures', 'K99', sprintf('fixRsvpPsth%02.0f.pdf', cc)))
 %%
 
 cc = mod(cc + 1, NC); cc = max(cc, 1);
