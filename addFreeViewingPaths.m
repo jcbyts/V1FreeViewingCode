@@ -24,12 +24,13 @@ switch user
         % regenerate properly
         marmoViewPath = '~/Documents/MATLAB/MarmoV5/';
         % we only need marmopipe to import raw data
-        marmoPipePath = [];
+        marmoPipePath = '~/Dropbox/Marmo Lab Website/PSA/Code/';
         % where the data live
         dataPath = '~/Dropbox/Projects/FreeViewing/Data';
         
         % processed data:
         setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
+        setpref('FREEVIEWING', 'SERVER_DATA_DIR', '/Volumes/mitchelllab/Data/')
         
     case 'jakework'
         % we need marmoview in the path for the stimulus objects to

@@ -6,3 +6,7 @@ Analysis/201912_tryUNeye
 Figures/sessionQA
 Figures/simpleSTA
 Figures/eyesmooth
+Figures
+__pycache__
+FreeViewing.code-workspace
+Analysis/notebooks/.ipynb_checkpoints
