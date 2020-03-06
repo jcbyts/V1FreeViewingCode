@@ -105,7 +105,9 @@ if t_downsample > 1
     stim{1} = downsample_time(stim{1}, t_downsample) / t_downsample;
     stim{2} = downsample_time(stim{2}, t_downsample) / t_downsample;
     stim{3} = downsample_time(stim{3}, t_downsample) / t_downsample;
+    frameTime = downsample(frameTime, t_downsample);
     spks = downsample_time(spks, t_downsample);
+    frameTime = frameTime(1:size(spks,1));
 end
 
 
@@ -140,3 +142,4 @@ opts.num_kx = num_kx;
 opts.num_ky = num_ky;
 opts.kxs = oris;
 opts.kys = cpds;
+opts.frameTime = frameTime;
