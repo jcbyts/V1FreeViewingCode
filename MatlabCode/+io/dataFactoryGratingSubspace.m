@@ -12,7 +12,8 @@ function varargout = dataFactoryGratingSubspace(sessionId)
 
 dataPath = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 
-meta_file = fullfile(dataPath, 'datasets.xls');
+meta_file = fullfile(fileparts(which('addFreeViewingPaths')), 'Data', 'datasets.xls');
+% meta_file = fullfile(dataPath, 'datasets.xls');
 
 data = readtable(meta_file);
 nSessions = size(data,1);
@@ -45,10 +46,6 @@ S.processedFileName = [thisSession.Tag{1} '.mat'];
 
 rootDir = strrep(thisSession.RootDirectory{1}, '/', filesep);
 rawDir = strrep(thisSession.Directory{1}, '/', filesep);
-serverDir = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
-
-S.rawFilePath = fullfile(serverDir, rootDir, rawDir);
-S.importFun = str2func(['io.' thisSession.ImportFun{1}]);
 
 % try loading the file
 fname = fullfile(dataPath, S.processedFileName);
@@ -57,6 +54,10 @@ if exist(fname, 'file')
     Exp = load(fname);
     fprintf('Done\n')
 else % try importing the file
+    serverDir = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
+
+    S.rawFilePath = fullfile(serverDir, rootDir, rawDir);
+    S.importFun = str2func(['io.' thisSession.ImportFun{1}]);
     fprintf('Could not find [%s]\n', fname)
     fprintf('Trying to import the data from [%s]\n', S.rawFilePath)
     

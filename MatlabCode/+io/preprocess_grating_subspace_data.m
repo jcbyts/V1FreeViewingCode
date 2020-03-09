@@ -38,11 +38,11 @@ ip.addParameter('up_samp_fac', 1)    % spikes are sampled at higher temporal res
 ip.addParameter('num_lags_stim', 20) % number of lags for stimulus filter
 ip.addParameter('num_lags_sac_post', 50)  % number of time lags to capture saccade effect
 ip.addParameter('num_lags_sac_pre', 50)  % number of time lags to capture saccade effect
-ip.addParameter('stim_field', 'ITI')
+ip.addParameter('stim_field', 'Grating')
 ip.addParameter('trial_inds', [])
 ip.parse(varargin{:})
 
-stimField = 'Grating';
+stimField = ip.Results.stim_field;
 
 opts = ip.Results;
 opts.fs_spikes = opts.fs_stim;
