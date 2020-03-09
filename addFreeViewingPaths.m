@@ -14,7 +14,7 @@ switch user
         % we only need marmopipe to import raw data
         marmoPipePath = [];
         % where the data live
-        dataPath = '~/Data';
+        dataPath = '~/Data/MitchellV1FreeViewing/';
         
         % processed data:
         setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
