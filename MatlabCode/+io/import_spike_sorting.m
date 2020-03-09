@@ -14,6 +14,8 @@ function varargout = import_spike_sorting(DataFolder)
 %
 % Check for Kilosort First
 processedDir = dir(fullfile(DataFolder, '*processed*'));
+shanksDir = dir(fullfile(DataFolder, '_shank*'));
+processedDir = [processedDir; shanksDir];
 if ~isempty(processedDir)
     assert(numel(processedDir)==1, 'import_spike_sorting: I don''t know how to handle multiple processed directories yet. You have to implement that')
     
@@ -42,10 +44,15 @@ if ~isempty(processedDir)
         end
         return
     end
+else 
+    if input('No spikes found. Do you want to do threshold spike sorting? (1 or 0)')
+        
+    else
+        error('import_spike_sorting: no spikes')
+    end
 end
 
 % If no Kilosort, proceed with old code
-
 % **** based on what you set, it runs spike sorting (eventually KiloSort)
 % search data directory for sorted spike files, and use those if available
 spfiles = dir(fullfile(DataFolder, '*.*_spk.mat'));

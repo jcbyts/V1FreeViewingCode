@@ -49,6 +49,14 @@ switch stimulusSet
 
         dotSize = cellfun(@(x) x.P.dotSize, Exp.D(validTrials));
         validTrials = validTrials(dotSize==min(dotSize));
+        
+    case {'CSD'}
+        % Forage trials
+        validTrials = intersect(find(strcmp(trialProtocols, 'ForageProceduralNoise')), ephysTrials);
+
+        % dot spatial noise trials
+        validTrials = validTrials(cellfun(@(x) x.PR.noisetype==3, Exp.D(validTrials)));
+        
     case {'BackImage'}
         validTrials = intersect(find(strcmp(trialProtocols, 'BackImage')), ephysTrials);
         

@@ -8,7 +8,11 @@ disp('REQUIRES MARMOPIPE CODE IN THE PATH')
 % get paths
 SERVER_DATA_DIR = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
 
-DataFolder = fullfile(SERVER_DATA_DIR, S.rawFilePath);
+if contains(S.rawFilePath, SERVER_DATA_DIR)
+    DataFolder = S.rawFilePath;
+else
+    DataFolder = fullfile(SERVER_DATA_DIR, S.rawFilePath);
+end
 
 assert(exist(DataFolder, 'dir')==7, 'importFreeViewing: raw data path does not exist')
 
