@@ -10,3 +10,7 @@ Figures
 __pycache__
 FreeViewing.code-workspace
 Analysis/notebooks/.ipynb_checkpoints
+Data/uneye
+Data/pkls
+Data/labels
+gmodsac0_1231
