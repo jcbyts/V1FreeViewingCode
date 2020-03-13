@@ -39,8 +39,6 @@ OE2PTBfit = mean(OEfit,2);
 [eyeData, timestamps, ~] = io.getEyeData(sess);
 
 %% we need to map PLDAPS stimuli to MarmoV5 stimuli
-% 
-% hart = session.hartleyFF(PDS);
 
 % convert PDS cell array to trial-by-trial struct array
 trial = io.getPdsTrialData(PDS);
@@ -84,13 +82,21 @@ newExp.S.TimeSensitive = [];
 newExp.S.pumpCom = PDS{1}.initialParametersMerged.newEraSyringePump.port;
 newExp.S.pumpDiameter = PDS{1}.initialParametersMerged.newEraSyringePump.diameter;
 newExp.S.pumpRate = PDS{1}.initialParametersMerged.newEraSyringePump.rate;
-newExp.S.pumpDefVol = str2double(PDS{1}.initialParametersMerged.newEraSyringePump.initialVolumeGiven);
+try
+    newExp.S.pumpDefVol = str2double(PDS{1}.initialParametersMerged.newEraSyringePump.initialVolumeGiven);
+catch
+    newExp.S.pumpDefVol = str2double(PDS{1}.initialParametersMerged.newEraSyringePump.vol);
+end
 newExp.S.MarmoViewVersion = 'PLDAPS';
 newExp.S.finish = nan;
 newExp.S.protocol = 'stimuli.forage.forage';
 
 % --- find relevant trials from pldaps
-forageTrials = find(arrayfun(@(x) any(strfind(x.pldaps.trialFunction, 'forage')), trial, 'uni', 1));
+if isfield(trial(1).pldaps, 'trialFunction')
+    forageTrials = find(arrayfun(@(x) any(strfind(x.pldaps.trialFunction, 'forage')), trial, 'uni', 1));
+elseif isfield(trial, 'forage')
+    forageTrials = find(arrayfun(@(x) x.forage.use, trial, 'uni', 1));
+end
 nTotalTrials = numel(forageTrials);
 
 newExp.D = cell(nTotalTrials,1);
@@ -121,8 +127,11 @@ for iTrial = 1:nTotalTrials
         protocol = 'CSD';
     elseif isfield(trial(pldapsTrial), 'spatialSquares') && trial(pldapsTrial).spatialSquares.use
         protocol = 'Spatial';
+    elseif isfield(trial(pldapsTrial), 'gaussianNoiseBlobs') && trial(pldapsTrial).gaussianNoiseBlobs.use
+        protocol = 'GaussianPyr';
     else
-        protocol = 'none';
+        protocol = 'jnk';
+        newExp.D{iTrial}.PR.name = protocol;
     end
     
     
@@ -173,16 +182,69 @@ for iTrial = 1:nTotalTrials
             
             newExp.D{iTrial}.PR.NoiseHistory = [frameTimes(1:n) oris(:) spatfreqs(:)];
             
+            
+            % --- FROZEN TRIALS ---- %
+            % --- need to add frozen sequence
+            newExp.D{iTrial}.PR.frozenSequence = false;
+            newExp.D{iTrial}.PR.frozenSequenceLength = nan;
+                
+            % version 2
+            if isfield(trial(pldapsTrial).hartley, 'generativeModel') && strcmp(trial(pldapsTrial).hartley.generativeModel, 'frozen')
+                
+                newExp.D{iTrial}.PR.frozenSequence = true;
+                newExp.D{iTrial}.PR.frozenSequenceLength = trial(pldapsTrial).hartley.sequenceFrame/4;
+                
+                inds = reshape(1:trial(pldapsTrial).hartley.sequenceFrame, newExp.D{iTrial}.PR.frozenSequenceLength, 4);
+                tmp_ = trial(pldapsTrial).hartley.sequence.kx(inds);
+                assert(all(all(bsxfun(@eq, tmp_, tmp_(:,1)))), 'something is wrong with the frozen trial')
+            % version 1
+            elseif isfield(trial(pldapsTrial).hartley, 'setupRNG') && strcmp(trial(pldapsTrial).hartley.setupRNG, 'frozenSequence')
+                
+                newExp.D{iTrial}.PR.frozenSequence = true;
+                newExp.D{iTrial}.PR.frozenSequenceLength = trial(pldapsTrial).hartley.sequenceLength;
+            else
+                newExp.D{iTrial}.PR.frozenSequence = false;
+                newExp.D{iTrial}.PR.frozenSequenceLength = nan;
+            end
+            
+            
         case 'CSD'
             frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
             on = trial(pldapsTrial).csdFlash.on;
             n = numel(on);
             
-            newExp.D{iTrial}.PR.noiseType = 3;
+            newExp.D{iTrial}.PR.noisetype = 3;
             newExp.D{iTrial}.PR.NoiseHistory = [frameTimes(1:n) on];
+            newExp.D{iTrial}.PR.name = 'ForageProceduralNoise';
+        case 'GaussianPyr'
+            frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
+            newExp.D{iTrial}.P.dotSize = 0.5; % Made up. Let's see if this works
+            newExp.D{iTrial}.PR.name = 'ForageProceduralNoise';
             
+            xpos = trial(pldapsTrial).gaussianNoiseBlobs.xpos - newExp.S.centerPix(1);
+            ypos = -(trial(pldapsTrial).gaussianNoiseBlobs.ypos - newExp.S.centerPix(2));
+            newExp.D{iTrial}.PR.noiseNum = size(xpos,2);
+            
+            nt = size(xpos,1);
+            newExp.D{iTrial}.PR.NoiseHistory = [frameTimes(1:nt) xpos ypos];
+            newExp.D{iTrial}.PR.noisetype = 5;
         case 'Spatial'
-            keyboard
+            frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
+            newExp.D{iTrial}.P.dotSize = trial(pldapsTrial).spatialSquares.size/2; % convert square to radius? hack
+            newExp.D{iTrial}.PR.name = 'ForageProceduralNoise';
+            
+            xpos = squeeze(mean(trial(pldapsTrial).spatialSquares.pos([1 3],:,:),1))';
+            ypos = squeeze(mean(trial(pldapsTrial).spatialSquares.pos([2 4],:,:),1))';
+            xpos = xpos - newExp.S.centerPix(1);
+            ypos = -(ypos - newExp.S.centerPix(2));
+            
+            newExp.D{iTrial}.PR.noiseNum = size(xpos,2);
+            
+            nt = size(xpos,1);
+            newExp.D{iTrial}.PR.NoiseHistory = [frameTimes(1:nt) xpos ypos];
+            newExp.D{iTrial}.PR.noisetype = 5;
+%             xdots = NoiseHistory(iFrame,1 + (1:numDots)) + Exp.S.centerPix(1); %/Exp.S.pixPerDeg;
+%             ydots = -NoiseHistory(iFrame,1 + numDots + (1:numDots)) + Exp.S.centerPix(2); %/Exp.S.pixPerDeg;
         otherwise
             
             
@@ -195,12 +257,22 @@ for iTrial = 1:nTotalTrials
     if isfield(trial(pldapsTrial), 'faceForage')
         warning('Implement me')
         keyboard
-    elseif isfield(trial(pldapsTrial), 'forage')
-        warning('Implement me')
-        keyboard
+    elseif isfield(trial(pldapsTrial), 'forage') && trial(pldapsTrial).forage.use
+        frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
+        n = numel(frameTimes)-1;
+        x = trial(pldapsTrial).forage.x(1:n,1);
+        y = trial(pldapsTrial).forage.y(1:n,1);
+        
+        newExp.D{iTrial}.PR.ProbeHistory = [x(:) y(:) ones(n,1) frameTimes(1:n)];
+        for i = 2:size(trial(pldapsTrial).forage.x,2)
+            x = trial(pldapsTrial).forage.x(1:n,i);
+            y = trial(pldapsTrial).forage.y(1:n,i);
+            newExp.D{iTrial}.PR.ProbeHistory = [newExp.D{iTrial}.PR.ProbeHistory x y ones(n,1)*i];
+        end
     else
         
-        % [x y id frameTime x y x y x y]  
+        % [x y id frameTime x y x y x y]
+        frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
         n = numel(frameTimes)-1;
         x = trial(pldapsTrial).stimulus.x(1:n,1);
         y = trial(pldapsTrial).stimulus.y(1:n,1);
@@ -229,6 +301,9 @@ end
 
 Exp = newExp;
 
+% remove unsupported protocols
+Exp.D(cellfun(@(x) strcmp(x.PR.name, 'jnk'), Exp.D)) = [];
+nTotalTrials = numel(Exp.D);
 %% eye position
 MEDFILT = 3;
 GSIG = 5;

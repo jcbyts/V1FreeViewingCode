@@ -87,13 +87,25 @@ data = data(ind);
 % loop over fields and correct any empty modules
 fnames = fieldnames(data);
 for i = 1:numel(fnames)
-    %     fprintf('%s\n', fnames{i})
-    ixempty = arrayfun(@(x) isempty(x.(fnames{i})), data);
-    ixuse   = arrayfun(@(x) isfield(x, fnames{i}), data);
-    if any(ixempty) && any(ixuse) % module is empty on some trials
+%     fprintf('%s\n', fnames{i})
+    % check for missing "use" fields
+    ixuse = arrayfun(@(x) isfield(x.(fnames{i}), 'use'), data);
+    ixempty = ~ixuse;
+    if any(ixuse)
         emptyTrials = find(ixempty);
         for j = emptyTrials(:)'
             data(j).(fnames{i}).use = false;
         end
     end
+    
+%     ixempty = arrayfun(@(x) isempty(x.(fnames{i})), data);
+%     ixuse   = arrayfun(@(x) isfield(x, fnames{i}), data);
+%     if any(ixempty) && any(ixuse) % module is empty on some trials
+%         emptyTrials = find(ixempty);
+%         for j = emptyTrials(:)'
+%             data(j).(fnames{i}).use = false;
+%         end
+%     end
+    
+    
 end
