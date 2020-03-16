@@ -19,6 +19,9 @@ assert(exist(DataFolder, 'dir')==7, 'importFreeViewing: raw data path does not e
 % Load spikes data
 [sp,osp] = io.import_spike_sorting(DataFolder);
 
+if isfield(osp, 'wfs')
+    osp = rmfield(osp, 'wfs');
+end
 % load old EPHYS session
 sess = io.loadSession(DataFolder);
 sess.path = DataFolder;

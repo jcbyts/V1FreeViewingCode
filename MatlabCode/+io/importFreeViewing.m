@@ -32,5 +32,12 @@ Exp = io.import_eye_position(Exp, DataFolder);
 % Perform basic processing of eye movements and saccades
 Exp = saccadeflag.run_saccade_detection(Exp, 'ShowTrials', false);
 
+validTrials = io.getValidTrials(Exp, 'Grating');
+for iTrial = validTrials(:)'
+    if ~isfield(Exp.D{iTrial}.PR, 'frozenSequence')
+        Exp.D{iTrial}.PR.frozenSequence = false;
+    end
+end
+        
 disp('Done importing session');
 

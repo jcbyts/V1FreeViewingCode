@@ -17,6 +17,11 @@ processedDir = dir(fullfile(DataFolder, '*processed*'));
 shanksDir = dir(fullfile(DataFolder, '_shank*'));
 processedDir = [processedDir; shanksDir];
 if ~isempty(processedDir)
+    if numel(processedDir) > 1
+        warning('import_spike_sorting: multiple recording devices were used. this is not supported yet. Only taking the first V1 recording')
+        ind = find(arrayfun(@(x) any(strfind(x.name, 'V1')), processedDir),1);
+        processedDir = processedDir(ind);
+    end
     assert(numel(processedDir)==1, 'import_spike_sorting: I don''t know how to handle multiple processed directories yet. You have to implement that')
     
     % find kilosort file in the processed directory
