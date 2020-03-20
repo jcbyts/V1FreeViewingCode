@@ -22,7 +22,7 @@ bst = binfun(sp.st);
 bft = binfun(eventTimes);
 
 % create binned spike times
-Y = sparse(bst, double(sp.clu), ones(numel(bst), 1));
+Y = sparse(bst, double(sp.clu), ones(numel(bst), 1), max(max(bst),max(bft)),double(max(sp.clu)));
 
 % index in with binned frame times
 Y = Y(bft,:);
