@@ -12,10 +12,6 @@ function [stim, spks, opts] = preprocess_grating_subspace_data(Exp, varargin)
 %                             sampling resolution)
 %       'num_lags_sac_pre'  - number of lags before a saccade (in spike
 %                             resolution)
-%       'use_mirror'        - only analyze half the hartley basis set
-%                             (default: true). This cuts the number of
-%                             parameters in half, but is only valid if the
-%                             gratings are not drifting
 %       'true_zero'         - The origin of the fourier domain is currently
 %                             one of the hartley stimulus options. Zero it
 %                             out because it is really just a gray screen.
@@ -24,8 +20,6 @@ function [stim, spks, opts] = preprocess_grating_subspace_data(Exp, varargin)
 %   stim [cell array]   - (T x m) stimuli: stimulus, saccade_onsets, saccade_offsets, eye velocity
 %   spks,[T x n]        - binned spike counts
 %   opts [struct]       - information about the preprocessing
-%   params [struct]     - information about the stim fields
-%   kx, ky, frame_binned , [T x 1] the stimulus and corresponding bins
 %
 % Example:
 %   [stim, spks, opts, params_stim] = io.preprocess_grating_subspace_data(D, 'stim_field', 'hartleyFF', 'fs_stim', 120);
@@ -33,7 +27,7 @@ function [stim, spks, opts] = preprocess_grating_subspace_data(Exp, varargin)
 % jly 2020
 ip = inputParser();
 ip.KeepUnmatched = true;
-ip.addParameter('fs_stim', 120)      % stimulus binning rate (per second)
+ip.addParameter('fs_stim', [])      % stimulus binning rate (per second)
 ip.addParameter('up_samp_fac', 1)    % spikes are sampled at higher temporal res?
 ip.addParameter('num_lags_stim', 20) % number of lags for stimulus filter
 ip.addParameter('num_lags_sac_post', 50)  % number of time lags to capture saccade effect
@@ -45,6 +39,10 @@ ip.parse(varargin{:})
 stimField = ip.Results.stim_field;
 
 opts = ip.Results;
+if isempty(ip.Results.fs_stim)
+    opts.fs_stim = Exp.S.frameRate;
+end
+
 opts.fs_spikes = opts.fs_stim;
 opts.up_samp_fac = 1;
 
@@ -54,17 +52,18 @@ frameTime = cellfun(@(x) Exp.ptb2Ephys(x.PR.NoiseHistory(:,1)), Exp.D(validTrial
 ori = cellfun(@(x) x.PR.NoiseHistory(:,2), Exp.D(validTrials), 'uni', 0);
 cpd = cellfun(@(x) x.PR.NoiseHistory(:,3), Exp.D(validTrials), 'uni', 0);
 
-trialDuration = cellfun(@numel , frameTimes);
+trialDuration = cellfun(@numel , frameTime);
 trialStartFrameNum = 1 + cumsum([0; trialDuration(1:end-1)]);
 trialEndFrameNum = trialDuration + trialStartFrameNum - 1;
 
 % frozenSequence starts, duration
-frozenTrials = cellfun(@(x) x.PR.frozenSequence, Exp.D(trialInds));
+hasFrozen = cellfun(@(x) isfield(x.PR, 'frozenSequence'), Exp.D(validTrials));
+frozenTrials = cellfun(@(x) x.PR.frozenSequence, Exp.D(validTrials(hasFrozen)));
 if ~any(frozenTrials)
     frozen_seq_starts = [];
     frozen_seq_dur = 0;
 else
-    frozen_seq_dur = arrayfun(@(x) x.frozenSequenceLength, trial(trialInds(frozenTrials)));
+    frozen_seq_dur = arrayfun(@(x) x.PR.frozenSequenceLength, Exp.D(validTrials(frozenTrials)));
     frozen_seq_dur = min(frozen_seq_dur);
     frozen_seq_starts = [];
     for iTrial = find(frozenTrials(:))'
@@ -81,8 +80,8 @@ cpd = cell2mat(cpd);
 NT = numel(frameTime);
 
 % --- concatenate different sessions
-ts = frameTimes(trialStartFrameNum);
-te = frameTimes(trialEndFrameNum);
+% ts = frameTime(trialStartFrameNum);
+% te = frameTime(trialEndFrameNum);
 
 ix = ~isnan(cpd);
 cpds = unique(cpd(ix));
@@ -99,22 +98,28 @@ cpdid = cpdid - 1;
 cpds(1) = [];
 
 % find discontinuous fragments in the stimulus (trials)
-fn_stim   = ceil((te-ts)*opts.fs_stim);
+% fn_stim   = ceil((te-ts)*opts.fs_stim);
 
 % convert times to samples
-frame_binned = io.convertTimeToSamples(frameTimes, opts.fs_stim, ts, fn_stim);
+% frame_binned = io.convertTimeToSamples(frameTime, opts.fs_stim, ts, fn_stim);
 
 % find frozen repeat indices
-opts.frozen_repeats = frame_binned(bsxfun(@plus, frozen_seq_starts(:), 0:frozen_seq_dur));
+opts.frozen_seq_starts = frozen_seq_starts(:);
+opts.frozen_seq_dur = frozen_seq_dur;
+if ~isempty(opts.frozen_seq_starts)
+    opts.frozen_repeats = frame_binned(bsxfun(@plus, frozen_seq_starts(:), 0:frozen_seq_dur));
 
-% --- cleanup frozen trials (remove any that are wrong)
-% [sequence, ~, ic] = unique(kx(opts.frozen_repeats), 'rows', 'sorted');
-% opts.frozen_repeats(ic~=1,:) = []; 
-C = nancov([ori(opts.frozen_repeats) cpd(opts.frozen_repeats)]');
-margV = diag(C); C = C ./ sqrt((margV(:)*margV(:)'));
-[~, ref] = max(sum(C > .99, 2));
-keep = C(ref,:) > .99;
-opts.frozen_repeats = opts.frozen_repeats(keep,:);
+    % --- cleanup frozen trials (remove any that are wrong)
+    % [sequence, ~, ic] = unique(kx(opts.frozen_repeats), 'rows', 'sorted');
+    % opts.frozen_repeats(ic~=1,:) = []; 
+    C = nancov([ori(opts.frozen_repeats) cpd(opts.frozen_repeats)]');
+    margV = diag(C); C = C ./ sqrt((margV(:)*margV(:)'));
+    [~, ref] = max(sum(C > .99, 2));
+    keep = C(ref,:) > .99;
+    opts.frozen_repeats = opts.frozen_repeats(keep,:);
+else
+    opts.frozen_repeats = [];
+end
 
 
 opts.oris = oris;
@@ -131,12 +136,12 @@ stim{1} = full(sparse(ft(~blank), ind, ones(numel(ind),1), NT, nori*ncpd));
 spks = binNeuronSpikeTimesFast(Exp.osp, frameTime, binsize);
 
 % saccade times
-sacoffset = ip.Results.num_lags_sac_pre/ip.Results.fs_stim;
+sacoffset = ip.Results.num_lags_sac_pre/opts.fs_stim;
 stim{2} = full(binTimesFast(Exp.slist(:,1)-sacoffset, frameTime, binsize));
 stim{3} = full(binTimesFast(Exp.slist(:,2), frameTime, binsize));
 
 
-t_downsample = Exp.S.frameRate / ip.Results.fs_stim;
+t_downsample = Exp.S.frameRate / opts.fs_stim;
 if t_downsample > 1
     stim{1} = downsample_time(stim{1}, t_downsample) / t_downsample;
     stim{2} = downsample_time(stim{2}, t_downsample) / t_downsample;

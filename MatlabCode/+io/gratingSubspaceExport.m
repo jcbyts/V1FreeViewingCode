@@ -6,16 +6,24 @@ function gratingSubspaceExport(sessionId)
 [Exp, S] = io.dataFactoryGratingSubspace(sessionId);
 
 %% get relevant 
-[stim, Robs, opts, params, oris, spatfreq] = io.preprocess_grating_subspace_data(Exp, 'stim_field', 'Grating');
+[~, ~, grating] = io.preprocess_grating_subspace_data(Exp);
+[~, ~, dots] = io.preprocess_spatialmapping_data(Exp);
+
+spikes = Exp.osp;
 
 slist = Exp.slist;
-stim = stim{1};
-frameTimes = opts.frameTime;
+for i = 1:3
+    slist(:,i) = Exp.vpx2ephys(slist(:,i));
+end
+
+eyepos = Exp.vpx.smo(:,1:3);
+eyepos(:,1) = Exp.vpx2ephys(eyepos(:,1));
 
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 dataDir = fullfile(dataDir, 'grating_subspace');
+
 if ~exist(dataDir, 'dir')
     mkdir(dataDir)
 end
 fname = fullfile(dataDir, strrep(Exp.FileTag, '.mat', '_gratingsubspace.mat'));
-save(fname, '-v7', 'stim', 'Robs', 'slist', 'frameTimes', 'oris', 'spatfreq', 'opts')
+save(fname, '-v7', 'grating', 'dots', 'slist', 'spikes', 'eyepos')
