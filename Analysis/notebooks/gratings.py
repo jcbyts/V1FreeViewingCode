@@ -6,9 +6,14 @@ import seaborn as sns
 import sklearn.linear_model as lm
 from scipy import ndimage
 import pandas as pd
-from scipy.special import i0
+from scipy.special import i0 # bessel function order 0
 
 def load_data(sessionid=2,datadir="/home/jcbyts/Data/MitchellV1FreeViewing/grating_subspace/",metafile="/home/jcbyts/Repos/V1FreeViewingCode/Data/datasets.csv"):
+    '''
+    Load data exported from matlab
+
+    matlab exported a series of structs. This function imports them and converts to a dict of dicts.
+    '''
     df = pd.read_csv(metafile)
     fname = df.Tag[sessionid] + "_gratingsubspace.mat"
     print('loading [%s]' %(df.Tag[sessionid]))
@@ -55,15 +60,12 @@ def von_mises_deg(x,kappa=10,mu=0,norm=0):
     
     return y
 
-def nlin(x):
-    return np.log(x + 1e-20)
-
 def invnl(x):
     return (np.exp(x) - 1e-20)
 
 def raised_cosine(x,c,dc):
     # Function for single raised cosine basis function
-    x = nlin(x)
+    x = np.log(x + 1e-20) # should be log2?
     y = (np.cos(np.maximum(-np.pi, np.minimum(np.pi, (x-c)*np.pi/dc/2))) + 1)/2
     return y
 
@@ -76,14 +78,126 @@ def unit_basis(th, rho):
 
     return B
 
+def tent_basis_log(x, n=5, b=0.25):
+    ''' tent basis on a log(2) scale
+
+    '''
+    if type(n)==int:
+        ctrs = np.arange(0,n,1)
+    else:
+        ctrs = n
+
+    xdiff = np.abs(np.log2(x/b + 1e-20)[:,np.newaxis]-ctrs)
+    return np.maximum(1-xdiff, 0)
+
+def circ_diff(th1,th2,deg=True):
+    ''' circular distance on a circle 
+    
+    circ_diff(th1, th2, deg=True)
+    INPUTS:
+        th1 - numpy array
+        th2 - numpy array
+        deg - boolean (default: True, angles in degrees)
+    
+    OUTPUT:
+        d (in units of degrees or radians, specifed by deg flag)
+    '''
+    if deg:
+        th1 = th1/180*np.pi
+        th2 = th2/180*np.pi
+    
+    d = np.angle(np.exp( 1j * (th1-th2)))
+    if deg:
+        d = d/np.pi * 180
+    return d
+
+def circ_diff_180(th1,th2,deg=True):
+    ''' circular distance on a circle (wraps at 180)
+    Unlike circ_diff, this function wraps twice on the circle. For computing
+    the distance between two orientations
+
+    circ_diff_180(th1, th2, deg=True)
+
+    INPUTS:
+        th1 - numpy array
+        th2 - numpy array
+        deg - boolean (default: True, angles in degrees)
+    
+    OUTPUT:
+        d (in units of degrees or radians, specifed by deg flag)
+    '''
+    if deg:
+        th1 = th1/180*np.pi
+        th2 = th2/180*np.pi
+    
+    d = np.angle(np.exp( 1j * (th1-th2)*2))/2
+    if deg:
+        d = d/np.pi * 180
+    return d
+
+def tent_basis_circ(x, n=7):
+    '''
+    create tent basis for orientation
+
+    INPUTS:
+        x - array like
+
+        n - integer or array
+            if n is integer, create an evenly spaced basis of size n.
+            if n is an array, create a tent basis with centers at n
+    OUTPUTS:
+        B - array like, x, evaluated on the basis
+    '''
+    if type(n)==int:
+        bs = 180 / n
+        mus = np.arange(0,180,bs)
+    else:
+        mus = n
+        bs = np.mean(np.diff(np.unique(mus)))
+
+    xdiff = circ_diff_180(x[:,np.newaxis], mus.flatten())
+    xdiff = np.abs(xdiff)
+    return np.maximum(1-xdiff/bs, 0)
+
+def polar_basis_tent(th, rho, m=8, n=8, endpoints=[0.25, 10]):
+    ''' build a tent basis in the orientation-spatial frequency
+     /\  /\ 
+    /  \/  \ 
+    tent function spanning orientation are linearly spaced, whereas the tent funtions
+    spanning spatial frequency are log2 spaced
+    '''
+    # orientation centers
+    bs = 180 / m
+    mus = np.arange(0,180,bs)
+
+    # sf centers
+    ctrs = np.arange(0,n,1)
+
+    # 2D basis
+    xx = np.meshgrid(mus, ctrs)
+
+    # plt.figure()
+    # plt.plot(xx[0].flatten(), xx[1].flatten(), '.')
+
+    B = tent_basis_circ(th,xx[0].flatten())
+    C = tent_basis_log(rho,xx[1].flatten(),endpoints[0])
+    D = B*C
+    return D
+
+
 def polar_basis(th, rho, m=8, n=8, endpoints=[.5, 10]):
-    bs = 360 / m
-    mus = np.arange(0,360,bs)
+    ''' build a 2D cosine basis in orientation / spatial frequency space
+
+
+    '''
+    bs = 180 / m
+    mus = np.arange(0,180,bs)
     kD = np.log(.5)/(np.cos(np.deg2rad(bs/2))-1)
+    kD /=2
 
     endpoints = np.asarray(endpoints)
     b = 0
-    yendpoints = nlin(endpoints + b)
+    yendpoints = np.log(endpoints + b + 1e-20)
     dctr = np.diff(yendpoints)/(n-1)
     ctrs = np.arange(yendpoints[0], yendpoints[1], dctr)
 
@@ -94,42 +208,6 @@ def polar_basis(th, rho, m=8, n=8, endpoints=[.5, 10]):
     C = raised_cosine(rho[:,np.newaxis], xx[1].flatten(), dctr)
     D = B*C
     return D
-
-
-def make_raised_cosine_basis(BasisPrs,zflag=False):
-    ''' Make a basis of raised cosines with logarithmically stretched axis
-    INPUT:
-        BasisPrs [dict]
-            'nh' - number of basis vectors
-            'endpoints' - [t1, tend] absolute temporal position of center 1st and last cosine
-            'b' - offset for nonlinear stretching of x axis: y = log(x + b)
-            'dt' - bin size
-        zflag - flag that (if set to True) sets first basis vector to 1 for all tmie points prior to the first peak
-    
-    OUTPUT:
-        ttgrid [nx x 1] - x axis on which basis is defined
-        Basis_orth [nx x nh] - orthogonalized basis (each column is a basis vector)
-        Basis [nt x nh] - original cosine basis vectors
-        Bcented
-    '''
-    nh = BasisPrs['nh']
-    endpoints = BasisPrs['endpoints']
-    b = BasisPrs['b']
-    dt = BasisPrs['dt']
-
-    yendpoints = nlin(endpoints + b)
-    dctr = np.diff(yendpoints)/(nh-1)
-    ctrs = np.arange(yendpoints[0], yendpoints[1], dctr)
-    maxt = invnl(yendpoints[1]+2*dctr)-b
-    ttgrid = np.arange(0,maxt,dt)
-    nt = len(ttgrid)
-    ttgrid = ttgrid[:,np.newaxis]
-    B_ctrs = invnl(ctrs)
-    
-    # Basis = raised_cosine(x,c,dc)
-
-    return BasisPrs
-
 
 def binfun(x, start, bin_size):
     x = x - start
@@ -153,46 +231,6 @@ def bin_spike_times(spike_times, spike_ids, cids, bin_size, start_time, stop_tim
         y[iUnit, sinds] = 1
 
     return y
-
-def bin_stimulus_freq(frame_times, ori, spatfreq, bin_size, start_time, stop_time):
-    return frame_times
-
-def bin_stimulus_hartley(frame_times, kx, ky, bin_size, start_time, stop_time, mirror=False):
-    ''' bin hartley grating using frame_times, kx, ky, bin_size'''
-    ix = ~np.isnan(kx) & ~np.isnan(ky)
-    frame_times = frame_times[ix]
-    kx = kx[ix]
-    ky = ky[ix]
-
-    if mirror:
-        iix = ky < 0
-        kx[iix] = kx[iix] * -1
-        ky = np.abs(ky)
-
-    kxs = np.unique(kx)
-    kys = np.unique(ky)
-
-    nx = len(kxs)
-    ny = len(kys)
-
-    kxi = np.zeros(np.size(kx), dtype='int')
-    kyi = np.zeros(np.size(kx), dtype='int')
-
-    for ikx in range(nx):
-        ii = np.isclose(kx, kxs[ikx])
-        kxi[ii] = ikx
-
-    for iky in range(ny):
-        ii = np.isclose(ky, kys[iky])
-        kyi[ii] = iky
-
-    k_ind = kxi * ny + (1 + kyi)
-    k_ids = np.unique(k_ind)
-
-    X = bin_spike_times(frame_times, k_ind, k_ids, bin_size, start_time, stop_time)
-
-    return X
-
 
 def cross_correlation(y1, y2, max_lags):
     lags = list(range(-max_lags, max_lags))
@@ -289,6 +327,58 @@ def build_design_matrix(X, lags, startLag, transposeMat=0):
 			Xd[i*nx:((i+1)*nx),:] = X[:,(startLag-iLag):-(startLag+iLag)]
 
 	return Xd
+
+def plot_3dfilters(filters=None, dims=None, plot_power=False, basis=1):
+
+
+    dims = filters.shape[:3]
+    NK = filters.shape[-1]
+    ks = np.reshape((filters), [np.prod(dims), NK])
+
+    ncol = 8
+    nrow = np.ceil(2 * NK / ncol).astype(int)
+    
+    plt.figure(figsize=(10,10))
+    for nn in range(NK):
+        ktmp = np.reshape(ks[:, nn], [dims[0] * dims[1], dims[2]])
+        tpower = np.std(ktmp, axis=0)
+        bestlag = np.argmax(abs(tpower))
+        # Calculate temporal kernels based on max at best-lag
+        bestpospix = np.argmax(ktmp[:, bestlag])
+        bestnegpix = np.argmin(ktmp[:, bestlag])
+
+        if type(basis) is dict:
+            ksp = basis['B']@ktmp[:, bestlag]
+            bdim = [basis['nx'], basis['ny']]
+            ksp = np.reshape(ksp, bdim)
+        else:
+            ksp = np.reshape(ks[:, nn], dims)[:, :, bestlag]
+        
+        ax = plt.subplot(nrow, ncol, 2*nn+1)
+        plt.plot([0, len(tpower)-1], [0, 0], 'k')
+        if plot_power:
+            plt.plot(tpower, 'b')
+            plt.plot(tpower, 'b.')
+            plt.plot([bestlag, bestlag], [np.minimum(np.min(kt), 0)*1.1, np.max(kt)*1.1], 'r--')
+        else:
+            plt.plot(ktmp[bestpospix, :], 'b')
+            plt.plot(ktmp[bestpospix, :], 'b.')
+            plt.plot(ktmp[bestnegpix, :], 'r')
+            plt.plot(ktmp[bestnegpix, :], 'r.')
+            minplot = np.minimum(np.min(ktmp[bestnegpix, :]), np.min(ktmp[bestpospix, :]))
+            maxplot = np.maximum(np.max(ktmp[bestnegpix, :]), np.max(ktmp[bestpospix, :]))
+            plt.plot([bestlag, bestlag], [minplot*1.1, maxplot*1.1], 'k--')
+        plt.axis('tight')
+        plt.title('c' + str(nn))
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax = plt.subplot(nrow, ncol, 2*nn+2)
+        plt.imshow(ksp, cmap='gray_r', vmin=np.min((ks[:, nn])), vmax=np.max(abs(ks[:, nn])))
+        plt.title('lag=' + str(bestlag))
+        ax.set_xticks([])
+        ax.set_yticks([])
+    plt.show()
+# END plot_3dfilters
 
 def get_data_for_rf_mapping(data, bin_size=8, isMirror=True):
 	start_time = data['frame_times'][0]-.2
