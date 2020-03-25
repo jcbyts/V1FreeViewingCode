@@ -141,7 +141,7 @@ stim{2} = full(binTimesFast(Exp.slist(:,1)-sacoffset, frameTime, binsize));
 stim{3} = full(binTimesFast(Exp.slist(:,2), frameTime, binsize));
 
 
-t_downsample = Exp.S.frameRate / opts.fs_stim;
+t_downsample = ceil(Exp.S.frameRate / opts.fs_stim);
 if t_downsample > 1
     stim{1} = downsample_time(stim{1}, t_downsample) / t_downsample;
     stim{2} = downsample_time(stim{2}, t_downsample) / t_downsample;
