@@ -50,11 +50,12 @@ if ~isempty(processedDir)
         return
     end
 else 
-    if input('No spikes found. Do you want to do threshold spike sorting? (1 or 0)')
-        
-    else
+%     if input('No spikes found. Do you want to do threshold spike sorting? (1 or 0)')
+%         
+%     else
         error('import_spike_sorting: no spikes')
-    end
+        return
+%     end
 end
 
 % If no Kilosort, proceed with old code

@@ -31,12 +31,20 @@ PDS = io.getPds(sess);
 % collapse PTB2OE
 ns = numel(PDS);
 OEfit = zeros(2,ns);
-for i = 1:ns
-   f = functions(PDS{i}.PTB2OE);
-   OEfit(:,i) = f.workspace{1}.OE2PTBfit;
-end
+f = functions(PDS{1}.PTB2OE);
+% handle edge case
+if ~isempty(strfind(f.function, 'ppval')) % this session used a spline to align clocks because there was weird slippage
+    % all PDS files were combined. This *should* work
+    ptb2Ephys = PDS{1}.PTB2OE;
+else % proceed normally
+    for i = 1:ns
+        f = functions(PDS{i}.PTB2OE);
+        OEfit(:,i) = f.workspace{1}.OE2PTBfit;
+    end
 
-OE2PTBfit = mean(OEfit,2);
+    OE2PTBfit = mean(OEfit,2);
+    ptb2Ephys = @(x) (x-OE2PTBfit(2))/OE2PTBfit(1); % function handle does nothing (we will already conver times for PLDAPS import)
+end
 
 % get eye position data
 [eyeData, timestamps, ~] = io.getEyeData(sess);
@@ -46,6 +54,8 @@ OE2PTBfit = mean(OEfit,2);
 % convert PDS cell array to trial-by-trial struct array
 trial = io.getPdsTrialData(PDS);
 
+% correct the y-position
+eyeData(:,2) = -(eyeData(:,2)-trial(1).display.ctr(2));
 % make an Exp struct to mimic the marmoV5 output
 newExp = struct();
 
@@ -55,7 +65,7 @@ newExp.DataFolder = sess.path;
 % save spike times / clusters
 newExp.osp = osp;
 newExp.sp = sp;
-newExp.ptb2Ephys = @(x) (x-OE2PTBfit(2))/OE2PTBfit(1); % function handle does nothing (we will already conver times for PLDAPS import)
+newExp.ptb2Ephys = ptb2Ephys;
 
 % --- convert the S struct
 newExp.S.newera = PDS{1}.initialParametersMerged.newEraSyringePump.use;
@@ -88,7 +98,11 @@ newExp.S.pumpRate = PDS{1}.initialParametersMerged.newEraSyringePump.rate;
 try
     newExp.S.pumpDefVol = str2double(PDS{1}.initialParametersMerged.newEraSyringePump.initialVolumeGiven);
 catch
-    newExp.S.pumpDefVol = str2double(PDS{1}.initialParametersMerged.newEraSyringePump.vol);
+    try
+        newExp.S.pumpDefVol = str2double(PDS{1}.initialParametersMerged.newEraSyringePump.vol);
+    catch
+        newExp.S.pumpDefVol = str2double(PDS{1}.initialParametersMerged.newEraSyringePump.volume);
+    end
 end
 newExp.S.MarmoViewVersion = 'PLDAPS';
 newExp.S.finish = nan;
@@ -97,9 +111,17 @@ newExp.S.protocol = 'stimuli.forage.forage';
 % --- find relevant trials from pldaps
 if isfield(trial(1).pldaps, 'trialFunction')
     forageTrials = find(arrayfun(@(x) any(strfind(x.pldaps.trialFunction, 'forage')), trial, 'uni', 1));
+    forageField = 'stimulus';
 elseif isfield(trial, 'forage')
     forageTrials = find(arrayfun(@(x) x.forage.use, trial, 'uni', 1));
+    forageField = 'forage';
 end
+
+if isempty(forageTrials)
+   forageTrials = find(~arrayfun(@(x) isempty(x.faceforage), trial));
+   forageField = 'faceforage';
+end
+
 nTotalTrials = numel(forageTrials);
 
 newExp.D = cell(nTotalTrials,1);
@@ -213,7 +235,44 @@ for iTrial = 1:nTotalTrials
             
         case 'CSD'
             frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
-            on = trial(pldapsTrial).csdFlash.on;
+            if ~isfield(trial(pldapsTrial).csdFlash, 'on')
+                % stim reconstruction requires object. We will reconstruct
+                % it here
+                % make on using parameters
+                n = numel(frameTimes);
+                on = zeros(n,1);
+                frameAtChange = 1;
+                isOn=false;
+                
+                for iFrame = 1:n
+                    
+                    frameCtr = iFrame - frameAtChange; % frame counter since last change
+       
+                    % update the flash
+                    if isOn % if it's on
+            
+                        % is it time to turn off?
+                        if frameCtr > trial(pldapsTrial).csdFlash.onDuration
+                            % turn it off
+                            isOn = false;
+                            frameAtChange = iFrame;
+                        end
+                    else
+            
+                    % is it time to turn on?
+                    if frameCtr > trial(pldapsTrial).csdFlash.offDuration    
+                        % turn it off
+                        isOn = true;
+                        frameAtChange = iFrame;
+                    end
+                    
+                    end
+                    on(iFrame) = isOn;
+                end
+        
+            else
+                on = trial(pldapsTrial).csdFlash.on;
+            end
             n = numel(on);
             
             newExp.D{iTrial}.PR.noisetype = 3;
@@ -255,39 +314,18 @@ for iTrial = 1:nTotalTrials
     
     % --- track probe
     % save forage info foraging
+    frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
+    n = numel(frameTimes)-1;
+    x = trial(pldapsTrial).(forageField).x(1:n,1);
+    y = trial(pldapsTrial).(forageField).y(1:n,1);
     
-    
-    if isfield(trial(pldapsTrial), 'faceForage')
-        warning('Implement me')
-        keyboard
-    elseif isfield(trial(pldapsTrial), 'forage') && trial(pldapsTrial).forage.use
-        frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
-        n = numel(frameTimes)-1;
-        x = trial(pldapsTrial).forage.x(1:n,1);
-        y = trial(pldapsTrial).forage.y(1:n,1);
-        
-        newExp.D{iTrial}.PR.ProbeHistory = [x(:) y(:) ones(n,1) frameTimes(1:n)];
-        for i = 2:size(trial(pldapsTrial).forage.x,2)
-            x = trial(pldapsTrial).forage.x(1:n,i);
-            y = trial(pldapsTrial).forage.y(1:n,i);
-            newExp.D{iTrial}.PR.ProbeHistory = [newExp.D{iTrial}.PR.ProbeHistory x y ones(n,1)*i];
-        end
-    else
-        
-        % [x y id frameTime x y x y x y]
-        frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
-        n = numel(frameTimes)-1;
-        x = trial(pldapsTrial).stimulus.x(1:n,1);
-        y = trial(pldapsTrial).stimulus.y(1:n,1);
-        
-        newExp.D{iTrial}.PR.ProbeHistory = [x(:) y(:) ones(n,1) frameTimes(1:n)];
-        for i = 2:size(trial(pldapsTrial).stimulus.x,2)
-            x = trial(pldapsTrial).stimulus.x(1:n,i);
-            y = trial(pldapsTrial).stimulus.y(1:n,i);
-            newExp.D{iTrial}.PR.ProbeHistory = [newExp.D{iTrial}.PR.ProbeHistory x y ones(n,1)*i];
-        end
-        
+    newExp.D{iTrial}.PR.ProbeHistory = [x(:) y(:) ones(n,1) frameTimes(1:n)];
+    for i = 2:size(trial(pldapsTrial).(forageField).x,2)
+        x = trial(pldapsTrial).(forageField).x(1:n,i);
+        y = trial(pldapsTrial).(forageField).y(1:n,i);
+        newExp.D{iTrial}.PR.ProbeHistory = [newExp.D{iTrial}.PR.ProbeHistory x y ones(n,1)*i];
     end
+   
     
     % eyeData
     

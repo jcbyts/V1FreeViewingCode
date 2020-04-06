@@ -191,6 +191,9 @@ Robs = Robs(:,Exp.osp.cids);
 CN = size(Robs,2);
 
 opts.frameTimes = frameTimes;
+opts.xax = xax;
+opts.yax = yax;
+opts.dims = [numel(yax) numel(xax)];
 opts.xPosition = xPosition;
 opts.yPosition = yPosition;
 opts.eyePosAtFrame = eyePosAtFrame;

@@ -49,6 +49,19 @@ switch user
         setpref('FREEVIEWING', 'SERVER_DATA_DIR', 'Z:\Data\ForageMapping\')
         % processed data:
         setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
+    
+    case 'gravedigger'
+        
+        marmoViewPath = 'C:\Users\Jake\Documents\MarmoV5';
+        % we only need marmopipe to import raw data
+        marmoPipePath = 'C:\Users\Jake\Dropbox\Marmo Lab Website\PSA\Code';
+        % where the data live
+        dataPath = 'C:\Users\Jake\Documents\FreeViewingData';
+        
+        % processed data:
+        setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
+        setpref('FREEVIEWING', 'SERVER_DATA_DIR', 'Z:\Data')
+        
         
     case 'dansigur'
         marmoViewPath = '~/Marmo/MarmoV5/';

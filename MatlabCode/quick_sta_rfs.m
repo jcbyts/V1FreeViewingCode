@@ -287,9 +287,9 @@ if nargout > 1
         srf(1) = .1;
         
         regions = regionprops(logical(srf > .5));
-        if numel(regions)==1
+        if numel(regions)>0
             sI = sI + srf;
-            validrfs(c) = regions;
+            validrfs(c) = regions(1);
             c = c+1;
         end
     end
