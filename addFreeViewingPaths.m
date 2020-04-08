@@ -1,6 +1,7 @@
 function varargout = addFreeViewingPaths(user)
 % set paths for FREEVIEWING projects
 % this assumes you are running from the FREEVIEWING folder
+% test git
 if nargin < 1
     error('addFreeViewingPaths: requires a user argument')
 end
