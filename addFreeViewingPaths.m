@@ -69,6 +69,18 @@ switch user
         marmoPipePath = [];
         dataPath = '~/Marmo/Data';
         
+    case 'gabelaptop'
+        
+        marmoViewPath = [];
+        % we only need marmopipe to import raw data
+        marmoPipePath = [];
+        % where the data live
+        dataPath = 'C:\Users\Gabe\Documents\MitchellLab\FreeViewingData';
+        
+        % processed data:
+        setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
+        %setpref('FREEVIEWING', 'SERVER_DATA_DIR', 'Z:\Data')
+        
     otherwise
         error('addFreeViewingPaths: I don''t know this user')
 end
@@ -81,10 +93,12 @@ if ~isempty(marmoPipePath)
     addMarmoPipe
 end
 
-addpath(marmoViewPath)
-addpath(fullfile(marmoViewPath, 'SupportFunctions'))
-addpath(fullfile(marmoViewPath, 'SupportData'))
-addpath(fullfile(marmoViewPath, 'Settings'))
+if ~isempty(marmoViewPath)
+    addpath(marmoViewPath)
+    addpath(fullfile(marmoViewPath, 'SupportFunctions'))
+    addpath(fullfile(marmoViewPath, 'SupportData'))
+    addpath(fullfile(marmoViewPath, 'Settings'))
+end
 
 if nargout == 1
     varargout{1} = dataPath;
