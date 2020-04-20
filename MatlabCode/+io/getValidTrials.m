@@ -40,6 +40,16 @@ switch stimulusSet
 
         validTrials = validTrials(cellfun(@(x) x.PR.noisetype==4, Exp.D(validTrials)));
         
+    case {'BigDots'}
+        % Forage trials
+        validTrials = intersect(find(strcmp(trialProtocols, 'ForageProceduralNoise')), ephysTrials);
+
+        % dot spatial noise trials
+        validTrials = validTrials(cellfun(@(x) x.PR.noisetype==5, Exp.D(validTrials)));
+
+        dotSize = cellfun(@(x) x.P.dotSize, Exp.D(validTrials));
+        validTrials = validTrials(dotSize==max(dotSize));
+        
     case {'Dots'}
         % Forage trials
         validTrials = intersect(find(strcmp(trialProtocols, 'ForageProceduralNoise')), ephysTrials);
@@ -80,7 +90,8 @@ switch stimulusSet
         % use all valid conditions (BackImage or
         validTrials = find(strcmp(trialProtocols, 'BackImage') | strcmp(trialProtocols, 'ForageProceduralNoise'));
         validTrials = intersect(validTrials, ephysTrials);
-        
+    case {'Ephys'}
+        validTrials = find(cellfun(@(x) ~isnan(x.START_EPHYS) | ~isnan(x.END_EPHYS), Exp.D));
     otherwise
         % use all valid conditions (BackImage or
         validTrials = find(strcmp(trialProtocols, stimulusSet));

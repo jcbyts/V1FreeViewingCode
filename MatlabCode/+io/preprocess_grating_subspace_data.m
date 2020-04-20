@@ -63,7 +63,7 @@ if ~any(frozenTrials)
     frozen_seq_starts = [];
     frozen_seq_dur = 0;
 else
-    frozen_seq_dur = arrayfun(@(x) x.PR.frozenSequenceLength, Exp.D(validTrials(frozenTrials)));
+    frozen_seq_dur = cellfun(@(x) x.PR.frozenSequenceLength, Exp.D(validTrials(frozenTrials)));
     frozen_seq_dur = min(frozen_seq_dur);
     frozen_seq_starts = [];
     for iTrial = find(frozenTrials(:))'
@@ -107,7 +107,7 @@ cpds(1) = [];
 opts.frozen_seq_starts = frozen_seq_starts(:);
 opts.frozen_seq_dur = frozen_seq_dur;
 if ~isempty(opts.frozen_seq_starts)
-    opts.frozen_repeats = frame_binned(bsxfun(@plus, frozen_seq_starts(:), 0:frozen_seq_dur));
+    opts.frozen_repeats = (bsxfun(@plus, frozen_seq_starts(:), 0:frozen_seq_dur));
 
     % --- cleanup frozen trials (remove any that are wrong)
     % [sequence, ~, ic] = unique(kx(opts.frozen_repeats), 'rows', 'sorted');

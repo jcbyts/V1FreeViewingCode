@@ -29,174 +29,124 @@ ip = inputParser();
 ip.addParameter('ROI', [-500 -500 500 500]);
 ip.addParameter('binSize', ceil(Exp.S.pixPerDeg))
 ip.addParameter('debug', false)
-ip.addParameter('spikeBinSize', 1/Exp.S.frameRate)
+ip.addParameter('spikeBinSize', 3/Exp.S.frameRate)
 ip.addParameter('latency', 0)
 ip.addParameter('eyePosExclusion', 400)
-ip.addParameter('nTimeLags', ceil(Exp.S.frameRate*.1));
 ip.addParameter('verbose', true)
 ip.parse(varargin{:});
 
 verbose = ip.Results.verbose;
 
 % --- find valid trials
-validTrials = io.getValidTrials(Exp, 'Dots');
-dotSize = cellfun(@(x) x.P.dotSize, Exp.D(validTrials));
-validTrials = validTrials(dotSize==max(dotSize));
-
+validTrials = intersect(io.getValidTrials(Exp, 'BigDots'), io.getValidTrials(Exp, 'Ephys'));
 numValidTrials = numel(validTrials);
+if numValidTrials==0 % exit
+    stimX = [];
+    Robs = [];
+    opts.frameTimes = nan;
+    opts.xax = nan;
+    opts.yax = nan;
+    opts.dims = nan;
+    opts.xPosition = nan;
+    opts.yPosition = nan;
+    opts.eyePosAtFrame = nan; % flip Y ahead of time
+    opts.validFrames = nan;
+    opts.numDots = nan;
+    return
+end
+
 if verbose
     fprintf('Found %d valid trials\n', numValidTrials)
 end
-
-% -------------------------------------------------------------------------
-% Loop over trials and bin up stimulus after offsetting the eye position
 
 debug   = ip.Results.debug;
 ROI     = ip.Results.ROI;
 binSize = ip.Results.binSize;
 spikeBinSize = ip.Results.spikeBinSize;
-nlags = ip.Results.nTimeLags;
 
+
+% Eye calibration
+cx = mode(cellfun(@(x) x.c(1), Exp.D(validTrials)));
+cy = mode(cellfun(@(x) x.c(2), Exp.D(validTrials)));
+dx = mode(cellfun(@(x) x.dx, Exp.D(validTrials)));
+dy = mode(cellfun(@(x) x.dy, Exp.D(validTrials)));
+
+
+% Extract trial-specific values
+frameTimes = cellfun(@(x) x.PR.NoiseHistory(:,1), Exp.D(validTrials(:)), 'uni', 0);
+
+xpos = cellfun(@(x) x.PR.NoiseHistory(:,1+(1:x.PR.noiseNum)), Exp.D(validTrials(:)), 'uni', 0);
+ypos = cellfun(@(x) x.PR.NoiseHistory(:,x.PR.noiseNum+1+(1:x.PR.noiseNum)), Exp.D(validTrials(:)), 'uni', 0);
+
+% check if two conditions were run a
+nd = cellfun(@(x) size(x,2), xpos);
+xpos = cell2mat(xpos(nd == max(nd)));
+ypos = cell2mat(ypos(nd == max(nd)));
+frameTimes = Exp.ptb2Ephys(cell2mat(frameTimes(nd==max(nd))));
+frameTimes = frameTimes + ip.Results.latency;
+
+% bin spikes
+Robs = binNeuronSpikeTimesFast(Exp.osp, frameTimes, spikeBinSize);
+Robs = Robs(:,Exp.osp.cids);
+NX = size(xpos,2);
+
+% convert to d.v.a.
+eyeDat = unique(Exp.vpx.raw(:,1:3), 'rows');
+eyeDat(:,2) = (eyeDat(:,2) - cx)/(dx * Exp.S.pixPerDeg);
+eyeDat(:,3) = 1 - eyeDat(:,3);
+eyeDat(:,3) = (eyeDat(:,3) - cy)/(dy * Exp.S.pixPerDeg);
+% convert to pixels
+eyeDat(:,2:3) = eyeDat(:,2:3)*Exp.S.pixPerDeg;
+
+% convert time to ephys units
+eyeDat(:,1) = Exp.vpx2ephys(eyeDat(:,1));
+% find index into frames
+[~, ~,id] = histcounts(frameTimes, eyeDat(:,1));
+eyeAtFrame = eyeDat(id,2:3);
+    
+if debug
+    figure(1); clf
+    subplot(1,2,1)
+    plot(eyeAtFrame(:,1), eyeAtFrame(:,2), '.')
+    subplot(1,2,2)
+    plot(xpos, ypos, '.')
+    
+    figure(2); clf
+    plot(eyeDat(:,1), eyeDat(:,2), '-o', 'MarkerSize', 2); hold on
+    plot(frameTimes, xpos(:,1), '.')
+    drawnow
+end
+
+xPosition = xpos - eyeAtFrame(:,1);
+yPosition = -ypos + eyeAtFrame(:,2);
+
+valid = hypot(eyeAtFrame(:,1), eyeAtFrame(:,2)) < ip.Results.eyePosExclusion;
+
+% build spatial grid
 xax = ROI(1):binSize:ROI(3);
 yax = ROI(2):binSize:ROI(4);
 
 [xx,yy] = meshgrid(xax, yax);
 
-dims = size(xx);
-nDims = prod(dims);
-
-frameTimes = cell2mat(cellfun(@(x) Exp.ptb2Ephys(x.PR.NoiseHistory(:,1)), Exp.D(validTrials), 'uni', 0));
-
-frameTimes = frameTimes + ip.Results.latency;
-
-% convert eye tracker to ephys time
-eyeTimes = Exp.vpx2ephys(Exp.vpx.smo(:,1));
-    
-    
-framesPerTrial = [0; cumsum(cellfun(@(x) numel(x.PR.NoiseHistory(:,1)), Exp.D(validTrials)))];
-numFrames = numel(frameTimes);
-
-stimX = zeros(numFrames, nDims);
-validFrames = false(numFrames, 1);
-
-numDots = cellfun(@(x) size(x.PR.NoiseHistory,2), Exp.D(validTrials));
-numDots = (unique(numDots)-1)/2;
-assert(numel(numDots)==1, 'preprocess_spatialmapping_data: multiple numbers of dots. this is currently unsupported.')
-% Note: to support multiple numbers of dots, initialize by Nans and index in on each trial by the number of dots. doable, but I'm not implementing it now. -- Jake
-
-% save out the x and y position for each frame
-xPosition = zeros(numFrames,numDots);
-yPosition = zeros(numFrames,numDots);
-eyePosAtFrame = zeros(numFrames, 2);
-
+% bin stimulus on grid
+dims = [numel(yax) numel(xax)];
+stimX = zeros(sum(valid), prod(dims));
 if verbose
-    fprintf('Binning stimulus around the eye position\n')
-end
-
-% Note: this is written as a slow for-loop to be extra clear what is going on.
-% It could be massively optimized, but not going to do that unless it's necessary. This
-% function should only be called once per dataset.
-for iTrial = 1:numValidTrials
-    
-    currFrame = framesPerTrial(iTrial);
-    if verbose
-        fprintf('Processing %d/%d Trials\n', iTrial, numValidTrials);
+    disp('Binning stimulus on grid')
+    for i = 1:NX
+        stimX = stimX + double(hypot(xPosition(valid,i) - xx(:)', yPosition(valid,i) - yy(:)') < binSize);
     end
-    
-    thisTrial = validTrials(iTrial);
-    
-    NoiseHistory = Exp.D{thisTrial}.PR.NoiseHistory;
-    
-    numDots = Exp.D{thisTrial}.PR.noiseNum;
-    nFramesTrial = size(NoiseHistory,1);
-    
-    for iFrame = 1:nFramesTrial
-        
-        eyeIx = find(eyeTimes >= frameTimes(iFrame + currFrame), 1);
-        
-        if isempty(eyeIx)
-            if verbose==2
-                fprintf('No valid eye position on frame %d\n', iFrame + currFrame)
-            end
-            validFrames(iFrame + currFrame)= false;
-            continue
-        end
-        
-        % eye position in pixels
-        eyeX = Exp.vpx.smo(eyeIx,2) * Exp.S.pixPerDeg;
-        eyeY = Exp.vpx.smo(eyeIx,3) * Exp.S.pixPerDeg;
-        
-        % exclude eye positions that are off the screen
-        eyePosEcc = hypot(eyeX, eyeY);
-        if eyePosEcc > ip.Results.eyePosExclusion
-            if verbose==2
-                fprintf('Eye position outside window on Frame %d %02.2f\n', iFrame + currFrame, eyePosEcc)
-            end
-            validFrames(iFrame + currFrame)= false;
-            continue
-        end
-        
-        % offset for center of the screen
-        eyeX = Exp.S.centerPix(1) + eyeX;
-        eyeY = Exp.S.centerPix(2) - eyeY;
-        
-        
-        % center ROI on eye position
-        xtmp = xx(:) + eyeX;
-        ytmp = yy(:) + eyeY;
-        
-        xdots = NoiseHistory(iFrame,1 + (1:numDots)) + Exp.S.centerPix(1); %/Exp.S.pixPerDeg;
-        ydots = -NoiseHistory(iFrame,1 + numDots + (1:numDots)) + Exp.S.centerPix(2); %/Exp.S.pixPerDeg;
-        
-        I = double(sum(hypot(xdots-xtmp , ydots-ytmp) <= binSize/1.5,2)>0);
-        
-        if debug
-            hNoise.afterFrame();
-            
-            seedGood(iFrame) = all([hNoise.x hNoise.y] == NoiseHistory(iFrame,2:end));
-            I2 = hNoise.getImage();
-            
-            figure(1); clf
-            subplot(1,2,1)
-            imagesc(I2); hold on
-            plot(xdots, ydots, 'or')
-            plot(xtmp, ytmp, 'g.')
-            
-            subplot(1,2,2)
-            imagesc(reshape(I, dims));
-            
-            pause
-        end
-        
-        stimX(iFrame + currFrame, :) = I(:);
-        validFrames(iFrame + currFrame) = true;
-        xPosition(iFrame + currFrame,:) = xdots(:);
-        yPosition(iFrame + currFrame,:) = ydots(:);
-        eyePosAtFrame(iFrame + currFrame,:) = [eyeX eyeY];
-
-    end
-
+    disp('Done')
 end
 
-% -------------------------------------------------------------------------
-% --- Bin Spike Times
-if verbose
-    fprintf('Binning spikes at frame rate\n')
-end
-% This is the fastest possible way to bin in matlab
-
-Robs = binNeuronSpikeTimesFast(Exp.osp, frameTimes, spikeBinSize);
-Robs = Robs(:,Exp.osp.cids);
-
-CN = size(Robs,2);
+Robs = Robs(valid,:);
 
 opts.frameTimes = frameTimes;
 opts.xax = xax;
 opts.yax = yax;
-opts.dims = [numel(yax) numel(xax)];
-opts.xPosition = xPosition;
-opts.yPosition = yPosition;
-opts.eyePosAtFrame = eyePosAtFrame;
-opts.validFrames = validFrames;
-opts.numDots = numDots;
-opts.dotSize = max(dotSize);
+opts.dims = dims;
+opts.xPosition = xpos;
+opts.yPosition = -ypos;
+opts.eyePosAtFrame = eyeAtFrame.*[1 -1]; % flip Y ahead of time
+opts.validFrames = valid;
+opts.numDots = size(xpos,2);

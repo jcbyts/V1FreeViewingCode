@@ -55,7 +55,8 @@ end
 trial = io.getPdsTrialData(PDS);
 
 % correct the y-position
-eyeData(:,2) = -(eyeData(:,2)-trial(1).display.ctr(2));
+eyeData(:,2) = (eyeData(:,2)-trial(1).display.ctr(2));
+
 % make an Exp struct to mimic the marmoV5 output
 newExp = struct();
 
