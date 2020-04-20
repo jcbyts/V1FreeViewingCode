@@ -58,6 +58,8 @@ else
 %     end
 end
 
+error('import_spike_sorting: no spikes')
+return
 % If no Kilosort, proceed with old code
 % **** based on what you set, it runs spike sorting (eventually KiloSort)
 % search data directory for sorted spike files, and use those if available

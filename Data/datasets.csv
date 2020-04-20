@@ -55,6 +55,6 @@ Date,Subject,RootDirectory,Directory,Tag,StimulusSuite,Weight,Chamber,Rig,Electr
 02-Mar-0020,Logan,ForageMapping,Logan_2020-03-02_11-35-21_neuronexus_D6 - REDO LFP,logan_20200302,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,59,NeuroNexus,importFreeViewing,DDPIv1,8,0
 03-Mar-0020,Logan,ForageMapping,Logan_2020-03-03_11-43-26_neuronexus_D7 - REDO LFP,logan_20200303,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,NaN,64,74,NeuroNexus,importFreeViewing,DDPIv1,13,0
 04-Mar-0020,Logan,ForageMapping,Logan_2020-03-04_09-51-54_neuronexus_D8 - REDO LFP,logan_20200304,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,69,NeuroNexus,importFreeViewing,DDPIv1,13,0
-06-Mar-0020,Logan,ForageMapping,Logan_2020-03-06_11-21-37_neuronexus_D9,logan_20200306,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,NaN,NaN,NeuroNexus,importFreeViewing,DDPIv1,0,0
+06-Mar-0020,Logan,ForageMapping,Logan_2020-03-06_11-21-37_neuronexus_D9,logan_20200306,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,91,NeuroNexus,importFreeViewing,DDPIv1,25,0
 02-Oct-0019,m1898,MonashShare/IN,m1898_2019-10-02,m1898_20191002,Neurostim,NaN,"V1",Vpixx,ModBio1,1,1,"",Kilo2,1,NaN,NaN,ModularBionics,importFreeViewingCnuahs,Arrington,0,0
 02-Oct-0019,m1898,MonashShare/IN,m1898_2019-11-01,m1898_20191101,Neurostim,NaN,"V1",Vpixx,ModBio1,1,1,"",Kilo2,1,NaN,NaN,ModularBionics,importFreeViewingCnuahs,Arrington,0,0
