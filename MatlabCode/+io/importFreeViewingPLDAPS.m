@@ -118,10 +118,21 @@ elseif isfield(trial, 'forage')
     forageField = 'forage';
 end
 
-if isempty(forageTrials)
-   forageTrials = find(~arrayfun(@(x) isempty(x.faceforage), trial));
+if isfield(trial(1).pldaps, 'faceforage') % isempty(forageTrials)
+   forageTrials = intersect(forageTrials, find(~arrayfun(@(x) isempty(x.faceforage), trial)));
    forageField = 'faceforage';
 end
+
+hartleyTrials = find(arrayfun(@(x) ~isempty(x.hartley), trial));
+hartleyTrials = hartleyTrials(arrayfun(@(x) x.hartley.use, trial(hartleyTrials)));
+
+forageTrials = union(hartleyTrials, forageTrials);
+
+% if isfield(trial, 'gaussianNoiseBlobs')
+%     gaussPyrTrial = find(arrayfun(@(x) ~isempty(x.gaussianNoiseBlobs), trial));
+%     gaussPyrTrial = gaussPyrTrial(arrayfun(@(x) x.gaussianNoiseBlobs.use, trial(gaussPyrTrial)));
+%     forageTrials = union(gaussPyrTrial, forageTrials);
+% end
 
 nTotalTrials = numel(forageTrials);
 
@@ -317,14 +328,19 @@ for iTrial = 1:nTotalTrials
     % save forage info foraging
     frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
     n = numel(frameTimes)-1;
-    x = trial(pldapsTrial).(forageField).x(1:n,1);
-    y = trial(pldapsTrial).(forageField).y(1:n,1);
+    if isfield(trial(pldapsTrial).(forageField), 'x')
+        x = trial(pldapsTrial).(forageField).x(1:n,1);
+        y = trial(pldapsTrial).(forageField).y(1:n,1);
     
-    newExp.D{iTrial}.PR.ProbeHistory = [x(:) y(:) ones(n,1) frameTimes(1:n)];
-    for i = 2:size(trial(pldapsTrial).(forageField).x,2)
-        x = trial(pldapsTrial).(forageField).x(1:n,i);
-        y = trial(pldapsTrial).(forageField).y(1:n,i);
-        newExp.D{iTrial}.PR.ProbeHistory = [newExp.D{iTrial}.PR.ProbeHistory x y ones(n,1)*i];
+        newExp.D{iTrial}.PR.ProbeHistory = [x(:) y(:) ones(n,1) frameTimes(1:n)];
+    
+        for i = 2:size(trial(pldapsTrial).(forageField).x,2)
+            x = trial(pldapsTrial).(forageField).x(1:n,i);
+            y = trial(pldapsTrial).(forageField).y(1:n,i);
+            newExp.D{iTrial}.PR.ProbeHistory = [newExp.D{iTrial}.PR.ProbeHistory x y ones(n,1)*i];
+        end
+    else
+         newExp.D{iTrial}.PR.ProbeHistory = [nan(n,1) nan(n,1) ones(n,1) frameTimes(1:n)];
     end
    
     
