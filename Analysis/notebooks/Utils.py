@@ -7,23 +7,85 @@ def get_subplot_dims(NC):
     sy = np.round(np.sqrt(NC)).astype(int)
     return sx,sy
 
+def downsample_time(x, ds):
+    
+    NTold = x.shape[0]
+    dims = x.shape[1]
+    
+    flipped = 0
+    if dims > NTold:
+	    # then assume flipped
+	    flipped = 1
+	    x = x.T
+    
+    NTnew = np.floor(NTold/ds).astype(int)
+    y = np.zeros((NTnew, dims))
+    for nn in range(ds-1):
+        y = y + x[nn + np.arange(0, NTnew, 1)*ds,:]
+    
+    if flipped==1:
+        y = y.T
+        
+    return y
+
 def resample_time(data, torig, tout):
     ''' resample data at times torig at times tout '''
     ''' data is components x time '''
     ''' credit to Carsen Stringer '''
     fs = torig.size / tout.size # relative sampling rate
     data = gaussian_filter1d(data, np.ceil(fs/4), axis=1)
-    f = interp1d(torig, data, kind='linear', axis=-1, fill_value='extrapolate')
+    f = interp1d(torig, data, kind='linear', axis=0, fill_value='extrapolate')
     dout = f(tout)
     return dout
 
-def bin_at_frames(times, btimes, maxbsize=10):
+def bin_at_frames(times, btimes, maxbsize=np.inf, padding=0):
     ''' bin time points (times) at btimes'''
-    cnt,_ = np.histogram(times, bins=btimes)
-    NT = len(btimes)
-    out = np.zeros([NT,1], dtype='float32')
-    ix = np.where(np.diff(btimes)<maxbsize)
-    out[ix,0]=cnt[ix]
+    breaks = np.where(np.diff(btimes)>maxbsize)[0]
+    
+    # add extra bin edge
+    btimes = np.append(btimes, btimes[-1]+.1)
+
+    out,_ = np.histogram(times, bins=btimes)
+    out = out.astype('float32')
+
+    if padding > 0:
+        out2 = out[range(breaks[0])]
+        dt = np.median(np.diff(btimes))
+        pad = np.arange(1,padding+1, 1)*dt
+        for i in range(1,len(breaks)):
+            tmp,_ = np.histogram(times, pad+btimes[breaks[i]])
+            out2.append(tmp)
+            out2.append(out[range(breaks[i-1]+1, breaks[i])])            
+    else:
+        out[breaks] = 0.0
+    
     return out
+
+def r_squared(true, pred, data_indxs=None):
+    """
+    START.
+
+    :param true: vector containing true values
+    :param pred: vector containing predicted (modeled) values
+    :param data_indxs: obv.
+    :return: R^2
+
+    It is assumed that vectors are organized in columns
+
+    END.
+    """
+
+    assert true.shape == pred.shape, 'true and prediction vectors should have the same shape'
+
+    if data_indxs is None:
+        dim = true.shape[0]
+        data_indxs = np.arange(dim)
+    else:
+        dim = len(data_indxs)
+
+    ss_res = np.sum(np.square(true[data_indxs, :] - pred[data_indxs, :]), axis=0) / dim
+    ss_tot = np.var(true[data_indxs, :], axis=0)
+
+    return 1 - ss_res/ss_tot
 
 
