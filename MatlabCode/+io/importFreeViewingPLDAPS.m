@@ -372,8 +372,8 @@ new_EyeX = interp1(timestamps, eyeData(1,:), new_timestamps);
 new_EyeY = interp1(timestamps, eyeData(2,:), new_timestamps);
 new_Pupil = interp1(timestamps, eyeData(3,:), new_timestamps);
 
-vpx.raw = [timestamps(:) eyeData'];
-vpx.raw2 = [new_timestamps(:) new_EyeX(:) new_EyeY(:) new_Pupil(:)];
+vpx.raw0 = [timestamps(:) eyeData'];
+vpx.raw = [new_timestamps(:) new_EyeX(:) new_EyeY(:) new_Pupil(:)];
 vpx.smo = vpx.raw;
 
 vpx.smo(:,2) = medfilt1(vpx.smo(:,2),MEDFILT);
