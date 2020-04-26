@@ -401,6 +401,6 @@ end
 
 % Saccade processing:
 % Perform basic processing of eye movements and saccades
-Exp = saccadeflag.run_saccade_detection(Exp, 'ShowTrials', false);
+Exp = saccadeflag.run_saccade_detection_cloherty(Exp, 'ShowTrials', false);
 
 disp('Done importing session');

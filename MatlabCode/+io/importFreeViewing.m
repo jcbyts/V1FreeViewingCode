@@ -28,9 +28,21 @@ Exp.osp = osp; % keep the original Kilosort spike format
 % Import eye position signals
 Exp = io.import_eye_position(Exp, DataFolder);
 
+% clean up and resample
+Exp.vpx.raw0 = Exp.vpx.raw;
+Exp.vpx.raw = unique(Exp.vpx.raw, 'rows');
+
+% upsample eye traces to 1kHz
+new_timestamps = Exp.vpx.raw(1,1):1e-3:Exp.vpx.raw(end,1);
+new_EyeX = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,2), new_timestamps);
+new_EyeY = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,3), new_timestamps);
+new_Pupil = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,4), new_timestamps);
+
+Exp.vpx.raw = [new_timestamps new_EyeX new_EyeY new_Pupil];
+
 % Saccade processing:
 % Perform basic processing of eye movements and saccades
-Exp = saccadeflag.run_saccade_detection(Exp, 'ShowTrials', false);
+Exp = saccadeflag.run_saccade_detection_cloherty(Exp, 'ShowTrials', false);
 
 validTrials = io.getValidTrials(Exp, 'Grating');
 for iTrial = validTrials(:)'
