@@ -32,6 +32,7 @@ end
 % eye position
 eyepos = Exp.vpx.smo(:,1:3);
 eyepos(:,1) = Exp.vpx2ephys(eyepos(:,1));
+eyepos = [eyepos Exp.vpx.Labels];
 
 % output path
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
