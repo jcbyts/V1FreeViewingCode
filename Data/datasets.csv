@@ -35,13 +35,13 @@ Date,Subject,RootDirectory,Directory,Tag,StimulusSuite,Weight,Chamber,Rig,Electr
 04-Dec-0019,Logan,ForageMapping,Logan_2019-12-04_10-32-29_NeuronexusD8,logan_20191204,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,22,NeuroNexus,importFreeViewing,DDPIv1,5,1
 05-Dec-0019,Logan,ForageMapping,Logan_2019-12-05_10-35-13_NeuronexusD9,logan_20191205,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,41,NeuroNexus,importFreeViewing,DDPIv1,6,1
 06-Dec-0019,Logan,ForageMapping,Logan_2019-12-06_11-41-05_NeuronexusD10,logan_20191206,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,45,NeuroNexus,importFreeViewing,DDPIv1,3,1
-09-Dec-0019,Logan,ForageMapping,Logan_2019-12-09_10-38-50_NeuronexusD11,logan_20191209,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,NaN,NaN,NaN,NeuroNexus,importFreeViewing,DDPIv1,0,0
-10-Dec-0019,Logan,ForageMapping,Logan_2019-12-10_10-43-23_NeuronexusD12,logan_20191210,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,NaN,NaN,NeuroNexus,importFreeViewing,DDPIv1,0,0
-20-Dec-0019,Logan,ForageMapping,Logan_2019-12-20_10-25-55_NeuronexusD13,logan_20191220,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,NaN,NaN,NeuroNexus,importFreeViewing,DDPIv1,0,0
-23-Dec-0019,Logan,ForageMapping,Logan_2019-12-23_10-31-20_NeuronexusD14,logan_20191223,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,NaN,NaN,NeuroNexus,importFreeViewing,DDPIv1,0,0
-24-Dec-0019,Logan,ForageMapping,Logan_2019-12-24_10-31-20_NeuronexusD15,logan_20191224,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,NaN,NaN,NeuroNexus,importFreeViewing,DDPIv1,0,0
+09-Dec-0019,Logan,ForageMapping,Logan_2019-12-09_10-38-50_NeuronexusD11,logan_20191209,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,NaN,64,76,NeuroNexus,importFreeViewing,DDPIv1,6,0
+10-Dec-0019,Logan,ForageMapping,Logan_2019-12-10_10-43-23_NeuronexusD12,logan_20191210,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,104,NeuroNexus,importFreeViewing,DDPIv1,10,0
+20-Dec-0019,Logan,ForageMapping,Logan_2019-12-20_10-25-55_NeuronexusD13,logan_20191220,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,59,NeuroNexus,importFreeViewing,DDPIv1,7,0
+23-Dec-0019,Logan,ForageMapping,Logan_2019-12-23_10-31-20_NeuronexusD14,logan_20191223,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,29,NeuroNexus,importFreeViewing,DDPIv1,6,0
+24-Dec-0019,Logan,ForageMapping,Logan_2019-12-24_10-31-20_NeuronexusD15,logan_20191224,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,84,NeuroNexus,importFreeViewing,DDPIv1,11,0
 26-Dec-0019,Logan,ForageMapping,Logan_2019-12-26_10-29-07_NeuronexusD16,logan_20191226,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,40,NeuroNexus,importFreeViewing,DDPIv1,12,1
-27-Dec-0019,Logan,ForageMapping,Logan_2019-12-27_10-29-07_NeuronexusD17,logan_20191227,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,NaN,NaN,NeuroNexus,importFreeViewing,DDPIv1,0,0
+27-Dec-0019,Logan,ForageMapping,Logan_2019-12-27_10-29-07_NeuronexusD17,logan_20191227,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,71,NeuroNexus,importFreeViewing,DDPIv1,4,0
 30-Dec-0019,Logan,ForageMapping,Logan_2019-12-30_10-29-07_NeuronexusD18,logan_20191230,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,100,NeuroNexus,importFreeViewing,DDPIv1,19,1
 31-Dec-0019,Logan,ForageMapping,Logan_2019-12-31_10-29-07_NeuronexusD19,logan_20191231,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,61,NeuroNexus,importFreeViewing,DDPIv1,6,1
 06-Jan-0020,Logan,ForageMapping,Logan_2020-01-06_10-52-49_neuronexusD22,logan_20200106,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,64,NeuroNexus,importFreeViewing,DDPIv1,5,1
@@ -51,10 +51,10 @@ Date,Subject,RootDirectory,Directory,Tag,StimulusSuite,Weight,Chamber,Rig,Electr
 15-Jan-0020,Logan,ForageMapping,Logan_2020-01-15_10-29-07_NeuronexusD20,logan_20200115,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,42,NeuroNexus,importFreeViewing,DDPIv1,6,1
 26-Feb-0020,Logan,ForageMapping,Logan_2020-02-26_10-48-35_Neuronexus_D3,logan_20200226,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,55,NeuroNexus,importFreeViewing,DDPIv1,7,1
 28-Feb-0020,Logan,ForageMapping,Logan_2020-02-28_12-17-02_neuronexus_D4,logan_20200228,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,39,NeuroNexus,importFreeViewing,DDPIv1,9,1
-29-Feb-0020,Logan,ForageMapping,Logan_2020-02-29_09-53-57_neuronexus_D5 - REDO LFP,logan_20200229,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,0,64,36,NeuroNexus,importFreeViewing,DDPIv1,6,1
-02-Mar-0020,Logan,ForageMapping,Logan_2020-03-02_11-35-21_neuronexus_D6 - REDO LFP,logan_20200302,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,59,NeuroNexus,importFreeViewing,DDPIv1,8,1
-03-Mar-0020,Logan,ForageMapping,Logan_2020-03-03_11-43-26_neuronexus_D7 - REDO LFP,logan_20200303,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,NaN,64,74,NeuroNexus,importFreeViewing,DDPIv1,13,1
-04-Mar-0020,Logan,ForageMapping,Logan_2020-03-04_09-51-54_neuronexus_D8 - REDO LFP,logan_20200304,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,69,NeuroNexus,importFreeViewing,DDPIv1,13,1
-06-Mar-0020,Logan,ForageMapping,Logan_2020-03-06_11-21-37_neuronexus_D9,logan_20200306,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,NaN,NaN,NeuroNexus,importFreeViewing,DDPIv1,0,0
+29-Feb-0020,Logan,ForageMapping,Logan_2020-02-29_09-53-57_neuronexus_D5,logan_20200229,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,0,64,36,NeuroNexus,importFreeViewing,DDPIv1,6,1
+02-Mar-0020,Logan,ForageMapping,Logan_2020-03-02_11-35-21_neuronexus_D6,logan_20200302,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,59,NeuroNexus,importFreeViewing,DDPIv1,8,1
+03-Mar-0020,Logan,ForageMapping,Logan_2020-03-03_11-43-26_neuronexus_D7,logan_20200303,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,NaN,64,74,NeuroNexus,importFreeViewing,DDPIv1,13,1
+04-Mar-0020,Logan,ForageMapping,Logan_2020-03-04_09-51-54_neuronexus_D8,logan_20200304,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,69,NeuroNexus,importFreeViewing,DDPIv1,13,1
+06-Mar-0020,Logan,ForageMapping,Logan_2020-03-06_11-21-37_neuronexus_D9,logan_20200306,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,91,NeuroNexus,importFreeViewing,DDPIv1,25,0
 02-Oct-0019,m1898,MonashShare/IN,m1898_2019-10-02,m1898_20191002,Neurostim,NaN,"V1",Vpixx,ModBio1,1,1,"",Kilo2,1,NaN,NaN,ModularBionics,importFreeViewingCnuahs,Arrington,0,0
 02-Oct-0019,m1898,MonashShare/IN,m1898_2019-11-01,m1898_20191101,Neurostim,NaN,"V1",Vpixx,ModBio1,1,1,"",Kilo2,1,NaN,NaN,ModularBionics,importFreeViewingCnuahs,Arrington,0,0

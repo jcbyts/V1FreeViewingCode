@@ -102,5 +102,35 @@ if nargout > 1
     end
 
     varargout{2} = S;
+    
+    if nargout > 2 % get LFP
+        disp('getting Local Field Potentials')
+        fname = fullfile(dataPath, 'lfp', S.processedFileName);
+        
+        fprintf('Loading [%s]\n', S.processedFileName)
+        if exist(fname, 'file')
+            lfp = load(fname);
+            fprintf('Done\n')
+        else % try importing the file
+            serverDir = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
+
+            S.rawFilePath = fullfile(serverDir, rootDir, rawDir);            
+            fprintf('Could not find LFP file for [%s]\n', fname)
+            fprintf('Trying to import the data from [%s]\n', S.rawFilePath)
+    
+            % some more meta data
+            ops = io.loadOps(S.rawFilePath);
+            load(ops.chanMap);
+            [data, timestamps] = io.getLFP(ops);
+            if ~isfolder(fullfile(dataPath, 'lfp'))
+                mkdir(fullfile(dataPath, 'lfp'))
+            end
+            save(fname, '-v7', 'timestamps', 'data', 'xcoords', 'ycoords', 'zcoords') % v7 flag can be read easily by scipy
+            lfp = struct('timestamps', timestamps, 'data', data, 'xcoords', xcoords, 'ycoords', ycoords, 'zcoords', zcoords);
+        end
+        
+        varargout{3} = lfp;
+        
+    end
 end
     
