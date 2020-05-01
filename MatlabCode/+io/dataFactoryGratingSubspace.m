@@ -120,6 +120,12 @@ if nargout > 1
     
             % some more meta data
             ops = io.loadOps(S.rawFilePath);
+            if numel(ops)>1
+                ops = ops(1);
+            end
+            
+            ops = io.convertOpsToNewDirectory(ops, S.rawFilePath);
+            
             load(ops.chanMap);
             [data, timestamps] = io.getLFP(ops);
             if ~isfolder(fullfile(dataPath, 'lfp'))
