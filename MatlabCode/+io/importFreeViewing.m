@@ -30,7 +30,13 @@ Exp = io.import_eye_position(Exp, DataFolder);
 
 % clean up and resample
 Exp.vpx.raw0 = Exp.vpx.raw;
-Exp.vpx.raw(isnan(Exp.vpx.raw)) = 32000;
+
+% replace nans with interpolation
+Exp.vpx.raw(:,2) = repnan(Exp.vpx.raw(:,2), 'pchip');
+Exp.vpx.raw(:,3) = repnan(Exp.vpx.raw(:,3), 'pchip');
+
+Exp.vpx.raw(isnan(Exp.vpx.raw)) = 32000; % there shouldn't be any, but just in case
+
 [~,ia] =  unique(Exp.vpx.raw(:,1));
 Exp.vpx.raw = Exp.vpx.raw(ia,:);
 
@@ -45,6 +51,7 @@ Exp.vpx.raw = [new_timestamps(:) new_EyeX(:) new_EyeY(:) new_Pupil(:)];
 % Saccade processing:
 % Perform basic processing of eye movements and saccades
 Exp = saccadeflag.run_saccade_detection_cloherty(Exp, 'ShowTrials', false);
+
 
 validTrials = io.getValidTrials(Exp, 'Grating');
 for iTrial = validTrials(:)'
