@@ -67,7 +67,17 @@ else % try importing the file
     Exp = S.importFun(S); 
     
     % some more meta data
+    % some more meta data
     ops = io.loadOps(S.rawFilePath);
+    if numel(ops)>1
+        ops = ops(1);
+    end
+    
+    ops = io.convertOpsToNewDirectory(ops, S.rawFilePath);
+    
+    chMap = load(ops.chanMap);
+    Exp.chmap = chMap;
+    
     S.numChan = sum([ops.Nchan]);
     S.numSU = sum(Exp.osp.isiV<.2);
     S.numU = numel(Exp.osp.isiV);
