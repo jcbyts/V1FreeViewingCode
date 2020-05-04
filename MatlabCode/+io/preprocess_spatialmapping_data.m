@@ -91,10 +91,11 @@ Robs = Robs(:,Exp.osp.cids);
 NX = size(xpos,2);
 
 % convert to d.v.a.
-eyeDat = unique(Exp.vpx.raw(:,1:3), 'rows');
-eyeDat(:,2) = (eyeDat(:,2) - cx)/(dx * Exp.S.pixPerDeg);
-eyeDat(:,3) = 1 - eyeDat(:,3);
-eyeDat(:,3) = (eyeDat(:,3) - cy)/(dy * Exp.S.pixPerDeg);
+eyeDat = Exp.vpx.smo(:,1:3);
+% eyeDat = unique(Exp.vpx.raw(:,1:3), 'rows');
+% eyeDat(:,2) = (eyeDat(:,2) - cx)/(dx * Exp.S.pixPerDeg);
+% % eyeDat(:,3) = 1 - eyeDat(:,3);
+% eyeDat(:,3) = (eyeDat(:,3) - cy)/(dy * Exp.S.pixPerDeg);
 % convert to pixels
 eyeDat(:,2:3) = eyeDat(:,2:3)*Exp.S.pixPerDeg;
 
@@ -118,7 +119,8 @@ if debug
 end
 
 xPosition = xpos - eyeAtFrame(:,1);
-yPosition = -ypos + eyeAtFrame(:,2);
+% yPosition = -ypos + eyeAtFrame(:,2);
+yPosition = ypos - eyeAtFrame(:,2);
 
 valid = hypot(eyeAtFrame(:,1), eyeAtFrame(:,2)) < ip.Results.eyePosExclusion;
 
