@@ -54,9 +54,6 @@ end
 % convert PDS cell array to trial-by-trial struct array
 trial = io.getPdsTrialData(PDS);
 
-% correct the y-position
-eyeData(:,2) = -(eyeData(:,2)-trial(1).display.ctr(2));
-
 % make an Exp struct to mimic the marmoV5 output
 newExp = struct();
 
@@ -365,6 +362,9 @@ nTotalTrials = numel(Exp.D);
 %% eye position
 MEDFILT = 3;
 GSIG = 5;
+
+% raw is flipped in marmoV5
+eyeData(2,:) = -eyeData(2,:);
 
 % upsample eye traces to 1kHz
 new_timestamps = timestamps(1):1e-3:timestamps(end);
