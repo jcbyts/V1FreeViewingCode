@@ -41,12 +41,18 @@ dataDir = fullfile(dataDir, 'grating_subspace');
 if ~exist(dataDir, 'dir')
     mkdir(dataDir)
 end
-fname = fullfile(dataDir, strrep(Exp.FileTag, '.mat', '_gratingsubspace.mat'));
-save(fname, '-v7', 'grating', 'dots', 'slist', 'spikes', 'eyepos')
+
 
 % update meta table
 Tag = strrep(Exp.FileTag, '.mat', '');
 sessix = strcmp(data.Tag, Tag);
+
+rf.mu = [data.retx(sessix), data.rety(sessix)];
+rf.cov = [data.retc1(sessix), data.retc2(sessix); data.retc2(sessix) data.retc4(sessix)];
+
+fname = fullfile(dataDir, strrep(Exp.FileTag, '.mat', '_gratingsubspace.mat'));
+save(fname, '-v7', 'grating', 'dots', 'slist', 'spikes', 'eyepos', 'rf')
+
 data.GratingSubspace(sessix) = true;
 writetable(data, meta_file);
 

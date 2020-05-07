@@ -12,4 +12,10 @@ for sess = imported(:)'
     end
 end
 
-%
+%% 
+
+for sess = 1:57
+    try
+    io.gratingSubspaceExport(sess);
+    end
+end
