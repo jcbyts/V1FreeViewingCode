@@ -31,12 +31,42 @@ Exp = io.import_eye_position(Exp, DataFolder);
 % clean up and resample
 Exp.vpx.raw0 = Exp.vpx.raw;
 
-% replace nans with interpolation
-Exp.vpx.raw(:,2) = repnan(Exp.vpx.raw(:,2), 'pchip');
-Exp.vpx.raw(:,3) = repnan(Exp.vpx.raw(:,3), 'pchip');
+Exp.vpx.raw(isnan(Exp.vpx.raw)) = 32000;
 
-Exp.vpx.raw(isnan(Exp.vpx.raw)) = 32000; % there shouldn't be any, but just in case
+% detect valid epochs (this could be invalid due to failures in the
+% eyetracker parameters / blinks / etc)
+x = double(Exp.vpx.raw(:,2)==32000);
+x(1) = 0;
+x(end) = 0;
 
+bon = find(diff(x)==1);
+boff = find(diff(x)==-1);
+
+bon = bon(2:end); % start of bad
+boff = boff(1:end-1); % end of bad
+
+gdur = Exp.vpx.raw(bon,1)-Exp.vpx.raw(boff,1);
+
+remove = gdur < 1;
+
+bremon = bon(remove);
+bremoff = boff(remove);
+gdur(remove) = [];
+
+goodSnips = sum(gdur/60);
+
+totalDur = Exp.vpx.raw(end,1)-Exp.vpx.raw(1,1);
+totalMin = totalDur/60;
+
+fprintf('%02.2f/%02.2f minutes are usable\n', goodSnips, totalMin)
+
+% go back through and eliminate snippets that are not analyzable
+n = numel(bremon);
+for i = 1:n
+    Exp.vpx.raw(bremoff(i):bremon(i),2:end) = 32e3;
+end
+
+% eliminate double samples (this shouldn't do anything)
 [~,ia] =  unique(Exp.vpx.raw(:,1));
 Exp.vpx.raw = Exp.vpx.raw(ia,:);
 
@@ -45,13 +75,23 @@ new_timestamps = Exp.vpx.raw(1,1):1e-3:Exp.vpx.raw(end,1);
 new_EyeX = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,2), new_timestamps);
 new_EyeY = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,3), new_timestamps);
 new_Pupil = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,4), new_timestamps);
-
+bad = interp1(Exp.vpx.raw(:,1), double(Exp.vpx.raw(:,2)>31e3), new_timestamps);
 Exp.vpx.raw = [new_timestamps(:) new_EyeX(:) new_EyeY(:) new_Pupil(:)];
+
+Exp.vpx.raw(bad>0,2:end) = nan; % nan out bad sample times
+
 
 % Saccade processing:
 % Perform basic processing of eye movements and saccades
-Exp = saccadeflag.run_saccade_detection_cloherty(Exp, 'ShowTrials', false);
+Exp = saccadeflag.run_saccade_detection_cloherty(Exp, ...
+    'ShowTrials', false,...
+    'accthresh', 2e4,...
+    'velthresh', 10,...
+    'velpeak', 10,...
+    'isi', 0.02);
 
+% track invalid sampls
+Exp.vpx.Labels(isnan(Exp.vpx.raw(:,2))) = 4;
 
 validTrials = io.getValidTrials(Exp, 'Grating');
 for iTrial = validTrials(:)'
