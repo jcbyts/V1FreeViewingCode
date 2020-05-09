@@ -390,18 +390,6 @@ vpx.raw0 = [timestamps(:) eyeData'];
 
 Exp.vpx = vpx;
 
-for iTrial = 1:nTotalTrials
-    % hack to make the VPX time match the ephys time -- pldaps import
-    % already aligns them
-    Exp.D{iTrial}.START_VPX = Exp.D{iTrial}.START_EPHYS;
-    Exp.D{iTrial}.END_VPX = Exp.D{iTrial}.END_EPHYS;
-    ix = Exp.D{iTrial}.START_EPHYS >= Exp.vpx.raw(:,1) ...
-        & Exp.D{iTrial}.END_EPHYS <= Exp.vpx.raw(:,1);
-    
-    Exp.D{iTrial}.eyeData = Exp.vpx.raw(ix,[1 2 3 4 1 1 1 1]);
-    
-end
-
 % clean up and resample
 Exp.vpx.raw = Exp.vpx.raw0;
 
@@ -455,6 +443,18 @@ Exp.vpx.raw = [new_timestamps(:) new_EyeX(:) new_EyeY(:) new_Pupil(:)];
 Exp.vpx.raw(bad>0,2:end) = nan; % nan out bad sample times
 
 
+for iTrial = 1:nTotalTrials
+    % hack to make the VPX time match the ephys time -- pldaps import
+    % already aligns them
+    Exp.D{iTrial}.START_VPX = Exp.D{iTrial}.START_EPHYS;
+    Exp.D{iTrial}.END_VPX = Exp.D{iTrial}.END_EPHYS;
+    ix = Exp.D{iTrial}.START_EPHYS >= Exp.vpx.raw(:,1) ...
+        & Exp.D{iTrial}.END_EPHYS <= Exp.vpx.raw(:,1);
+    
+    Exp.D{iTrial}.eyeData = Exp.vpx.raw(ix,[1 2 3 4 1 1 1 1]);
+    
+end
+
 % Saccade processing:
 % Perform basic processing of eye movements and saccades
 Exp = saccadeflag.run_saccade_detection_cloherty(Exp, ...
@@ -466,6 +466,7 @@ Exp = saccadeflag.run_saccade_detection_cloherty(Exp, ...
 
 % track invalid samples
 Exp.vpx.Labels(isnan(Exp.vpx.raw(:,2))) = 4;
+
 
 
 
