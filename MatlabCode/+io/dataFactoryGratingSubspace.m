@@ -144,7 +144,9 @@ if nargout > 1
             save(fname, '-v7', 'timestamps', 'data', 'xcoords', 'ycoords', 'zcoords') % v7 flag can be read easily by scipy
             lfp = struct('timestamps', timestamps, 'data', data, 'xcoords', xcoords, 'ycoords', ycoords, 'zcoords', zcoords);
         end
-        
+        if ~isfield(lfp, 'deadChans')
+            lfp.deadChan = data.deadChan{sessionId};
+        end
         varargout{3} = lfp;
         
     end
