@@ -25,11 +25,7 @@ if ~isempty(processedDir)
     assert(numel(processedDir)==1, 'import_spike_sorting: I don''t know how to handle multiple processed directories yet. You have to implement that')
     
     % find kilosort file in the processed directory
-    kiloFile = dir(fullfile(DataFolder, processedDir.name, '*spkilo*.mat'));
-    if isempty(kiloFile)
-        kiloFile = dir(fullfile(DataFolder, processedDir.name, '*kilo*.mat'));
-    end
-    
+    kiloFile = dir(fullfile(DataFolder, processedDir.name, '*kilo*.mat'));
     if ~isempty(kiloFile)
         fprintf('Found kilosort file\n')
         sp = load(fullfile(DataFolder, processedDir.name, kiloFile(1).name));
