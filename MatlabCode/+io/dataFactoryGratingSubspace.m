@@ -145,7 +145,7 @@ if nargout > 1
             lfp = struct('timestamps', timestamps, 'data', data, 'xcoords', xcoords, 'ycoords', ycoords, 'zcoords', zcoords);
         end
         if ~isfield(lfp, 'deadChans')
-            lfp.deadChan = str2num(data.deadChan{sessionId});
+            lfp.deadChan = data.deadChan{sessionId};
         end
         varargout{3} = lfp;
         
