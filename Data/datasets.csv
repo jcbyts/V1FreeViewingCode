@@ -28,6 +28,15 @@ Date,Subject,RootDirectory,Directory,Tag,StimulusSuite,Weight,Chamber,Rig,Electr
 21-Jun-0019,Milo,PLDAPS/Ellie,Milo_2019-06-21_12-26-10_Atlas,milo_20190621,PLDAPS,NaN,"V1",Propixx,,1,1,"ITI,csdFlash,faceForage,hartleyFF,natImgBackground,squareFlash",Kilo,1,32,10,Atlas,importFreeViewingPLDAPS,Eyelink1000,1,1,6,6.81413725420121,-1.03865098117686,1.14658540318116,-0.167169924836364,0.938217804889951,None
 <<<<<<< HEAD
 <<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+=======
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
+<<<<<<< HEAD
+>>>>>>> Stashed changes
+<<<<<<< Updated upstream
 19-Nov-0019,Logan,ForageMapping,Logan_2019-11-19_10-52-51_Neuronexus_D2,logan_20191119,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,2,NeuroNexus,importFreeViewing,DDPIv1,0,0,7,0.157470188416922,-0.844787024964461,0.320070888309591,-0.119442736862742,0.20389431242083,Error
 20-Nov-0019,Logan,ForageMapping,Logan_2019-11-20_10-54-11_NeuronexusD3,logan_20191120a,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,6,NeuroNexus,importFreeViewing,DDPIv1,1,0,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,3  11  44
 21-Nov-0001,Logan,ForageMapping,Logan_2019-11-21_10-31-34_NeuronexusD4,logan_20191121,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,1,NeuroNexus,importFreeViewing,DDPIv1,1,0,7,0.534204103402676,-0.29917650096462,0.0833609308812362,-0.0148209534685704,0.134290381449508,7  11  44
@@ -59,6 +68,7 @@ Date,Subject,RootDirectory,Directory,Tag,StimulusSuite,Weight,Chamber,Rig,Electr
 04-Mar-0020,Logan,ForageMapping,Logan_2020-03-04_09-51-54_neuronexus_D8,logan_20200304,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,19,NeuroNexus,importFreeViewing,DDPIv1,4,1,8,0.32473263527263,-0.808784277134786,0.106605190934774,-0.0107179163794904,0.101147383736739,Error
 06-Mar-0020,Logan,ForageMapping,Logan_2020-03-06_11-21-37_neuronexus_D9,logan_20200306,MarmoV5,NaN,"V1",Propixx,ShankAn2,1,1,"",Kilo2,1,64,24,NeuroNexus,importFreeViewing,DDPIv1,9,1,8,0.32473263527263,-0.808784277134786,0.106117062685967,-0.0107179163794904,0.101147383736739,Error
 =======
+<<<<<<< Updated upstream
 19-Nov-0019,Logan,ForageMapping,Logan_2019-11-19_10-52-51_Neuronexus_D2,logan_20191119,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,89,NeuroNexus,importFreeViewing,DDPIv1,16,0,7,0.157470188416922,-0.844787024964461,0.320070888309591,-0.119442736862742,0.20389431242083,Error
 20-Nov-0019,Logan,ForageMapping,Logan_2019-11-20_10-54-11_NeuronexusD3,logan_20191120a,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,68,NeuroNexus,importFreeViewing,DDPIv1,13,0,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,3  11  44
 21-Nov-0001,Logan,ForageMapping,Logan_2019-11-21_10-31-34_NeuronexusD4,logan_20191121,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,68,NeuroNexus,importFreeViewing,DDPIv1,10,0,7,0.534204103402676,-0.29917650096462,0.0833609308812362,-0.0148209534685704,0.134290381449508,7  11  40  44  48
@@ -67,6 +77,17 @@ Date,Subject,RootDirectory,Directory,Tag,StimulusSuite,Weight,Chamber,Rig,Electr
 03-Dec-0019,Logan,ForageMapping,Logan_2019-12-03_10-35-59_NeuronexusD7,logan_20191203,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,35,NeuroNexus,importFreeViewing,DDPIv1,8,1,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,11  44  48
 04-Dec-0019,Logan,ForageMapping,Logan_2019-12-04_10-32-29_NeuronexusD8,logan_20191204,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,22,NeuroNexus,importFreeViewing,DDPIv1,5,1,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,3   7  11  15  19  40  44
 05-Dec-0019,Logan,ForageMapping,Logan_2019-12-05_10-35-13_NeuronexusD9,logan_20191205,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,41,NeuroNexus,importFreeViewing,DDPIv1,6,1,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,13  14  16  20  41  45  47  51  53
+=======
+>>>>>>> Stashed changes
+19-Nov-0019,Logan,ForageMapping,Logan_2019-11-19_10-52-51_Neuronexus_D2,logan_20191119,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,89,NeuroNexus,importFreeViewing,DDPIv1,16,0,7,0.157470188416922,-0.844787024964461,0.320070888309591,-0.119442736862742,0.20389431242083,Error
+20-Nov-0019,Logan,ForageMapping,Logan_2019-11-20_10-54-11_NeuronexusD3,logan_20191120a,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,68,NeuroNexus,importFreeViewing,DDPIv1,13,0,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,3  11  44
+21-Nov-0001,Logan,ForageMapping,Logan_2019-11-21_10-31-34_NeuronexusD4,logan_20191121,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,68,NeuroNexus,importFreeViewing,DDPIv1,10,0,7,0.534204103402676,-0.29917650096462,0.0833609308812362,-0.0148209534685704,0.134290381449508,7  11  44
+22-Nov-0019,Logan,ForageMapping,Logan_2019-11-22_11-30-43_NeuronexusD5,logan_20191122,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,40,NeuroNexus,importFreeViewing,DDPIv1,11,0,7,0.311532680213818,-0.76858882703697,0.102254727115224,-0.021843797934361,0.155270487481665,3   7  11  15  40  44
+02-Dec-0019,Logan,ForageMapping,Logan_2019-12-02_10-29-07_NeuronexusD6,logan_20191202,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,53,NeuroNexus,importFreeViewing,DDPIv1,9,1,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,Error
+03-Dec-0019,Logan,ForageMapping,Logan_2019-12-03_10-35-59_NeuronexusD7,logan_20191203,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,35,NeuroNexus,importFreeViewing,DDPIv1,8,1,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,11  44
+04-Dec-0019,Logan,ForageMapping,Logan_2019-12-04_10-32-29_NeuronexusD8,logan_20191204,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,22,NeuroNexus,importFreeViewing,DDPIv1,5,1,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,3   7  11  15  19  40  44
+05-Dec-0019,Logan,ForageMapping,Logan_2019-12-05_10-35-13_NeuronexusD9,logan_20191205,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,41,NeuroNexus,importFreeViewing,DDPIv1,6,1,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,14  16  41  45  47  51  53
+>>>>>>> Stashed changes
 06-Dec-0019,Logan,ForageMapping,Logan_2019-12-06_11-41-05_NeuronexusD10,logan_20191206,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,45,NeuroNexus,importFreeViewing,DDPIv1,3,1,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,3   7  11  15  19  40  44
 09-Dec-0019,Logan,ForageMapping,Logan_2019-12-09_10-38-50_NeuronexusD11,logan_20191209,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,NaN,64,76,NeuroNexus,importFreeViewing,DDPIv1,6,1,7,0.220758279407582,-0.692079386326898,0.129052473879363,-0.0123488931046994,0.1521507927467,Error
 10-Dec-0019,Logan,ForageMapping,Logan_2019-12-10_10-43-23_NeuronexusD12,logan_20191210,MarmoV5,NaN,"V1",Propixx,ShankAn1,1,1,"",Kilo2,1,64,104,NeuroNexus,importFreeViewing,DDPIv1,10,1,7,0.400757582526083,9.16026193894105,0.152229850149227,-0.0814387261767075,8.29289198586095,Error
