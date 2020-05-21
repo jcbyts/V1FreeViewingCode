@@ -10,8 +10,8 @@ function plotCSD(stats)
 
     if numShanks == 1
         figure; clf;
-        imagesc(stats.time, stats.chDepths, stats.CSD-mean(stats.CSD(:))); axis xy
-        colormap jet
+        imagesc(stats.time, stats.depth, stats.CSD-mean(stats.CSD(:))); axis ij
+        colormap(colormap_redblackblue);
         hold on
         plot(stats.time, bsxfun(@plus, stats.STA, stats.chDepths), 'Color', repmat(.1, 1, 3))
         xlim(stats.time([1 end]))
@@ -29,8 +29,8 @@ function plotCSD(stats)
         %curShankInds = shankInd*lenShanks-lenShanks+1:shankInd*lenShanks;
         curCSD = stats.CSD(:,:,shankInd);
         subplot(1,numShanks,shankInd)
-        imagesc(stats.time, stats.chDepths, curCSD-mean(curCSD(:))); axis xy
-        colormap jet
+        imagesc(stats.time, stats.depth, curCSD-mean(curCSD(:))); axis ij
+        colormap(colormap_redblackblue);
         hold on
         plot(stats.time, bsxfun(@plus, stats.STA(:,:,shankInd), stats.chDepths), 'Color', repmat(.1, 1, 3))
         xlim(stats.time([1 end]))

@@ -34,12 +34,9 @@ ip.addParameter('method', 'spline')
 ip.addParameter('sampleRate', 1000)
 ip.addParameter('exclude', true)
 ip.parse(varargin{:});
+
 exclude = ip.Results.exclude;
-
-if exclude % excluded channels
-    excChan = str2num(lfp.deadChan);
-end
-
+excChan = lfp.deadChan;
 
 if isa(eventTimes, 'double')
     eventTimes = eventTimes(:);

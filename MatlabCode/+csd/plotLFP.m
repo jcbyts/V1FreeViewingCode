@@ -23,7 +23,7 @@ if isfield(lfp,'STA')
     data = lfp.STA;
     data = reshape(data,[size(data,1)*size(data,3), size(data,2)])';
     %channelOffsets = lfp.chDepths;
-elseif isdouble(lfp)
+elseif isa(lfp, 'double')
     data = lfp;
 elseif isfield(lfp,'data')
     data = lfp.data(inds(1):inds(2), :);
