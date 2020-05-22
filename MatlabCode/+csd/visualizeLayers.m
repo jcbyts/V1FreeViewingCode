@@ -35,11 +35,7 @@ for indSess = 1:length(sessNums)
     stats = csd.getCSD(lfp, Exp, 'window', [-100 200], 'plot', false, 'method',...
         'spline', 'sampleRate', 1000, 'exclude', true); % compute CSD
     
-    LGpower = csd.getLFPPower(lfp, 'low gamma', 'sampleRate', 1e3, 'plotIt', false,...
-        'norm', true, 'inds', [100000 200000], 'exclude', true); % compute 
-    
-    HGpower = csd.getLFPPower(lfp, 'high gamma', 'sampleRate', 1e3, 'plotIt', false,...
-        'norm', true, 'inds', [100000 200000], 'exclude', true);
+    gamma = csd.getGamma(lfp);
     
     numShanks = size(stats.CSD, 3);
     for shankInd = 1:numShanks
@@ -64,7 +60,12 @@ for indSess = 1:length(sessNums)
         xLimits = get(gca,'XLim');
         scale = xLimits(2);
         shankInds = (shankLen*(shankInd-1)+1):(shankLen*shankInd);
-        plot(LGpower(shankInds).*scale, stats.chDepths, 'Color', 'white', 'Linewidth', 3)
+        
+        plot(gamma.lgPower(:,shankInd).*scale, stats.chDepths, 'Color', 'white', 'Linewidth', 3)
+        plot(gamma.hgPower(:,shankInd).*scale, stats.chDepths, 'Color', 'green', 'Linewidth', 3)
+        plot(stats.time([1 end]), [1; 1]*gamma.lgInputLayerDepths(:,:,shankInd), 'white', 'Linewidth', 2)
+        plot(stats.time([1 end]), [1; 1]*gamma.hgInputLayerDepths(:,:,shankInd), 'green', 'Linewidth', 2)
+
         
         hold off
         
