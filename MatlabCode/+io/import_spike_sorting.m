@@ -1,4 +1,4 @@
-function varargout = import_spike_sorting(DataFolder)
+function varargout = import_spike_sorting(DataFolder, spikesTag)
 % Import spike sorting results
 % sp = import_spike_sorting(DataFolder)
 %
@@ -6,12 +6,18 @@ function varargout = import_spike_sorting(DataFolder)
 %   DataFolder: full path to data
 %
 % Output:
-%  sp [cell] Jude's spike sorting cell array
+%  sp <cell> Jude's spike sorting cell array
+%  osp <struct> getSpikesFromKilo output
 %
 % If a sp-kilo.mat file exists, import_spike_sorting will return that file
 % over all others. If it does not, then it wil run threshold spike sorting
 
-%
+
+if nargin < 2
+    % assume it's a Kilosort file
+    spikesTag = 'kilo';
+end
+
 % Check for Kilosort First
 processedDir = dir(fullfile(DataFolder, '*processed*'));
 shanksDir = dir(fullfile(DataFolder, '_shank*'));
@@ -25,7 +31,7 @@ if ~isempty(processedDir)
     assert(numel(processedDir)==1, 'import_spike_sorting: I don''t know how to handle multiple processed directories yet. You have to implement that')
     
     % find kilosort file in the processed directory
-    kiloFile = dir(fullfile(DataFolder, processedDir.name, '*kilo*.mat'));
+    kiloFile = dir(fullfile(DataFolder, processedDir.name, sprintf('*%s*.mat', spikesTag)));
     if ~isempty(kiloFile)
         fprintf('Found kilosort file\n')
         sp = load(fullfile(DataFolder, processedDir.name, kiloFile(1).name));
