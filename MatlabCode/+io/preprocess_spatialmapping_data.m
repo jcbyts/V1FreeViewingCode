@@ -33,6 +33,8 @@ ip.addParameter('spikeBinSize', 3/Exp.S.frameRate)
 ip.addParameter('latency', 0)
 ip.addParameter('eyePosExclusion', 400)
 ip.addParameter('verbose', true)
+ip.addParameter('eyePos', [])
+ip.addParameter('cids', [])
 ip.parse(varargin{:});
 
 verbose = ip.Results.verbose;
@@ -87,7 +89,12 @@ frameTimes = frameTimes + ip.Results.latency;
 
 % bin spikes
 Robs = binNeuronSpikeTimesFast(Exp.osp, frameTimes, spikeBinSize);
-Robs = Robs(:,Exp.osp.cids);
+if isempty(ip.Results.cids)
+    cids = Exp.osp.cids;
+else
+    cids = Exp.osp.cids;
+end
+Robs = Robs(:,cids);
 NX = size(xpos,2);
 
 % convert to d.v.a.
@@ -96,11 +103,17 @@ eyeDat = Exp.vpx.smo(:,1:3);
 % eyeDat(:,2) = (eyeDat(:,2) - cx)/(dx * Exp.S.pixPerDeg);
 % % eyeDat(:,3) = 1 - eyeDat(:,3);
 % eyeDat(:,3) = (eyeDat(:,3) - cy)/(dy * Exp.S.pixPerDeg);
+
 % convert to pixels
-eyeDat(:,2:3) = eyeDat(:,2:3)*Exp.S.pixPerDeg;
+if isempty(ip.Results.eyePos)
+    eyeDat(:,2:3) = eyeDat(:,2:3)*Exp.S.pixPerDeg;
+else
+    eyeDat(:,2:3) = ip.Results.eyePos*Exp.S.pixPerDeg;
+end
 
 % convert time to ephys units
 eyeDat(:,1) = Exp.vpx2ephys(eyeDat(:,1));
+
 % find index into frames
 [~, ~,id] = histcounts(frameTimes, eyeDat(:,1));
 eyeAtFrame = eyeDat(id,2:3);
