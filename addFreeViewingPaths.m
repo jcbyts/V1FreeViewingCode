@@ -57,7 +57,8 @@ switch user
         % we only need marmopipe to import raw data
         marmoPipePath = 'C:\Users\Jake\Dropbox\Marmo Lab Website\PSA\Code';
         % where the data live
-        dataPath = 'C:\Users\Jake\Documents\FreeViewingData';
+%         dataPath = 'C:\Users\Jake\Documents\FreeViewingData';
+        dataPath = 'C:\Users\Jake\Dropbox\FreeViewingImported\'; % copy straight to dropbox
         
         % processed data:
         setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
