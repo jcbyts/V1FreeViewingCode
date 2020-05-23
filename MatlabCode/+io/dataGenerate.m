@@ -55,14 +55,6 @@ spikeBinSize = 1/Exp.S.frameRate; % bin at the frame rate (4 ms bins)
 
 %% Select trials to analyze
 stimulusSet = ip.Results.stimulus;
-% trialProtocols = cellfun(@(x) x.PR.name, Exp.D, 'uni', 0);
-% 
-% % --- find the trials that we want to analyze
-% ephysTrials = find(cellfun(@(x) ~isnan(x.START_EPHYS) | ~isnan(x.END_EPHYS), Exp.D));
-% if (numel(ephysTrials)/numel(Exp.D)) < 0.6
-%     disp('Something is wrong. Assuming all trials had ephys')
-%     ephysTrials = 1:numel(Exp.D);
-% end
 
 fprintf('Reconstructing [%s] stimuli...\n', stimulusSet)
 
@@ -232,7 +224,7 @@ opts = ip.Results;
 fname = sprintf('%s_%s.mat', strrep(Exp.FileTag, '.mat', ''), ip.Results.stimulus);
 fprintf('saving output to [%s]\n', fname)
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-save(fullfile(dataDir, fname), '-v7', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist', 'eyeAtFrame', 'frameTimes');
+save(fullfile(dataDir, fname), '-v7.3', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist', 'eyeAtFrame', 'frameTimes');
 fprintf('Done\n')
 
 % if your're dugging, you can look at this code below to make sure things
