@@ -70,10 +70,12 @@ else
     eyePos = Exp.vpx.smo(:,2:3); 
 end
 
+eyePos(Exp.vpx.Labels==4,:) = nan; % invalid eye samples are NaN will be skipped
 
 %% loop over trials and regenerate stimuli
 nTrials = numel(validTrials);
 
+blocks = 1;
 
 frameCounter = 1;
 
@@ -159,6 +161,7 @@ for iTrial = 1:nTrials
     end
     
     
+    blockStart = frameCounter;
     % --- loop over frames and get noise from that frame
     for iFrame = 1:nFrames
 
@@ -168,6 +171,7 @@ for iTrial = 1:nTrials
         % eye position is invalid, skip frame
         if isempty(eyeIx)
             disp('Skipping because of eyeTime')
+            blocks = [blocks; frameCounter];
             continue
         end
         
@@ -177,6 +181,7 @@ for iTrial = 1:nTrials
         
         % exclude eye positions that are off the screen
         if hypot(eyeX, eyeY) > ip.Results.ExclusionRadius
+            blocks = [blocks; frameCounter];
             continue
         end
         
@@ -186,6 +191,7 @@ for iTrial = 1:nTrials
         
         % skip frame if eye position is invalid
         if isnan(eyeX) || isnan(eyeY)
+            blocks = [blocks; frameCounter];
             continue
         end
         
@@ -201,6 +207,7 @@ for iTrial = 1:nTrials
             
             if (frameRefreshes(iFrame)~=noiseFrames(iFrame)) && (iFrame ~=nFrames)
                 fprintf('regenerateStimulus: noiseHistory doesn''t equal the frame refresh time on frame %d\n', iFrame)
+                blocks = [blocks; frameCounter];
                 continue
             end
             
@@ -306,6 +313,7 @@ for iTrial = 1:nTrials
         try
             Stim(:,:, frameCounter) = I;
         catch
+            warning('frame not saved')
             continue
         end
         
@@ -316,6 +324,12 @@ for iTrial = 1:nTrials
     
 end
 
+% clean up blocks
+% blocks(diff(blocks, [], 2)<50,:) = [];
+bd = blocks(diff(blocks)>1);
+blocks = [bd(1:end-1)+1 bd(2:end)];
+blocks(1) = 1;
+
 Stim(:,:,frameCounter:end) = [];
 frameInfo.eyeAtFrame(frameCounter:end,:) = [];
 frameInfo.frameTimesOe(frameCounter:end) = [];
@@ -323,7 +337,7 @@ frameInfo.frameTimesPtb(frameCounter:end) = [];
 frameInfo.probeDistance(frameCounter:end) = [];
 frameInfo.seedGood(frameCounter:end) = [];
 frameInfo.probeAtFrame(frameCounter:end,:) = [];
-
+frameInfo.blocks = blocks;
 
 
 
