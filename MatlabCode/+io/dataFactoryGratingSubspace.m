@@ -137,12 +137,12 @@ if nargout > 1
             ops = io.convertOpsToNewDirectory(ops, S.rawFilePath);
             
             load(ops.chanMap);
-            [data, timestamps] = io.getLFP(ops);
+            [datalfp, timestamps] = io.getLFP(ops);
             if ~isfolder(fullfile(dataPath, 'lfp'))
                 mkdir(fullfile(dataPath, 'lfp'))
             end
             save(fname, '-v7', 'timestamps', 'data', 'xcoords', 'ycoords', 'zcoords') % v7 flag can be read easily by scipy
-            lfp = struct('timestamps', timestamps, 'data', data, 'xcoords', xcoords, 'ycoords', ycoords, 'zcoords', zcoords);
+            lfp = struct('timestamps', timestamps, 'data', datalfp, 'xcoords', xcoords, 'ycoords', ycoords, 'zcoords', zcoords);
         end
         if ~isfield(lfp, 'deadChans')
             lfp.deadChan = str2num(data.deadChan{sessionId});
