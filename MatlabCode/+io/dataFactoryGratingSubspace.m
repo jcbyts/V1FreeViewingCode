@@ -143,7 +143,7 @@ if nargout > 1
             if ~isfolder(fullfile(dataPath, 'lfp'))
                 mkdir(fullfile(dataPath, 'lfp'))
             end
-            save(fname, '-v7', 'timestamps', 'data', 'xcoords', 'ycoords', 'zcoords') % v7 flag can be read easily by scipy
+            save(fname, '-v7.3', 'timestamps', 'data', 'xcoords', 'ycoords', 'zcoords') % v7 flag can be read easily by scipy
             lfp = struct('timestamps', timestamps, 'data', data, 'xcoords', xcoords, 'ycoords', ycoords, 'zcoords', zcoords);
             data = datatmp;
         end
