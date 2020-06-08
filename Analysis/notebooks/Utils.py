@@ -88,4 +88,26 @@ def r_squared(true, pred, data_indxs=None):
 
     return 1 - ss_res/ss_tot
 
+def def_adam_params(useGPU=True, batch_size=1000, learning_rate=1e-3):
+    '''
+        Get the parameters for ADAM optimizer that are commonly used
+    '''
+    adam_params = {'use_gpu': useGPU,
+        'display': 30,
+        'data_pipe_type': 'data_as_var',
+        'poisson_unit_norm': None,
+        'epochs_ckpt': None,
+        'learning_rate': learning_rate,
+        'batch_size': batch_size,
+        'epochs_training': 10000,
+        'early_stop_mode': 1,
+        'MAPest': True,
+        'func_tol': 0,
+        'epochs_summary': None,
+        'early_stop': 100,
+        'beta1': 0.9,
+        'beta2': 0.999,
+        'epsilon': 1e-08,
+        'run_diagnostics': False}
 
+    return adam_params
