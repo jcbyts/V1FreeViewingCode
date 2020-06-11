@@ -1,4 +1,4 @@
-function gamma = getGamma(lfp, varargin)
+function gamma = getGammaTest(lfp, Exp, varargin)
 % Gets gamma
 %
 %   Input:
@@ -54,9 +54,6 @@ for shankInd = 1:numShanks
     
     currLGPower = lgPower(curShankInds);
     
-    % Take weighted average of channels with power one std above mean power
-    % Find corresponding depth of this weighted average
-    % search for minimum only below this depth
     meanlgpower = mean(lgPower(curShankInds));
     stdlgpower = std(lgPower(curShankInds));
     threshLGPower = currLGPower(lgPower(curShankInds)>meanlgpower+stdlgpower);
@@ -81,6 +78,11 @@ gamma.lgMinDepth = lgMinDepth;
 gamma.hgMaxDepth = hgMaxDepth;
 gamma.lgInputLayerDepths = lgInputLayerDepths;
 gamma.hgInputLayerDepths = hgInputLayerDepths;
+
+stats = csd.getCSD(lfp, Exp, 'window', [-100 200], 'plot', false, 'method',...
+        'spline', 'sampleRate', 1000, 'exclude', true);
+
+csd.plotCSD_BP(stats, gamma)
 
 
 
