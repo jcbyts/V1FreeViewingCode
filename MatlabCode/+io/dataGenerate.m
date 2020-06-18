@@ -25,7 +25,7 @@ function fname = dataGenerate(Exp, S, varargin)
 
 ip = inputParser();
 ip.addParameter('stimulus', 'Gabor')
-ip.addParameter('testmode', true)
+ip.addParameter('testmode', false)
 ip.addParameter('fft', false)
 ip.addParameter('pixelsquaring', false)
 ip.addParameter('binsize', 1)
@@ -34,6 +34,8 @@ ip.addParameter('t_downsample', 1)
 ip.addParameter('s_downsample', 1)
 ip.addParameter('includeProbe', true)
 ip.addParameter('correctEyePos', false)
+ip.addParameter('nonlinearEyeCorrection', true)
+ip.addParameter('overwrite', false)
 ip.parse(varargin{:})
 
 %% manual adjustment to rect
@@ -53,6 +55,22 @@ end
 
 spikeBinSize = 1/Exp.S.frameRate; % bin at the frame rate (4 ms bins)
 
+dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
+fname = sprintf('%s_%s_%s_%d_%d_%d_%d_%d.mat',...
+    strrep(Exp.FileTag, '.mat', ''),...
+    ip.Results.stimulus, ...
+    strrep(strrep(num2str(S.rect), ' ', '_'), '__', '_'), ... % rect
+    ip.Results.t_downsample, ...
+    ip.Results.s_downsample, ...
+    ip.Results.correctEyePos, ...
+    ip.Results.eyesmooth, ...
+    ip.Results.nonlinearEyeCorrection);
+
+if exist(fullfile(dataDir, fname), 'file') && ~ip.Results.overwrite
+    fprintf('Stimulus already exported\n')
+    return
+end
+
 %% Select trials to analyze
 stimulusSet = ip.Results.stimulus;
 
@@ -68,7 +86,7 @@ end
 
 % smooth the eye position with an sgolay filter
 if ip.Results.correctEyePos
-    eyePos = io.getCorrectedEyePos(Exp, 'usebilinear', true);
+    eyePos = io.getCorrectedEyePos(Exp, 'usebilinear', ip.Results.nonlinearEyeCorrection);
 else
     eyePos = Exp.vpx.smo(:,2:3);
 end
@@ -89,7 +107,7 @@ end
 
 % make sure we have the latency of the monitor / graphics card included
 if ~isfield(S, 'Latency')
-    Latency = 8.3;
+    Latency = 8.3e-3;
 else
     Latency = S.Latency;
 end
@@ -194,7 +212,7 @@ probeDist = frameInfo.probeDistance;
 eyeAtFrameX = frameInfo.eyeAtFrame(:,2); % eye position at each frame
 eyeAtFrameY = frameInfo.eyeAtFrame(:,3); % eye position at each frame
 frameTimes = frameInfo.frameTimesOe;
-
+blocks = frameInfo.blocks;
 %% Temporal downsample
 if ip.Results.t_downsample > 1
 	X = downsample_time(X, ip.Results.t_downsample) / ip.Results.t_downsample;
@@ -207,6 +225,7 @@ if ip.Results.t_downsample > 1
     probeDist = downsample_time(probeDist, ip.Results.t_downsample) / ip.Results.t_downsample;
     eyeAtFrameX =  downsample_time(eyeAtFrameX, ip.Results.t_downsample) / ip.Results.t_downsample;
     eyeAtFrameY =  downsample_time(eyeAtFrameY, ip.Results.t_downsample) / ip.Results.t_downsample;
+    blocks = ceil(blocks/ip.Results.t_downsample);
 end
 eyeAtFrame = [eyeAtFrameX eyeAtFrameY];
 dt = spikeBinSize * ip.Results.t_downsample;
@@ -221,10 +240,9 @@ opts = ip.Results;
 
 %% save
 
-fname = sprintf('%s_%s.mat', strrep(Exp.FileTag, '.mat', ''), ip.Results.stimulus);
+
 fprintf('saving output to [%s]\n', fname)
-dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-save(fullfile(dataDir, fname), '-v7.3', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist', 'eyeAtFrame', 'frameTimes');
+save(fullfile(dataDir, fname), '-v7.3', 'stim', 'Robs', 'valdata', 'labels', 'xax', 'yax', 'dt', 'NX', 'slist', 'opts', 'probeDist', 'eyeAtFrame', 'frameTimes', 'blocks');
 fprintf('Done\n')
 
 % if your're dugging, you can look at this code below to make sure things
