@@ -35,12 +35,18 @@ ip.addParameter('eyePosExclusion', 400)
 ip.addParameter('verbose', true)
 ip.addParameter('eyePos', [])
 ip.addParameter('cids', [])
+ip.addParameter('validTrials', [])
 ip.parse(varargin{:});
 
 verbose = ip.Results.verbose;
 
 % --- find valid trials
-validTrials = intersect(io.getValidTrials(Exp, 'BigDots'), io.getValidTrials(Exp, 'Ephys'));
+if isempty(ip.Results.validTrials)
+    validTrials = intersect(io.getValidTrials(Exp, 'BigDots'), io.getValidTrials(Exp, 'Ephys'));
+else
+    validTrials = ip.Results.validTrials;
+end
+
 numValidTrials = numel(validTrials);
 if numValidTrials==0 % exit
     stimX = [];
