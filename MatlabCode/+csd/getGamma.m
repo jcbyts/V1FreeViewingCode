@@ -52,7 +52,19 @@ for shankInd = 1:numShanks
     
     curShankInds = shankInd*lenShanks-lenShanks+1:shankInd*lenShanks;
     
-    [~,lgMinDepth(shankInd)] = min(lgPower(curShankInds));
+    currLGPower = lgPower(curShankInds);
+    
+    % Take weighted average of channels with power one std above mean power
+    % Find corresponding depth of this weighted average
+    % search for minimum only below this depth
+    meanlgpower = mean(lgPower(curShankInds));
+    stdlgpower = std(lgPower(curShankInds));
+    threshLGPower = currLGPower(lgPower(curShankInds)>meanlgpower+stdlgpower);
+    threshLGCoords = ycoords(lgPower(curShankInds)>meanlgpower+stdlgpower);
+    tmp = threshLGPower*threshLGCoords;
+    tmp = tmp / sum(threshLGPower);
+    
+    [~,lgMinDepth(shankInd)] = min(currLGPower(ycoords>tmp));
     lgMinDepth(shankInd) = ycoords(lgMinDepth(shankInd));
     
     [~,hgMaxDepth(shankInd)] = max(hgPower(curShankInds));

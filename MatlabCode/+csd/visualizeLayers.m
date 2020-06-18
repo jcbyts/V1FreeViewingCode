@@ -26,7 +26,7 @@ end
 figure;
 h = gcf; clf;
 gap = 0.005;
-ha = csd.tight_subplot(num_vert,num_hor, [gap gap],[gap gap],[gap gap]);
+ha = csd.tight_subplot(num_vert,num_hor, [0.04 gap],[gap 0.04],[gap gap]);
 
 plotInd = 1;
 for indSess = 1:length(sessNums)
@@ -48,7 +48,7 @@ for indSess = 1:length(sessNums)
         hold on
         plot(stats.time, bsxfun(@plus, stats.STA(:,:,shankInd), stats.chDepths), 'Color', repmat(.1, 1, 3))
         xlim(stats.time([1 end]))
-        plot(stats.time([1 end]), stats.sinkDepth(shankInd)*[1 1], 'w--', 'Linewidth', 2)
+        %plot(stats.time([1 end]), stats.sinkDepth(shankInd)*[1 1], 'w--', 'Linewidth', 2)
         if ~isempty(stats.reversalPointDepth{shankInd})
             plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{shankInd}, 'r--', 'Linewidth', 2)
         end
@@ -61,17 +61,23 @@ for indSess = 1:length(sessNums)
         scale = xLimits(2);
         shankInds = (shankLen*(shankInd-1)+1):(shankLen*shankInd);
         
-        plot(gamma.lgPower(:,shankInd).*scale, stats.chDepths, 'Color', 'white', 'Linewidth', 3)
-        plot(gamma.hgPower(:,shankInd).*scale, stats.chDepths, 'Color', 'green', 'Linewidth', 3)
-        plot(stats.time([1 end]), [1; 1]*gamma.lgInputLayerDepths(:,:,shankInd), 'white', 'Linewidth', 2)
-        plot(stats.time([1 end]), [1; 1]*gamma.hgInputLayerDepths(:,:,shankInd), 'green', 'Linewidth', 2)
+        plot(gamma.lgPower(:,shankInd).*scale, stats.chDepths, 'Color', 'white', 'Linewidth', 1)
+        %plot(gamma.hgPower(:,shankInd).*scale, stats.chDepths, 'Color', 'green', 'Linewidth', 1)
+        plot(stats.time([1 end]), [1; 1]*gamma.lgMinDepth(shankInd), 'white', 'Linewidth', 2)
+        %plot(stats.time([1 end]), [1; 1]*gamma.lgInputLayerDepths(:,:,shankInd), 'white', 'Linewidth', 2)
+        %plot(stats.time([1 end]), [1; 1]*gamma.hgInputLayerDepths(:,:,shankInd), 'green', 'Linewidth', 2)
 
         
         hold off
         
-        yticks(35:35:1120)
-        yticklabels({'1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31', '32'})
-        title([num2str(sessNums(indSess)) ',' num2str(shankInd)])
+        %yticks(35:35:1120)
+        %yticklabels({'1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31', '32'})
+        
+        if ~(indSess==length(sessNums))
+            set(gca,'xticklabel',{[]})
+            set(gca,'yticklabel',{[]})
+        end
+        title(strcat(string(data{sessNums(indSess), 2}), '-', string(data{sessNums(indSess), 1})))
         
         plotInd = plotInd + 1;
         
