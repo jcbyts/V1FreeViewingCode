@@ -184,6 +184,7 @@ for cc = 1:NC
     W(cc).troughtime = troughloc;
     W(cc).troughval = trough;
     W(cc).waveform = wf;
+    W(cc).wavelags = ts;
     W(cc).spacing = spacing;
     W(cc).shiftlags = centeredTimestamps;
     W(cc).shiftwaveform = wnew;
