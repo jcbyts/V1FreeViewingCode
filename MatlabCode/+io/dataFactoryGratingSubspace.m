@@ -1,4 +1,4 @@
-function varargout = dataFactoryGratingSubspace(sessionId)
+function varargout = dataFactoryGratingSubspace(sessionId, varargin)
 % DATAFACTORY is a big switch statement. You pass in the ID of the sesion
 % you want and it returns the processed data.
 %
@@ -9,6 +9,10 @@ function varargout = dataFactoryGratingSubspace(sessionId)
 %
 % Example:
 %   Exp = io.dataFactory(5); % load the 5th session
+ip = inputParser();
+ip.addParameter('spike_sorting', 'kilo')
+ip.addParameter('cleanup_spikes', 1)
+ip.parse(varargin{:});
 
 dataPath = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 
@@ -52,6 +56,19 @@ fname = fullfile(dataPath, S.processedFileName);
 if exist(fname, 'file')
     fprintf('Loading [%s]\n', S.processedFileName)
     Exp = load(fname);
+    
+    if ~isempty(ip.Results.spike_sorting)
+        spfname = fullfile(dataPath, 'spikes', sprintf('%s_%s.mat', strrep(Exp.FileTag, '.mat', ''), ip.Results.spike_sorting));
+        if exist(spfname, 'file')
+            sp = load(spfname);
+            Exp.osp = sp;
+        elseif contains(dataPath, 'Gabe')
+            disp('Skipping sp error') % do nothing - Gabe currently does not use sp 6/18/20
+        else
+            error('dataFactory: requested spike sorting does not exist')
+        end
+    end
+    
     fprintf('Done\n')
 else % try importing the file
     serverDir = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
@@ -65,6 +82,7 @@ else % try importing the file
     % dataformat, this is a function handle that can be specific to certain
     % functions
     Exp = S.importFun(S); 
+    
     
     % some more meta data
     % some more meta data
@@ -102,6 +120,10 @@ else % try importing the file
     data(sessionId,:) = thisSession;
     writetable(data, meta_file);
     fprintf('Done\n')
+end
+
+if ip.Results.cleanup_spikes
+    Exp.osp = io.cleanup_spikes_struct(Exp.osp, 'firingratethresh', 1);
 end
 
 varargout{1} = Exp;

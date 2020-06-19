@@ -134,7 +134,7 @@ for iTrial = 1:nTrials
             
             % zero mean
             Im = mean(Im,3)-127;
-            Im = imresize(Im, Exp.S.screenRect(3:4));
+            Im = imresize(Im, fliplr(Exp.S.screenRect(3:4)));
             % no probe
             probeX = nan(nFrames,1);
             probeY = nan(nFrames,1);
@@ -282,7 +282,6 @@ for iTrial = 1:nTrials
                     Faces.position = [probeX(iFrame) probeY(iFrame)];
                     [pIm, pAlph] = Faces.getImage(tmprect, spatialBinSize);
                     pIm = pIm - 127;
-                    pIm = pIm *3; % hack
                 end
                 
                 % blend I

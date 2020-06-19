@@ -4,7 +4,7 @@ function eyePos = getCorrectedEyePosFixCalib(Exp, varargin)
 
 ip = inputParser();
 ip.addParameter('plot', false)
-ip.addParameter('usePolynomial', false)
+ip.addParameter('usebilinear', false)
 ip.parse(varargin{:})
 
 fprintf('Correcting eye pos by reanalyzing FaceCal\n')
@@ -52,11 +52,11 @@ bins = {-20:binSize:20, -20:binSize:20};
 % bin eye position during fixations
 C = hist3(xy(fixations,:), 'Ctrs', bins ); colormap parula
 % smooth
-C = imgaussfilt(C, 2);
+C = imgaussfilt(C, 2)';
 % log
-C = log(C');
+% C = log(C);
 % threshold
-C(C<2.5) = 0;
+C(C<10) = 0;
 
 if ip.Results.plot
     figure(1); clf
@@ -76,16 +76,24 @@ end
 
 nTargs = numel(xx);
 fixXY = nan(nTargs,2);
+h = plot(xx(1),yy(1), '+g');
 for iTarg = 1:nTargs
     
-    iix = abs(xx(iTarg)-bins{1}) < 2;
-    iiy = abs(yy(iTarg)-bins{2}) < 2;
+    iix = abs(xx(iTarg)-bins{1}) < 1;
+    iiy = abs(yy(iTarg)-bins{2}) < 1;
 
     I = C(iiy, iix);
     sz = size(I)/2;
     [xc, yc] = radialcenter(I);
-
+    
+    if isnan(xc) || I(ceil(yc), ceil(xc)) == 0
+        continue
+    end
+        
     if ip.Results.plot
+        h.XData = xx(iTarg);
+        h.YData = yy(iTarg);
+        
         figure(2); clf
         imagesc(I); hold on
         plot(xc, yc, 'o')
@@ -94,12 +102,13 @@ for iTarg = 1:nTargs
     end
     
     % store fixation center
+    
     fixXY(iTarg,1) = (xc-sz(1))*binSize+xx(iTarg);
     fixXY(iTarg,2) = (yc-sz(2))*binSize+yy(iTarg);
     
 end
 
-if ip.Results.usePolynomial
+if ip.Results.usebilinear
     % build design matrix for cubic fit
     X = [fixXY fixXY.^2 fixXY.^3];
 else
@@ -120,7 +129,7 @@ mdly = fitlm(X, Y(:,2), 'RobustOpts','on');
 xcoef = mdlx.Coefficients.Variables;
 ycoef = mdly.Coefficients.Variables;
 
-if ip.Results.usePolynomial
+if ip.Results.usebilinear
     Xeye = [Exp.vpx.smo(:,2:3) Exp.vpx.smo(:,2:3).^2 Exp.vpx.smo(:,2:3).^3];
 else
     Xeye = Exp.vpx.smo(:,2:3);

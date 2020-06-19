@@ -26,7 +26,6 @@ def load_data(sessionid=2,datadir="/home/jcbyts/Data/MitchellV1FreeViewing/grati
     
     df = pd.read_csv(metafile)
     if type(sessionid)==str:
-        assert(sessionid in list(df.Tag), '[%s] is not a valid id' %(sessionid))
         sessionid = list(df.Tag).index(sessionid)
         # sessionid = [i for i, j in enumerate(list(df.Tag)) if j==sessionid]
 
@@ -36,6 +35,7 @@ def load_data(sessionid=2,datadir="/home/jcbyts/Data/MitchellV1FreeViewing/grati
     matdat = loadmat(datadir+fname,squeeze_me=False)
 
     out = dict()
+    out['exname'] = df.Tag[sessionid]
     out['grating'] = dict()
     out['grating']['frameTime'] = matdat['grating']['frameTime'][0][0].flatten()
     out['grating']['ori'] = matdat['grating']['ori'][0][0].flatten()
@@ -60,6 +60,9 @@ def load_data(sessionid=2,datadir="/home/jcbyts/Data/MitchellV1FreeViewing/grati
     out['dots']['eyePosAtFrame'] = matdat['dots']['eyePosAtFrame'][0][0]
     out['dots']['validFrames'] = matdat['dots']['validFrames'][0][0]
     out['dots']['numDots'] = matdat['dots']['numDots'][0][0].flatten()
+
+    out['rf'] = {'mu': matdat['rf']['mu'][0][0][0],
+            'cov': matdat['rf']['cov'][0][0]}
 
     return out
 
@@ -89,50 +92,29 @@ def load_and_preprocess(sessionid, basis={}, opts={}):
     basisopts = {'name': 'tent', 'nori': 7, 'nsf': 7, 'support': 1000, 'endpoints': [0.25, 15]}
     basisopts.update(basis)
     
-    defopts = {'frate': 120, 'num_lags': 10, 'num_sac_lags': 40, 'sac_back_shift': 10, 'padding': 0}
+    defopts = {'frate': 120, 'num_lags': 10, 'num_sac_lags': 40, 'sac_back_shift': 10, 'padding': 0, 'redetect_saccades': False}
+    defopts.update(opts)
 
     # load data
     matdat = load_data(sessionid)
 
     # bin stimulus (on specified basis)
-    assert(basisopts['name'] in ['tent', 'cosine'], 'unrecognized basis name. Must be "tent", "cosine", or "unit"')
-    
     stim, basisopts = bin_on_basis(matdat['grating']['ori'], matdat['grating']['cpd'], basisopts)
 
-    # bin saccades
-    slist = matdat['slist']
-    sacon = bin_at_frames(slist[:,0], matdat['grating']['frameTime'], maxbsize=0.1)
-    sacoff = bin_at_frames(slist[:,1], matdat['grating']['frameTime'], maxbsize=0.1)
+    # detect saccades
+    if defopts['redetect_saccades']:
+        sacboxcar,valid,eyepos = get_eyepos_at_frames(matdat['eyepos'], matdat['grating']['frameTime'])
+    else:
+        sacboxcar,valid,eyepos = get_eyepos_at_frames(matdat['eyepos'], matdat['grating']['frameTime'], slist=matdat['slist'])
 
-    son = np.where(sacon)[0]
-    soff = np.where(sacoff)[0]
-    ns = len(son)
-
-    i = 0
-    while True:
-        while son[i]>soff[i]:
-            print("%d) on: %d, off: %d" %(i,son[i], soff[i]))
-            soff = np.delete(soff,i)
-            ns = np.minimum(len(son), len(soff))
-        i +=1
-        if i == ns:
-            break
-
-    if len(son) < len(soff):
-        son = np.delete(son, len(son))
-    
-    son = np.where(sacon.flatten())[0]
-    soff = np.where(sacoff.flatten())[0]
-    Nsac = min(len(son), len(soff))
-
-    NT = len(matdat['grating']['frameTime'])
-    sacboxcar = np.zeros((NT, 1))
-    sacon = np.zeros((NT, 1))
-    sacoff = np.zeros((NT, 1))
-    for i in range(Nsac):
-        sacboxcar[son[i]:soff[i]]=1.0
-        sacon[son[i]] = 1.0
-        sacoff[soff[i]] = 1.0
+    sacboxcar = sacboxcar.astype('float32')
+    sacstart = np.where(np.append(0, np.diff(sacboxcar, axis=0)==1))[0]
+    sacstop = np.where(np.append(0, np.diff(sacboxcar,axis=0)==-1))[0]
+    NT = len(sacboxcar)
+    sacon = np.zeros((NT,1))
+    sacon[sacstart] = 1.0
+    sacoff = np.zeros((NT,1))
+    sacoff[sacstop] = 1.0
 
     # bin spikes
     NC = len(matdat['spikes']['cids'])
@@ -142,11 +124,14 @@ def load_and_preprocess(sessionid, basis={}, opts={}):
         st = matdat['spikes']['st'][matdat['spikes']['clu']==cc]
         RobsAll[:,i] = bin_at_frames(st,matdat['grating']['frameTime'],0.1).flatten()
     
+    defopts['rf'] = matdat['rf']
+
     # padding between trials
     if defopts['padding']>0:
         pad = np.zeros( (defopts['padding'], 1))
         padSpikes = np.zeros( (defopts['padding'], NC))
         padStim = np.zeros( (defopts['padding'], stim.shape[1]))
+        padEye = np.zeros( (defopts['padding'], 4))
         breaks = np.where(np.diff(matdat['grating']['frameTime']) > .5)[0]
         # variables up to first break
         ix = range(0,breaks[0])
@@ -155,38 +140,102 @@ def load_and_preprocess(sessionid, basis={}, opts={}):
         saconNew = [sacon[ix,:]]
         sacoffNew = [sacoff[ix,:]]
         sacboxcarNew = [sacboxcar[ix,:]]
-        for ibreak in range(len(breaks)):
+        validNew = [valid[ix]]
+        epNew = [eyepos[ix,:]]
+        for ibreak in range(1,len(breaks)):
             # pad
             RobsNew.append(padSpikes)
             stimNew.append(padStim)
             saconNew.append(pad)
             sacoffNew.append(pad)
             sacboxcarNew.append(pad)
+            validNew.append(pad)
+            epNew.append(padEye)
             # add valid segment
             ix = range(breaks[ibreak-1]+1, breaks[ibreak])
-            RobsNew.append(RobsNew[ix,:])
-            stimNew.append(stimNew[ix,:])
-            saconNew.append(saconNew[ix])
-            sacoffNew.append(sacoffNew[ix])
-            sacboxcarNew.append(sacboxcarNew[ix])
+            
+            RobsNew.append(RobsAll[ix,:])
+            stimNew.append(stim[ix,:])
+            saconNew.append(sacon[ix])
+            sacoffNew.append(sacoff[ix])
+            sacboxcarNew.append(sacboxcar[ix])
+            validNew.append(valid[ix])
+            epNew.append(eyepos[ix,:])
         
         RobsAll = np.concatenate(RobsNew)
         stim = np.concatenate(stimNew)
         sacon = np.concatenate(saconNew)
         sacoff = np.concatenate(sacoffNew)
         sacboxcar = np.concatenate(sacoffNew)
-
+        valid = np.concatenate(validNew)
+        eyepos = np.concatenate(epNew)
 
     # do downsampling if necessary
-    t_downsample = np.round(1/np.median(np.diff(matdat['grating']['frameTime'])))/defopts['frate']
+    t_downsample = (np.round(1/np.median(np.diff(matdat['grating']['frameTime'])))/defopts['frate']).astype(int)
+    
     if t_downsample > 1:
-        stim = downsample_time(stim, t_downsample.astype(int))
-        sacon = downsample_time(sacon, t_downsample.astype(int))
-        sacoff = downsample_time(sacoff, t_downsample.astype(int))
-        sacboxcar = downsample_time(sacboxcar, t_downsample.astype(int))
-        RobsAll = downsample_time(RobsAll, t_downsample.astype(int))    
+        stim = downsample_time(stim, t_downsample)
+        sacon = downsample_time(sacon, t_downsample)
+        sacoff = downsample_time(sacoff, t_downsample)
+        sacboxcar = downsample_time(sacboxcar, t_downsample)
+        RobsAll = downsample_time(RobsAll, t_downsample)
+        valid = downsample_time(valid, t_downsample)
+        eyepos = downsample_time(eyepos, t_downsample)
 
-    return stim, RobsAll, sacon, sacoff, basisopts, defopts, sacboxcar
+
+    defopts['NX'] = basis['nori']
+    defopts['NY'] = basis['nsf']
+    NT=RobsAll.shape[0]
+    
+    RobsAll = RobsAll.astype('float32')
+
+    # remove indices where bursts of saccades occured
+    from scipy.ndimage import convolve1d
+    invalid = convolve1d(sacon.astype('float'), np.ones(10), axis=0) > 2
+
+    invalid = convolve1d(np.flip(invalid), np.ones(10), axis=0)>0
+    invalid = convolve1d(np.flip(invalid), np.ones(10), axis=0)>0
+
+    valid[np.where(invalid)[0]] = 0
+
+    # restrict indices to eye positions in the center of the screen
+    ed = np.hypot(eyepos[:,1], eyepos[:,2]) < 20
+
+    v = np.intersect1d(np.where(valid)[0], np.where(ed)[0])
+
+    n = 500//8 # exclude 500ms windows when no units spiked
+    x = convolve1d( (np.sum(RobsAll,axis=1)==0).astype('float'), np.ones(n), axis=0)
+    vinds = np.intersect1d(v, np.where(x!=n)[0])
+
+    NTv = len(vinds)
+    # build train, validate, test indices (use frozen trials if they exist)
+    Ui, Xi = NDNutils.generate_xv_folds(NTv, num_blocks=2)
+    Ui = vinds[Ui] # valid indices
+    Xi = vinds[Xi] # valid indices
+
+    valid = np.zeros(NT, dtype='bool')
+    valid[vinds] = True
+
+    if len(matdat['grating']['frozen_repeats']) > 0:
+        print("Using frozen repeats as test set")
+        defopts['has_frozen'] = True
+        Ti = np.reshape(matdat['grating']['frozen_repeats'], (-1, matdat['grating']['frozen_seq_dur'][0]+1)).astype(int)
+        defopts['num_repeats'] = Ti.shape[0]
+        Ti = Ti.flatten()
+    else:
+        # make test indices from the training / validation set
+        Ti = np.concatenate((Ui[:Ui.shape[0]//20], Xi[:Xi.shape[0]//10])).astype(int)
+        defopts['has_frozen'] = False
+
+    Ui = np.setdiff1d(Ui, Ti).astype(int)
+    Xi = np.setdiff1d(Xi, Ti).astype(int)
+
+    defopts['Ti'] = Ti
+    defopts['Xi'] = Xi
+    defopts['Ui'] = Ui
+    defopts['exname'] = matdat['exname']
+
+    return stim, RobsAll, sacon, sacoff, basisopts, defopts, sacboxcar, valid, eyepos
 
 def load_sessions(sesslist, basis={'name': 'tent', 'nori': 7, 'nsf': 6, 'endpoints': [0.25, 15]}, opts={}):
     '''
@@ -201,16 +250,31 @@ def load_sessions(sesslist, basis={'name': 'tent', 'nori': 7, 'nsf': 6, 'endpoin
     bigRobs = []
     bigDF = []
     bigSacBC = []
-
+    bigValid = []
+    bigEP = []
+    bigOpts = []
     for sess in sesslist:
-        stim, RobsAll, sacon, sacoff, basis, opts, sacbc = load_and_preprocess(sess, basis=basis, opts=opts)
-        Nspks = np.sum(RobsAll,axis=0)
-        valcell = np.where(Nspks > 500)[0]
+        stim, RobsAll, sacon, sacoff, basis, opts, sacbc, valid,eyepos = load_and_preprocess(sess, basis=basis, opts=opts)
+        if bigOpts==[]:
+            bigOpts = opts
+            bigOpts['exname'] = [opts['exname']]
+        else:
+            bigOpts['exname'].append(opts['exname'])
+
+        # Nspks = np.sum(RobsAll,axis=0)
+        # valcell = np.where(Nspks > 500)[0]
+
+        AvFr = np.average(RobsAll, axis=0)*opts['frate']
+        # print(AvFr)
+
+        valcell = np.where(AvFr > 1)[0]
+
+        opts['cids'] = valcell
         NC = len(valcell)
         Robs = RobsAll[:,valcell]
-        print(NC, 'selected')
+        # print(NC, 'selected')
         NT = Robs.shape[0]
-        print("Found %d/%d units that had > 500 spikes" %(NC, RobsAll.shape[1]))
+        print("Found %d/%d units that had > 1 spike/sec" %(NC, RobsAll.shape[1]))
         DF = np.ones([NT,NC])
         bigStim.append(stim)
         bigRobs.append(Robs)
@@ -218,35 +282,47 @@ def load_sessions(sesslist, basis={'name': 'tent', 'nori': 7, 'nsf': 6, 'endpoin
         bigSacOn.append(sacon)
         bigSacOff.append(sacoff)
         bigSacBC.append(sacbc)
+        bigValid.append(valid)
+        bigEP.append(eyepos)
     
     stim = np.concatenate(bigStim, axis=0)
     sacon = np.concatenate(bigSacOn, axis=0)
     sacoff = np.concatenate(bigSacOff, axis=0)
     sacbc = np.concatenate(bigSacBC, axis=0)
+    eyepos = np.concatenate(bigEP, axis=0)
+    valid = np.concatenate(bigValid, axis=0)
     Robs = block_diag(*bigRobs)
     DF = block_diag(*bigDF)
 
-    return stim, sacon, sacoff, Robs, DF, basis, opts, sacbc
+    return stim, sacon, sacoff, Robs, DF, basis, opts, sacbc, valid, eyepos
 
 def load_and_setup(indexlist, npow=1.8, opts={}):
     '''
     setup analyses for the grating saccade modulaiton project
     Input:
-    indexlist <list of integers>
+    indexlist <list of integers, or list of session tags>
 
     Output:
 
     '''
-    sesslist = list_sessions()
-    sesslist = list(sesslist)
+
+    if not type(indexlist):
+        indexlist = [indexlist]
+
+    if type(indexlist[0])==int:
+        sesslist = list_sessions()
+        sesslist = list(sesslist)
+        sesslist = [sesslist[i] for i in indexlist]
+    else:
+        sesslist = indexlist
 
     # TODO: use this to find groups where the stimulus was the same
 
     # First: calculate the min SF in the datasets / number of SF steps
     sessmincpd = []
     sessmaxcpd = []
-    for i in indexlist:
-        matdat = load_data(sesslist[i])
+    for sess in sesslist:
+        matdat = load_data(sess)
         sessmincpd.append(np.min(matdat['grating']['cpd'][matdat['grating']['cpd']>0.0]))
         sessmaxcpd.append(np.max(matdat['grating']['cpd']))
 
@@ -258,46 +334,223 @@ def load_and_setup(indexlist, npow=1.8, opts={}):
     ymax = invnl(nsteps-1,sessmincpd,npow)
     print("maxmium SF: %02.2f" %(ymax*1.5))
 
-    #%% load data
-    sess = [sesslist[i] for i in indexlist]
-
     # shared basis
     basis = {'name': 'cosine', 'nori': 8, 'nsf': int(nsteps), 'endpoints': [sessmincpd, npow], 'support': 500}
 
     # load session
-    stim, sacon, sacoff, Robs, DF, basis, opts, sacboxcar = load_sessions(sess, basis=basis, opts=opts)
+    stim, sacon, sacoff, Robs, DF, basis, opts, sacboxcar, valid, eyepos = load_sessions(sesslist, basis=basis, opts=opts)
     
-    opts['NX'] = basis['nori']
-    opts['NY'] = basis['nsf']
-    NT=Robs.shape[0]
+    # opts['NX'] = basis['nori']
+    # opts['NY'] = basis['nsf']
+    # NT=Robs.shape[0]
     
-    Robs = Robs.astype('float32')
+    # Robs = Robs.astype('float32')
 
-    # build train, validate, test indices (use frozen trials if they exist)
-    Ui, Xi = NDNutils.generate_xv_folds(NT, num_blocks=2)
+    # # remove indices where bursts of saccades occured
+    # from scipy.ndimage import convolve1d
+    # invalid = convolve1d(sacon.astype('float'), np.ones(10), axis=0) > 2
 
-    grating = load_data(sess[0]) # reload data
+    # invalid = convolve1d(np.flip(invalid), np.ones(10), axis=0)>0
+    # invalid = convolve1d(np.flip(invalid), np.ones(10), axis=0)>0
 
-    if len(grating['grating']['frozen_repeats']) > 0:
-        print("Using frozen repeats as test set")
-        opts['has_frozen'] = True
-        Ti = np.reshape(grating['grating']['frozen_repeats'], (-1, grating['grating']['frozen_seq_dur'][0]+1)).astype(int)
-        opts['num_repeats'] = Ti.shape[0]
-        Ti = Ti.flatten()
-    else:
-        # make test indices from the training / validation set
-        Ti = np.concatenate((Ui[:Ui.shape[0]//20], Xi[:Xi.shape[0]//10])).astype(int)
-        opts['has_frozen'] = False
+    # valid[np.where(invalid)[0]] = 0
 
-    Ui = np.setdiff1d(Ui, Ti).astype(int)
-    Xi = np.setdiff1d(Xi, Ti).astype(int)
+    # # restrict indices to eye positions in the center of the screen
+    # ed = np.hypot(eyepos[:,1], eyepos[:,2]) < 20
 
-    opts['Ti'] = Ti
-    opts['Xi'] = Xi
-    opts['Ui'] = Ui
-    opts['exname'] = sess
+    # v = np.intersect1d(np.where(valid)[0], np.where(ed)[0])
 
-    return stim, sacon, sacoff, Robs, DF, basis, opts, sacboxcar
+    # n = 500//8 # exclude 500ms windows when no units spiked
+    # x = convolve1d( (np.sum(Robs,axis=1)==0).astype('float'), np.ones(n), axis=0)
+    # vinds = np.intersect1d(v, np.where(x!=n)[0])
+
+    # NTv = len(vinds)
+    # # build train, validate, test indices (use frozen trials if they exist)
+    # Ui, Xi = NDNutils.generate_xv_folds(NTv, num_blocks=2)
+    # Ui = vinds[Ui] # valid indices
+    # Xi = vinds[Xi] # valid indices
+
+    # valid = np.zeros(NT, dtype='bool')
+    # valid[vinds] = True
+
+    # grating = load_data(sess[0]) # reload data
+
+    # if len(grating['grating']['frozen_repeats']) > 0:
+    #     print("Using frozen repeats as test set")
+    #     opts['has_frozen'] = True
+    #     Ti = np.reshape(grating['grating']['frozen_repeats'], (-1, grating['grating']['frozen_seq_dur'][0]+1)).astype(int)
+    #     opts['num_repeats'] = Ti.shape[0]
+    #     Ti = Ti.flatten()
+    # else:
+    #     # make test indices from the training / validation set
+    #     Ti = np.concatenate((Ui[:Ui.shape[0]//20], Xi[:Xi.shape[0]//10])).astype(int)
+    #     opts['has_frozen'] = False
+
+    # Ui = np.setdiff1d(Ui, Ti).astype(int)
+    # Xi = np.setdiff1d(Xi, Ti).astype(int)
+
+    # opts['Ti'] = Ti
+    # opts['Xi'] = Xi
+    # opts['Ui'] = Ui
+    # opts['exname'] = sess
+
+    return stim, sacon, sacoff, Robs, DF, basis, opts, sacboxcar, valid, eyepos
+
+def get_eyepos_at_frames(ep,ft,slist=None,sm=50,minDur=5,velThresh=5,minDurBins=3,maxDurBins=20,maxAmp=10,maxVel=600,validCutoff=60):
+    from scipy.ndimage import convolve1d
+    from scipy.interpolate import interp1d
+    
+    kern = np.hanning(sm)   # a Hanning window with width 50
+    kern /= kern.sum()      # normalize the kernel weights to sum to 1
+    
+    tt = ep[:,0]
+    fs = 1//np.median(np.diff(tt)) # sampling rate
+    
+    # get velocity by smoothing the derivative
+    dx = convolve1d(ep[1:,1]-ep[:-1,1], kern, axis=0)
+    dy = convolve1d(ep[1:,2]-ep[:-1,2], kern, axis=0)
+    
+    spd = np.append(0,np.hypot(dx, dy))*fs # in degrees/sec
+    # smooth again to get a baseline
+    spd0 = convolve1d(spd, kern, axis=0)
+    
+    spdd = (spd-spd0)**2 # the squared residuals 
+    kern = np.ones(minDur)
+    sacd = convolve1d((spdd<velThresh).astype('float'), kern, axis=0)
+    
+    saccades = (sacd<minDur).astype('float')
+
+    # resample at frame times
+    # speed
+    f = interp1d(tt,spd,kind='linear', axis=0, fill_value='extrapolate')
+    spd2 = f(ft)
+
+    # eyepos X
+    f = interp1d(tt,ep[:,1],kind='linear', axis=0, fill_value='extrapolate')
+    ex = f(ft)
+
+    # eyepos Y
+    f = interp1d(tt,ep[:,2],kind='linear', axis=0, fill_value='extrapolate')
+    ey = f(ft)
+
+    ind = np.digitize(ft, tt)
+    saccades = ep[:,3]==2
+    sacbc = np.expand_dims(saccades[ind], axis=1)
+    valid = np.logical_or(ep[:,3]==2, ep[:,3]==1)
+    valid = np.expand_dims(valid[ind], axis=1)
+
+    # # labels
+    # if slist is None:
+    #     ind = np.digitize(ft, tt)
+    #     sacbc = saccades[ind]
+    
+    #     # find valid times
+    #     sd = np.append(0,np.diff(sacbc))
+    #     sacon = sd==1
+    #     sacoff = sd==-1
+
+    # else:
+    #     sacon = bin_at_frames(slist[:,0], ft, maxbsize=0.1)
+    #     sacoff = bin_at_frames(slist[:,1], ft, maxbsize=0.1)
+        
+    #     son = np.where(sacon)[0]
+    #     soff = np.where(sacoff)[0]
+    #     ns = len(son)
+
+    #     i = 0
+    #     while True:
+    #         while son[i]>soff[i]:
+    #             print("%d) on: %d, off: %d" %(i,son[i], soff[i]))
+    #             soff = np.delete(soff,i)
+    #             ns = np.minimum(len(son), len(soff))
+    #         i +=1
+    #         if i == ns:
+    #             break
+
+    #     if len(son) < len(soff):
+    #         son = np.delete(son, len(son))
+
+    #     son = np.where(sacon.flatten())[0]
+    #     soff = np.where(sacoff.flatten())[0]
+    #     Nsac = min(len(son), len(soff))
+
+    #     NT = len(ft)
+    #     sacbc = np.zeros((NT,1))
+    #     for i in range(Nsac):
+    #         sacbc[son[i]:soff[i]]=1.0
+        
+    
+    sacbc[0,0] = 0
+    sacbc[-1,0] = 0
+    
+    eyes = np.concatenate([[ft],[ex],[ey],[spd2]], axis=0).T
+    return sacbc,valid,eyes
+
+    # # find valid times
+    # sd = np.append(0,np.diff(sacbc, axis=0))
+    # sacon = sd==1
+    # sacoff = sd==-1
+
+    # sacstart = np.where(sacon)[0]
+    # sacstop = np.where(sacoff)[0]
+    
+    # dur = sacstop-sacstart
+    
+    # bad = np.logical_or(dur < minDurBins, dur > maxDurBins)
+
+    # nsac = len(sacstart)
+    # pv = np.zeros(nsac)
+    # for i in range(nsac):
+    #     pv[i] = np.max(spd2[range(sacstart[i],sacstop[i])])
+    
+    # bad = np.logical_or(bad, pv > maxVel)
+
+    # dx = ex[sacstop]-ex[sacstart]
+    # dy = ey[sacstop]-ey[sacstart]
+
+    # amp = np.hypot(dx,dy)
+
+    # bad = np.logical_or(bad, amp > maxAmp)
+
+    # badlist = np.where(bad)[0]
+    # print("Found %d bad saccades of %d" %(len(badlist), nsac))
+
+    # NT = len(spd2)
+    # # valid = np.ones((NT,1))
+    # bpad = 15
+    # for i in range(len(badlist)):
+    #     i1 = np.maximum(sacstart[badlist[i]]-bpad, 0)
+    #     i2 = np.minimum(sacstop[badlist[i]]+bpad, NT-1)
+    #     ix = range(i1,i2)
+    #     valid[ix] = 0
+    
+    
+    # # only take valid times that are longer than the valid cutoff
+    # vd = np.append(0,np.diff(valid.astype('float')))
+
+    # von=np.where(vd==1)[0]
+    # voff=np.where(vd==-1)[0]
+
+    # if valid[0]==1:
+    #     von = np.append(1,von)
+
+    # if valid[-1]==1:
+    #     voff = np.append(voff,len(valid)-1)
+    
+    # invalid = np.where( (voff-von) < validCutoff)[0]
+    # voff = np.delete(voff,invalid)
+    # von = np.delete(von,invalid)
+
+    # nsegments = len(voff)
+    # valid2 = np.zeros(len(valid))
+    # for i in range(nsegments):
+    #     valid2[range(von[i], voff[i])]=1
+    
+    # print("%d/%d valid bins" %(np.sum(valid2), len(valid2)))    
+    
+    # eyes = np.concatenate([[ft],[ex],[ey],[spd2]], axis=0).T
+    # return sacbc,valid,eyes
+
 
 def find_best_reg(glm, input_data=None, output_data=None,train_indxs=None, test_indxs=None,
     reg_type='l2', opt_params=None, learning_alg=None,reg_vals=[1e-6, 1e-4, 1e-3, 1e-2, 0.1, 1, 10],
@@ -328,7 +581,399 @@ def find_best_reg(glm, input_data=None, output_data=None,train_indxs=None, test_
 
     return reg_min
 
-def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=500, seed=5, l2=1e-2, smooth=1e-3, learnrate=1e-3, noise_dist='poisson', datapath=None, tag='jnk', silent=False):
+def cart2pol(x, y):
+    rho = np.hypot(x,y)
+    phi = np.arctan2(y, x)
+    return(rho, phi)
+
+def pol2cart(rho, phi):
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return(x, y)
+
+def fit_sac_model_basic(stim, Robs, sacbc, eyepos, opts, Ui, Xi, num_lags=15, num_tkerns=3,
+        num_onlags = 44, num_offlags = 42, back_shiftson = 40, back_shiftsoff = 2, num_sac_amp=4,
+        datapath=None, tag='jnk', silent=False):
+    '''
+    fit_stim_models(stim, Robs, sacbc, eyepos, opts, TrainInds, ValidateInds)
+    '''
+    
+    import NDN3.NDN as NDN
+    from copy import deepcopy
+    from pathlib import Path
+    
+    if datapath is None:
+        PATH = Path.cwd() / 'output'
+    elif type(datapath)=='pathlib.PosixPath':
+        PATH = datapath
+    else:
+        PATH = Path(datapath)
+    
+    # Models will be loaded if they were alreay saved
+    f10 = PATH / (tag + '_sacadd0') # stim GLM default regularization
+    f11 = PATH / (tag + '_sacadd1') # best reg_path (per neuron)
+    # f12 = PATH / (tag + '_sacadd2') # best reg_path (per neuron)
+
+    f20 = PATH / (tag + '_sacmult0') # stim GLM default regularization
+    f21 = PATH / (tag + '_sacmult1') # best reg_path
+    f22 = PATH / (tag + '_sacmult2') # best reg_path (per neuron)
+
+    # ----------------------------------------------------------------------------------------
+    # Setup optimizer
+
+    # fit stimulus models using LBFGS
+    lbfgs_params = NDN.NDN.optimizer_defaults(opt_params={'use_gpu': True, 'display': False}, learning_alg='lbfgs')
+    lbfgs_params['maxiter'] = 10000
+
+    # fit multiplicative models with Adam
+    adam_params = NDN.NDN.optimizer_defaults(opt_params={'use_gpu': True}, learning_alg='adam')
+
+    early_stopping = 100
+
+    adam_params['batch_size'] = 500
+    adam_params['display'] = 30
+    adam_params['MAPest'] = True
+    adam_params['epochs_training'] = 1000
+    adam_params['early_stop'] = early_stopping
+    adam_params['early_stop_mode'] = 1
+    adam_params['data_pipe_type'] = 'data_as_var' # 'feed_dict'
+    adam_params['learning_rate'] = 1e-3
+
+    # ------------------------------------------------------
+    # Setup saccade inputs
+    sacbc[0] = 0
+    sacbc[-1] = 0
+
+    ixon = np.where(np.diff(sacbc, axis=0)==1)[0]
+    ixoff = np.where(np.diff(sacbc, axis=0)==-1)[0]
+
+    sacon = np.append(0, np.diff(sacbc, axis=0)==1).astype('float32')
+    sacoff = np.append(0, np.diff(sacbc, axis=0)==-1).astype('float32')
+
+
+    dx = eyepos[ixoff,1]-eyepos[ixon,1]
+    dy = eyepos[ixoff,2]-eyepos[ixon,2]
+
+    [sacAmp, _] = cart2pol(dx, dy)
+
+    # project saccade size on a tent basis
+    sacOnAmp = sacon.copy()
+    sacOnAmp[np.where(sacon)[0]] = sacAmp
+    sacOnAmp = raised_cosine(sacOnAmp,num_sac_amp,0.5,2.5)
+
+    sacOffAmp = sacoff.copy()
+    sacOffAmp[np.where(sacoff)[0]] = sacAmp
+    sacOffAmp = raised_cosine(sacOffAmp, num_sac_amp, 0.5, 2.5)
+
+    # expand dims
+    sacon = np.expand_dims(sacon, axis=1)
+    sacoff = np.expand_dims(sacoff, axis=1)
+
+    # saccade onset/offset with back_shifts
+    saconshift = NDNutils.shift_mat_zpad(sacon,-back_shiftson,dim=0)
+
+    sacOnAmpshift = NDNutils.shift_mat_zpad(sacOnAmp,-back_shiftson,dim=0)
+    sacOffAmpshift = NDNutils.shift_mat_zpad(sacOffAmp,-back_shiftsoff,dim=0)
+
+    tspacing = list(np.concatenate([np.arange(0,20,5), np.arange(20,40,3), np.arange(40,num_onlags,1)]))
+    tspacingoff = list(np.concatenate([np.arange(0,20,1), np.arange(20,num_offlags,3)]))
+
+    sacOnAmpshift[np.sum(np.isnan(sacOnAmpshift),axis=1)>0,:] = 0
+    sacOffAmpshift[np.sum(np.isnan(sacOffAmpshift),axis=1)>0,:] = 0
+
+    # ------------------------------------------------------
+    # Get GLM model
+    Robs = Robs.astype('float32')
+    glms,_ = fit_stim_model(stim, Robs, opts,
+        Ui,Xi, num_lags=15, num_tkerns=3,
+        datapath=datapath,
+        tag=tag)
+
+    glm = glms[-1]
+
+    num_durlags = 2
+    num_sacsubs = 3
+    num_sactkerns = 3
+
+    stim_par = glm.network_list[0].copy()  # copy the stimulus parameters from the GLM
+    stim_par['activation_funcs'][-1] = 'lin' # switch to linear activation, softplus will still be on the output
+
+    NC = Robs.shape[1]
+
+    sac_on_par = NDNutils.ffnetwork_params(
+        input_dims=[1,1,1],
+        time_expand=[num_onlags],
+        xstim_n=[1],
+        layer_sizes=[num_sactkerns, NC], # conv_filter_widths=[1],
+        layer_types=['temporal', 'normal'],
+        act_funcs=['lin', 'lin'],
+        normalization=[1, 0],
+        reg_list={'orth':[1e-3,None], 'd2t':[1e-1],'d2x':[None, None],'l2':[None], 'l1':[None]})
+
+    # sac_dur_par = NDNutils.ffnetwork_params(
+    #     input_dims=[1,1,1],
+    #     xstim_n=[3],
+    #     layer_sizes=[NC], # conv_filter_widths=[1],
+    #     layer_types=['normal'],
+    #     act_funcs=['lin'],
+    #     normalization=[0],
+    #     reg_list={'d2t':[None],'d2x':[None],'l2':[1e-3], 'l1':[1e-5]})
+
+    sac_off_par = NDNutils.ffnetwork_params(
+        input_dims=[1,1,num_sac_amp],
+        time_expand=[num_offlags],
+        xstim_n=[2],
+        layer_sizes=[num_sactkerns, num_sacsubs, NC], # conv_filter_widths=[1],
+        layer_types=['temporal', 'normal', 'normal'],
+        act_funcs=['lin', 'lin', 'lin'],
+        normalization=[1, 1, 0],
+        reg_list={'orth':[None,None], 'd2t':[1e-1],'d2x':[None, 1e-1],'l2':[None,None,1e-5], 'l1':[None, None, 1e-5]})
+
+    comb_par = NDNutils.ffnetwork_params(
+        xstim_n=None, ffnet_n=[0,1,2], layer_sizes=[NC],
+        layer_types=['add'], act_funcs=['softplus'])
+
+    mult_par1 = NDNutils.ffnetwork_params(
+        xstim_n=None, ffnet_n=[0,3], layer_sizes=[NC],
+        layer_types=['mult'], act_funcs=['lin'])
+
+    comb_par1 = NDNutils.ffnetwork_params(
+        xstim_n=None, ffnet_n=[0,1,2,4], layer_sizes=[NC],
+        layer_types=['add'], act_funcs=['softplus'])
+
+    seed = 5
+
+    # initialize
+    ndns = []
+    models = []
+
+    ndns.append(glm)
+    models.append('stim GLM')
+
+    if f10.exists():
+        ndn0 = NDN.NDN.load_model(str(f10.resolve()))
+        print("Model 10 loaded")
+    else:
+        print("Fitting model 10")
+        # initialize NDN
+        ndn0 = NDN.NDN([stim_par, sac_on_par, sac_off_par, comb_par], ffnet_out=3, tf_seed=seed, noise_dist='poisson')
+        ndn0.networks[1].layers[0].init_temporal_basis( xs=tspacing )
+        ndn0.networks[2].layers[0].init_temporal_basis( xs=tspacingoff)
+
+        # stimulus is the same
+        ndn0.networks[0].layers[0].weights = deepcopy(glm.networks[0].layers[0].weights)
+        ndn0.networks[0].layers[0].biases = deepcopy(glm.networks[0].layers[0].biases)
+
+        # add network has 0 bias and weights 1
+        ndn0.networks[3].layers[0].weights /= ndn0.networks[3].layers[0].weights
+
+        # Train
+        v2f0 = ndn0.fit_variables(layers_to_skip=[[0], [], [], [0]], fit_biases=False)
+        v2f0[-1][-1]['biases']=True
+
+        _ = ndn0.train(input_data=[stim, saconshift, sacOffAmpshift], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+            fit_variables=v2f0,
+            learning_alg='lbfgs', opt_params=lbfgs_params, use_dropout=False)
+        
+        # Save
+        ndn0.save_model(str(f10.resolve()))
+    
+    # Append
+    ndns.append(ndn0)
+    models.append('sac On + Off GLM')
+
+    if f11.exists():
+        ndn0 = NDN.NDN.load_model(str(f11.resolve()))
+        print("Model 11 loaded")
+    else:
+        print("Fitting Model 11")
+        # Train
+        v2f0 = ndn0.fit_variables(layers_to_skip=[[], [], [], [0]], fit_biases=False)
+        v2f0[-1][-1]['biases']=True
+
+        _ = ndn0.train(input_data=[stim, saconshift, sacOffAmpshift], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+            fit_variables=v2f0,
+            learning_alg='lbfgs', opt_params=lbfgs_params, use_dropout=False)
+        
+        # Save
+        ndn0.save_model(str(f11.resolve()))
+
+    # Append
+    ndns.append(ndn0)
+    models.append('sac On + Off GLM (retrain stim)')
+
+    if f20.exists():
+        ndn2 = NDN.NDN.load_model(str(f20.resolve()))
+        print("Model 20 loaded")
+    else:
+        print("Fitting model 20")
+        # initialize NDN
+        ndn2 = NDN.NDN([stim_par, sac_on_par, sac_off_par, sac_off_par, mult_par1, comb_par1], ffnet_out=5, tf_seed=seed, noise_dist='poisson')
+        ndn2.networks[1].layers[0].init_temporal_basis( xs=tspacing )
+        ndn2.networks[2].layers[0].init_temporal_basis( xs=tspacingoff)
+        ndn2.networks[3].layers[0].init_temporal_basis( xs=tspacingoff)
+
+        # stimulus is the same
+        ndn2.networks[0].layers[0].weights = deepcopy(ndn0.networks[0].layers[0].weights)
+        ndn2.networks[0].layers[0].biases = deepcopy(ndn0.networks[0].layers[0].biases)
+
+        # add network has 0 bias and weights 1
+        ndn2.networks[4].layers[0].weights /= ndn2.networks[4].layers[0].weights
+        ndn2.networks[5].layers[0].weights /= ndn2.networks[5].layers[0].weights
+
+        # # sacon and off are initialized with the additive model
+        # ndn2.networks[1].layers[0].weights = deepcopy(ndn0.networks[1].layers[0].weights)
+        # ndn2.networks[1].layers[1].weights = deepcopy(ndn0.networks[1].layers[1].weights)
+
+        # ndn2.networks[2].layers[0].weights = deepcopy(ndn0.networks[2].layers[0].weights)
+        # ndn2.networks[2].layers[1].weights = deepcopy(ndn0.networks[2].layers[1].weights)
+        # ndn2.networks[2].layers[2].weights = deepcopy(ndn0.networks[2].layers[2].weights)
+
+        # ndn2.networks[3].layers[2].weights /= ndn2.networks[3].layers[2].weights
+
+        # Train
+        v2f0 = ndn2.fit_variables(layers_to_skip=[[0], [], [], [], [0], [0]], fit_biases=False)
+        v2f0[-1][-1]['biases']=True
+
+        _ = ndn2.train(input_data=[stim, saconshift, sacOffAmpshift], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+            fit_variables=v2f0,
+            learning_alg='adam', opt_params=adam_params, use_dropout=False)
+
+        v2f0 = ndn2.fit_variables(layers_to_skip=[[], [], [], [], [0], [0]], fit_biases=False)
+        v2f0[-1][-1]['biases']=True
+
+        _ = ndn2.train(input_data=[stim, saconshift, sacOffAmpshift], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+            fit_variables=v2f0,
+            learning_alg='adam', opt_params=adam_params, use_dropout=False)
+        
+        # Save
+        ndn2.save_model(str(f20.resolve()))
+    
+    # Append
+    ndns.append(ndn2)
+    models.append('sac On + Off (Offset gain) GLM')
+
+    if f21.exists():
+        ndn2 = NDN.NDN.load_model(str(f21.resolve()))
+        print("Model 21 loaded")
+    else:
+        print("Fitting model 21")
+        # initialize NDN
+        ndn2 = NDN.NDN([stim_par, sac_on_par, sac_off_par, sac_on_par, mult_par1, comb_par1], ffnet_out=5, tf_seed=seed, noise_dist='poisson')
+        ndn2.networks[1].layers[0].init_temporal_basis( xs=tspacing )
+        ndn2.networks[2].layers[0].init_temporal_basis( xs=tspacingoff)
+        ndn2.networks[3].layers[0].init_temporal_basis( xs=tspacing)
+
+        # stimulus is the same
+        ndn2.networks[0].layers[0].weights = deepcopy(ndn0.networks[0].layers[0].weights)
+        ndn2.networks[0].layers[0].biases = deepcopy(ndn0.networks[0].layers[0].biases)
+
+        # add network has 0 bias and weights 1
+        ndn2.networks[4].layers[0].weights /= ndn2.networks[4].layers[0].weights
+        ndn2.networks[5].layers[0].weights /= ndn2.networks[5].layers[0].weights
+
+        # # sacon and off are initialized with the additive model
+        # ndn2.networks[1].layers[0].weights = deepcopy(ndn0.networks[1].layers[0].weights)
+        # ndn2.networks[1].layers[1].weights = deepcopy(ndn0.networks[1].layers[1].weights)
+
+        # ndn2.networks[2].layers[0].weights = deepcopy(ndn0.networks[2].layers[0].weights)
+        # ndn2.networks[2].layers[1].weights = deepcopy(ndn0.networks[2].layers[1].weights)
+        # ndn2.networks[2].layers[2].weights = deepcopy(ndn0.networks[2].layers[2].weights)
+
+        # ndn2.networks[3].layers[1].weights /= ndn2.networks[3].layers[1].weights
+
+        # Train
+        v2f0 = ndn2.fit_variables(layers_to_skip=[[0], [], [], [], [0], [0]], fit_biases=False)
+        v2f0[-1][-1]['biases']=True
+
+        _ = ndn2.train(input_data=[stim, saconshift, sacOffAmpshift], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+            fit_variables=v2f0,
+            learning_alg='adam', opt_params=adam_params, use_dropout=False)
+
+        v2f0 = ndn2.fit_variables(layers_to_skip=[[], [], [], [], [0], [0]], fit_biases=False)
+        v2f0[-1][-1]['biases']=True
+
+        _ = ndn2.train(input_data=[stim, saconshift, sacOffAmpshift], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+            fit_variables=v2f0,
+            learning_alg='adam', opt_params=adam_params, use_dropout=False)
+        
+        # Save
+        ndn2.save_model(str(f20.resolve()))
+    
+    # Append
+    ndns.append(ndn2)
+    models.append('sac On + Off (Onset gain) GLM')
+
+    inputs = [stim, saconshift, sacOffAmpshift]
+    return ndns,models,inputs
+
+def fit_stim_model(stim, Robs, opts, Ui, Xi, num_lags=15, num_tkerns=3, datapath=None, tag='jnk', silent=False):
+    '''
+    fit_stim_models(stim, Robs, TrainInds, ValidateInds)
+    '''
+    
+    import NDN3.NDN as NDN
+    from copy import deepcopy
+    from pathlib import Path
+    
+    if datapath is None:
+        PATH = Path.cwd() / 'output'
+    elif type(datapath)=='pathlib.PosixPath':
+        PATH = datapath
+    else:
+        PATH = Path(datapath)
+    
+    # Models will be loaded if they were alreay saved
+    f00 = PATH / (tag + '_glm') # stim GLM default regularization
+    f01 = PATH / (tag + '_glm_bestreg') # best reg_path (per neuron)
+
+    # fit stimulus models using LBFGS
+    lbfgs_params = NDN.NDN.optimizer_defaults(opt_params={'use_gpu': True, 'display': False}, learning_alg='lbfgs')
+    lbfgs_params['maxiter'] = 10000
+
+    NX = opts['NX']
+    NY = opts['NY']
+
+    NT,NC=Robs.shape
+
+    # build time-embedded stimulus
+    Robs = Robs.astype('float32')
+
+    # setup stimulus parameters
+    glm_par = NDNutils.ffnetwork_params(
+        input_dims=[1,NX,NY], time_expand=[num_lags],
+        layer_sizes=[num_tkerns, NC],
+        layer_types=['temporal', 'normal'], # readout for cell-specific regularization
+        act_funcs=['lin', 'softplus'],
+        normalization=[1, 0],
+        reg_list={'d2t': [1e-5], 'd2x': [None,1e-4], 'l2':[1e-6,1e-6]}
+    )
+    seed = 5
+
+    # initialize
+    ndns = []
+    models = []
+
+    if f00.exists():
+        ndn0 = NDN.NDN.load_model(str(f00.resolve()))
+        print("Model 00 loaded")
+    else:
+        ndn0 = NDN.NDN([glm_par], tf_seed=seed, noise_dist='poisson')
+
+        # Train
+        _ = ndn0.train(input_data=[stim], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+            learning_alg='lbfgs', opt_params=lbfgs_params, use_dropout=False, silent=True)
+        
+        # Save
+        ndn0.save_model(str(f00.resolve()))
+    
+    # Append
+    ndns.append(ndn0)
+    models.append('stim GLM')
+
+    return ndns,models
+
+def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, valid=None, batch_size=500, seed=5, l2=1e-2, smooth=1e-3, learnrate=1e-3, noise_dist='poisson', datapath=None, tag='jnk', silent=False):
     '''
     fit_models fits a set of simple LN models with saccade modulations
     Inputs:
@@ -360,9 +1005,9 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
     f11 = PATH / (tag + '_glmsacLin_fitall') # fit both saccade onset / stimulus initialized by previous fit
     f12 = PATH / (tag + '_glmsacLin_fitall_reg') # learn best regularization for saccade kernels
 
-    f20 = PATH / (tag + '_glmsacTriLin_fixstim') # three saccade terms
-    f21 = PATH / (tag + '_glmsacTriLin_fitall') # fit stim simultaneously
-    f22 = PATH / (tag + '_glmsacTriLin_fitall_reg') # fit stim simultaneously
+    f20 = PATH / (tag + '_glmsacOG_fixstim') # three saccade terms
+    f21 = PATH / (tag + '_glmsacOG_fitreg') # fit stim simultaneously
+    f22 = PATH / (tag + '_glmsacOG_fitall_reg') # fit stim simultaneously
 
     f30 = PATH / (tag + '_glmsacMultLin_fixstim') # three saccade terms
     f31 = PATH / (tag + '_glmsacMultLin_fitall') # fit stim simultaneously
@@ -390,8 +1035,16 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
 
     NX = opts['NX']
     NY = opts['NY']
-    Ui = opts['Ui'] # train inds
-    Xi = opts['Xi'] # validation inds
+
+    if valid is None:
+        Ui = opts['Ui'] # train inds
+        Xi = opts['Xi'] # validation inds
+    else:
+        # valid indices
+        Ui = np.intersect1d(opts['Ui'], valid)
+        Xi = np.intersect1d(opts['Xi'], valid)
+        Tiv = np.intersect1d(opts['Ti'], valid)
+    
 
     num_lags = int(Xstim.shape[1]/(NX*NY))
     
@@ -404,8 +1057,6 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
     # build time-embedded stimulus
     Robs = Robs.astype('float32')
     RobsTrain = Robs.copy()
-    # training data is smoothed spikes (does it help with fitting?)
-    # RobsTrain = gaussian_filter(Robs.copy(), [1.0, 0.0]).astype('float32')
 
     # Model Params:
 
@@ -414,17 +1065,17 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
         input_dims=[1,NX,NY,num_lags], layer_sizes=[NC], 
         layer_types=['readout'], act_funcs=['softplus'], 
         normalization=[0],
-        reg_list={'d2xt':[smooth],'l2':[l2], 'l1':[1e-5]}
+        reg_list={'d2t':[smooth],'d2x':[smooth], 'l2':[1e-6]}
     )
 
     # model 2: stim + saccade
     sac_on_par = NDNutils.ffnetwork_params( 
-        input_dims=[1,1,1,num_saclags1],
-        xstim_n=[1],
-        layer_sizes=[NC], 
-        layer_types=['readout'], act_funcs=['lin'], 
-        normalization=[0],
-        reg_list={'d2t':[smooth*100],'l2':[l2], 'l1':[1e-5]}
+    input_dims=[1,1,1, num_saclags1],
+    xstim_n=[1],
+    layer_sizes=[NC], # conv_filter_widths=[1], 
+    layer_types=['readout'], act_funcs=['lin'], 
+    normalization=[0],
+    reg_list={'d2t':[1],'l1':[1e-3]}
     )
 
     sac_off_par = NDNutils.ffnetwork_params( 
@@ -433,17 +1084,17 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
         layer_sizes=[NC], 
         layer_types=['readout'], act_funcs=['lin'], 
         normalization=[0],
-        reg_list={'d2t':[smooth*100],'l2':[l2], 'l1':[1e-5]}
+        reg_list={'d2t':[1],'l1':[1e-3]}
     )
 
-    sac_dur_par = NDNutils.ffnetwork_params( 
-        input_dims=[1,1,1,num_saclags3],
-        xstim_n=[3],
-        layer_sizes=[NC], 
-        layer_types=['readout'], act_funcs=['lin'], 
-        normalization=[0],
-        reg_list={'d2t':[smooth*100],'l2':[l2], 'l1':[1e-5]}
-    )
+    # sac_dur_par = NDNutils.ffnetwork_params( 
+    #     input_dims=[1,1,1,num_saclags3],
+    #     xstim_n=[3],
+    #     layer_sizes=[NC], 
+    #     layer_types=['readout'], act_funcs=['lin'], 
+    #     normalization=[0],
+    #     reg_list={'d2t':[1], 'l1':[1e-3]}
+    # )
 
     # only combine the onset kernel
     comb_par1 = NDNutils.ffnetwork_params(
@@ -451,11 +1102,11 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
         layer_types=['add'], act_funcs=['softplus']
     )
 
-    # combine all three
-    comb_par2 = NDNutils.ffnetwork_params(
-        xstim_n=None, ffnet_n=[0,1,2,3], layer_sizes=[NC],
-        layer_types=['add'], act_funcs=['softplus']
-    )
+    # # combine all three
+    # comb_par2 = NDNutils.ffnetwork_params(
+    #     xstim_n=None, ffnet_n=[0,1,2,3], layer_sizes=[NC],
+    #     layer_types=['add'], act_funcs=['softplus']
+    # )
 
 
     # # model 3: stim x saccade + saccade
@@ -464,13 +1115,13 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
         layer_types=['mult'], act_funcs=['lin']
     )
 
-    mult_par2 = NDNutils.ffnetwork_params(
-        xstim_n=None, ffnet_n=[3,4], layer_sizes=[NC],
-        layer_types=['mult'], act_funcs=['lin']
-    )
+    # mult_par2 = NDNutils.ffnetwork_params(
+    #     xstim_n=None, ffnet_n=[3,4], layer_sizes=[NC],
+    #     layer_types=['mult'], act_funcs=['lin']
+    # )
 
     comb_par3 = NDNutils.ffnetwork_params(
-        xstim_n=None, ffnet_n=[2,5], layer_sizes=[NC],
+        xstim_n=None, ffnet_n=[2,3], layer_sizes=[NC],
         layer_types=['add'], act_funcs=['softplus']
     )
 
@@ -507,22 +1158,23 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
         ndn0 = NDN.NDN.load_model(str(f01.resolve()))
         print("Model 01 loaded")
     else:
-        # get better regularization (per neuron)
-        reg_type='l2'
-        reg_min = find_best_reg(ndn0, input_data=[Xstim], output_data=RobsTrain,
-            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
+
+        print("Finding the best regularization for stimulus processing")
+        reg_type = 'd2x'
+        reg_min=find_best_reg(ndn0, input_data=[Xstim], output_data=Robs,
+            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type, reg_vals=[1e-6, 1e-4, 1e-3, 1e-2, 1e-1],
             opt_params=opt_params, learning_alg=optimizer)
 
         ndn0.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=0, layer_target=0)
 
-        reg_type='d2xt'
-        reg_min = find_best_reg(ndn0, input_data=[Xstim], output_data=RobsTrain,
-            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
+        reg_type = 'd2t'
+        reg_min=find_best_reg(ndn0, input_data=[Xstim], output_data=Robs,
+            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type, reg_vals=[1e-6, 1e-4, 1e-3, 1e-2, 1e-1],
             opt_params=opt_params, learning_alg=optimizer)
 
-        ndn0.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=0, layer_target=0)
+        ndn0.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=0, layer_target=0)        
 
-
+        # retrain with new regularization
         _ = ndn0.train(input_data=[Xstim], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
             learning_alg=optimizer, opt_params=opt_params, use_dropout=False)            
         
@@ -535,7 +1187,7 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
 
     # remove activation function
     stim_par = glmFull_par.copy()
-    stim_par['activation_funcs'] = 'lin'
+    stim_par['activation_funcs'][0] = 'lin' # switch to linear activation, softplus will still be on the output
 
 
     if f10.exists(): # saccade onset model
@@ -544,79 +1196,76 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
     else:
         ndn1 = NDN.NDN( [stim_par, sac_on_par, comb_par1], tf_seed=seed, noise_dist=noise_dist)
         
+        # set cell-specific regularization for stimulus processing
+        reg_type='d2t'
+        vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
+        ndn1.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
+
+        reg_type='d2x'
+        vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
+        ndn1.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
+
         # Model 2: Train
 
         # initialize with stimulus model
         ndn1.networks[0].layers[0].weights = deepcopy(ndn0.networks[0].layers[0].weights)
         ndn1.networks[0].layers[0].biases = deepcopy(ndn0.networks[0].layers[0].biases)
         
-        # set cell-specific regularization
-        reg_type='l2'
-        vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
-        ndn1.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
+        # set add weights to 1.0
+        ndn1.networks[2].layers[0].weights /= ndn1.networks[2].layers[0].weights
 
-        reg_type='d2xt'
-        vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
-        ndn1.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
-
-        # skip stimulus parameters
-        v2f0 = ndn1.fit_variables(layers_to_skip=[[0]], fit_biases=False)
+        # skip stimulus parameters and add weights
+        v2f0 = ndn1.fit_variables(layers_to_skip=[[0], [], [0]], fit_biases=False)
         v2f0[-1][-1]['biases']=True
 
         _ = ndn1.train(input_data=[Xstim, XsacOn], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
-            learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0, silent=silent)
+            learning_alg=optimizer, opt_params=opt_params, use_dropout=False,
+            fit_variables=v2f0, silent=silent)
 
         ndn1.save_model(str(f10.resolve()))
     
     ndns.append(ndn1)
     models.append('stim + saccon (fix stim)')
 
-    if f11.exists(): # saccade onset (fit all components together)
+    if f11.exists(): # saccade onset (fit regularization)
         ndn1 = NDN.NDN.load_model(str(f11.resolve()))
         print("Model 11 loaded")
     else:
 
-        # fit all together
-        v2f0 = ndn1.fit_variables(fit_biases=False)
+        # skip stimulus parameters and add weights
+        v2f0 = ndn1.fit_variables(layers_to_skip=[[0], [], [0]], fit_biases=False)
         v2f0[-1][-1]['biases']=True
 
+        reg_type = 'd2t'
+        reg_min=find_best_reg(ndn1, input_data=[Xstim, XsacOn], output_data=Robs,
+            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
+            reg_vals=[1e-3, 1e-2, 1e-1, 1, 10],
+            ffnet_target=1,layer_target=0,
+            fit_variables=v2f0,
+            opt_params=opt_params, learning_alg=optimizer)
+
+        ndn1.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=1, layer_target=0)
+
         _ = ndn1.train(input_data=[Xstim, XsacOn], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
-            learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0, silent=silent)
+            learning_alg=optimizer, opt_params=opt_params, use_dropout=False,
+            fit_variables=v2f0, silent=silent)
         
         ndn1.save_model(str(f11.resolve()))
     
     ndns.append(ndn1)
-    models.append('stim + saccon (fit all)')
+    models.append('stim + saccon (best reg)')
 
-    if f12.exists(): # find best regularization
+    if f12.exists(): # fit all
         ndn1 = NDN.NDN.load_model(str(f12.resolve()))
         print("Model 12 loaded")
     else:
 
-        v2f0 = ndn1.fit_variables(fit_biases=False)
+        # skip stimulus parameters and add weights
+        v2f0 = ndn1.fit_variables(layers_to_skip=[[], [], [0]], fit_biases=False)
         v2f0[-1][-1]['biases']=True
 
-        ffnet_target = 1
-        # get better regularization (per neuron)
-        reg_type='d2t'
-        reg_min = find_best_reg(ndn1, input_data=[Xstim, XsacOn], output_data=RobsTrain,
-            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
-            ffnet_target=ffnet_target,
-            fit_variables=v2f0,
-            opt_params=opt_params, learning_alg=optimizer)
-
-        ndn1.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=ffnet_target, layer_target=0)
-
-        reg_type='l2'
-        reg_min = find_best_reg(ndn1, input_data=[Xstim, XsacOn], output_data=RobsTrain,
-            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
-            ffnet_target=ffnet_target,
-            fit_variables=v2f0,
-            opt_params=opt_params, learning_alg=optimizer)
-
-        ndn1.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=ffnet_target, layer_target=0)
-
         _ = ndn1.train(input_data=[Xstim,XsacOn], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
+            fit_variables=v2f0,
             learning_alg=optimizer, opt_params=opt_params, use_dropout=False)
         
         # save
@@ -631,128 +1280,169 @@ def fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts, DF=None, batch_size=
         ndn2 = NDN.NDN.load_model(str(f20.resolve()))
         print("Model 20 loaded")
     else:
-        ndn2 = NDN.NDN( [stim_par, sac_on_par, sac_off_par, sac_dur_par, comb_par2], tf_seed=seed, noise_dist=noise_dist)
+        ndn2 = NDN.NDN( [stim_par, sac_on_par, sac_off_par, mult_par1, comb_par3], tf_seed=seed, noise_dist=noise_dist)
         
         # initialize stimulus weights
         ndn2.networks[0].layers[0].weights = deepcopy(ndn0.networks[0].layers[0].weights)
         ndn2.networks[0].layers[0].biases = deepcopy(ndn0.networks[0].layers[0].biases)
 
-        # set cell-specific regularization
-        reg_type='l2'
+        # set cell-specific regularization for stimulus processing
+        reg_type='d2t'
         vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
         ndn2.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
 
-        reg_type='d2xt'
+        reg_type='d2x'
         vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
         ndn2.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
 
-        # skip stimulus
-        v2f0 = ndn2.fit_variables(layers_to_skip=[[0]], fit_biases=False)
+        # set add weights and mult weights to 1.0
+        ndn2.networks[4].layers[0].weights /= ndn2.networks[4].layers[0].weights
+        ndn2.networks[3].layers[0].weights /= ndn2.networks[3].layers[0].weights
+    
+
+        reg_type='d2t' # set based on the saccade onset model
+        vals = ndn1.networks[1].layers[0].reg.vals[reg_type]
+        ndn2.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=1, layer_target=0)
+
+        # only fit saccade (no stimulus, add, or mult)
+        v2f0 = ndn2.fit_variables(layers_to_skip=[[0], [], [], [0], [0]], fit_biases=False)
         v2f0[-1][-1]['biases']=True
 
         # train
-        _ = ndn2.train(input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
-            learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0, silent=silent)
+        _ = ndn2.train(input_data=[Xstim, XsacOn, XsacOff], output_data=RobsTrain,
+            train_indxs=Ui, test_indxs=Xi,
+            learning_alg=optimizer, opt_params=opt_params, use_dropout=False,
+            fit_variables=v2f0, silent=silent)
 
         ndn2.save_model(str(f20.resolve()))
     
     ndns.append(ndn2)
-    models.append('stim Trilinear (fix stim)')
+    models.append('stim Mult On Add Off (fix stim)')
 
     if f21.exists():
         ndn2 = NDN.NDN.load_model(str(f21.resolve()))
         print("Model 21 loaded")
     else:
 
-        # fit all together
-        v2f0 = ndn2.fit_variables(fit_biases=False)
+        # only fit saccade (no stimulus, add, or mult)
+        v2f0 = ndn2.fit_variables(layers_to_skip=[[0], [], [], [0], [0]], fit_biases=False)
         v2f0[-1][-1]['biases']=True
 
-        _ = ndn2.train(input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
-            learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0, silent=silent)
+        reg_type = 'd2t'
+        # sac onset
+        reg_min=find_best_reg(ndn2, input_data=[Xstim, XsacOn, XsacOff], output_data=Robs,
+            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
+            reg_vals=[1e-3, 1e-2, 1e-1, 1, 10],
+            ffnet_target=1,layer_target=0,
+            fit_variables=v2f0,
+            opt_params=opt_params, learning_alg=optimizer)
+
+        ndn2.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=1, layer_target=0)
+
+        # sac offset
+        reg_min=find_best_reg(ndn2, input_data=[Xstim, XsacOn, XsacOff], output_data=Robs,
+            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
+            reg_vals=[1e-3, 1e-2, 1e-1, 1, 10],
+            ffnet_target=2,layer_target=0,
+            fit_variables=v2f0,
+            opt_params=opt_params, learning_alg=optimizer)
+
+        ndn2.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=2, layer_target=0)
+
+        _ = ndn2.train(input_data=[Xstim, XsacOn, XsacOff], output_data=RobsTrain,
+            train_indxs=Ui, test_indxs=Xi,
+            learning_alg=optimizer, opt_params=opt_params, use_dropout=False,
+            fit_variables=v2f0, silent=silent)
+
+    #     # fit all together
+    #     v2f0 = ndn2.fit_variables(fit_biases=False)
+    #     v2f0[-1][-1]['biases']=True
+
+    #     _ = ndn2.train(input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
+    #         learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0, silent=silent)
 
         ndn2.save_model(str(f21.resolve()))
 
     ndns.append(ndn2)
-    models.append('stim Trilinear (fit all)')
+    models.append('stim OG (fit reg)')
 
-    if f22.exists():
-        ndn2 = NDN.NDN.load_model(str(f22.resolve()))
-        print("Model 22 loaded")
-    else:
+    # if f22.exists():
+    #     ndn2 = NDN.NDN.load_model(str(f22.resolve()))
+    #     print("Model 22 loaded")
+    # else:
 
-        # fit all together
-        v2f0 = ndn2.fit_variables(fit_biases=False)
-        v2f0[-1][-1]['biases']=True
+    #     # fit all together
+    #     v2f0 = ndn2.fit_variables(fit_biases=False)
+    #     v2f0[-1][-1]['biases']=True
 
-        ffnet_target = 1
-        # get better regularization (per neuron)
-        reg_type='d2t'
-        reg_min = find_best_reg(ndn2, input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain,
-            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
-            ffnet_target=ffnet_target,
-            fit_variables=v2f0,
-            opt_params=opt_params, learning_alg=optimizer)
+    #     ffnet_target = 1
+    #     # get better regularization (per neuron)
+    #     reg_type='d2t'
+    #     reg_min = find_best_reg(ndn2, input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain,
+    #         train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
+    #         ffnet_target=ffnet_target,
+    #         fit_variables=v2f0,
+    #         opt_params=opt_params, learning_alg=optimizer)
 
-        ndn2.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=ffnet_target, layer_target=0)
+    #     ndn2.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=ffnet_target, layer_target=0)
 
-        ffnet_target = 2
-        reg_min = find_best_reg(ndn2, input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain,
-            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
-            ffnet_target=ffnet_target,
-            fit_variables=v2f0,
-            opt_params=opt_params, learning_alg=optimizer)
+    #     ffnet_target = 2
+    #     reg_min = find_best_reg(ndn2, input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain,
+    #         train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
+    #         ffnet_target=ffnet_target,
+    #         fit_variables=v2f0,
+    #         opt_params=opt_params, learning_alg=optimizer)
 
-        ffnet_target = 3
-        reg_min = find_best_reg(ndn2, input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain,
-            train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
-            ffnet_target=ffnet_target,
-            fit_variables=v2f0,
-            opt_params=opt_params, learning_alg=optimizer)
+    #     ffnet_target = 3
+    #     reg_min = find_best_reg(ndn2, input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain,
+    #         train_indxs=Ui, test_indxs=Xi, reg_type=reg_type,
+    #         ffnet_target=ffnet_target,
+    #         fit_variables=v2f0,
+    #         opt_params=opt_params, learning_alg=optimizer)
 
-        ndn2.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=ffnet_target, layer_target=0)
+    #     ndn2.set_regularization(reg_type=reg_type, reg_val=reg_min, ffnet_target=ffnet_target, layer_target=0)
 
-        _ = ndn2.train(input_data=[Xstim, XsacOn, XsacOff, XsacDur], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
-            learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0, silent=silent)
+    #     _ = ndn2.train(input_data=[Xstim, XsacOn, XsacOff, XsacDur], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
+    #         learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0, silent=silent)
 
-        ndn2.save_model(str(f22.resolve()))
+    #     ndn2.save_model(str(f22.resolve()))
 
-    ndns.append(ndn2)
-    models.append('stim Trilinear (reg)')
+    # ndns.append(ndn2)
+    # models.append('stim Trilinear (reg)')
 
 
-    # Model 4: Train
-    if f30.exists():
-        ndn3 = NDN.NDN.load_model(str(f30.resolve()))
-        print("Model 30 loaded")
-    else:
-        ndn3 = NDN.NDN( [stim_par, sac_on_par, sac_off_par, sac_dur_par, mult_par1, mult_par2, comb_par3], tf_seed=seed, noise_dist=noise_dist)
+    # # Model 4: Train
+    # if f30.exists():
+    #     ndn3 = NDN.NDN.load_model(str(f30.resolve()))
+    #     print("Model 30 loaded")
+    # else:
+    #     ndn3 = NDN.NDN( [stim_par, sac_on_par, sac_off_par, sac_dur_par, mult_par1, mult_par2, comb_par3], tf_seed=seed, noise_dist=noise_dist)
         
-        # initialize stimulus weights
-        ndn3.networks[0].layers[0].weights = deepcopy(ndn0.networks[0].layers[0].weights)
-        ndn3.networks[0].layers[0].biases = deepcopy(ndn0.networks[0].layers[0].biases)
+    #     # initialize stimulus weights
+    #     ndn3.networks[0].layers[0].weights = deepcopy(ndn0.networks[0].layers[0].weights)
+    #     ndn3.networks[0].layers[0].biases = deepcopy(ndn0.networks[0].layers[0].biases)
 
-        # set cell-specific regularization
-        reg_type='l2'
-        vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
-        ndn3.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
+    #     # set cell-specific regularization
+    #     reg_type='l2'
+    #     vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
+    #     ndn3.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
 
-        reg_type='d2xt'
-        vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
-        ndn3.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
+    #     reg_type='d2xt'
+    #     vals = ndn0.networks[0].layers[0].reg.vals[reg_type]
+    #     ndn3.set_regularization(reg_type=reg_type,reg_val=vals, ffnet_target=0, layer_target=0)
 
-        # skip stimulus
-        v2f0 = ndn3.fit_variables(layers_to_skip=[[0]], fit_biases=False)
-        v2f0[-1][-1]['biases']=True
+    #     # skip stimulus
+    #     v2f0 = ndn3.fit_variables(layers_to_skip=[[0]], fit_biases=False)
+    #     v2f0[-1][-1]['biases']=True
 
-        # train
-        _ = ndn3.train(input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
-            learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0, silent=silent)
+    #     # train
+    #     _ = ndn3.train(input_data=[Xstim, XsacOn,XsacOff,XsacDur], output_data=RobsTrain, train_indxs=Ui, test_indxs=Xi,
+    #         learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0, silent=silent)
 
-        ndn3.save_model(str(f20.resolve()))
+    #     ndn3.save_model(str(f30.resolve()))
     
-    ndns.append(ndn3)
-    models.append('stim x saccade + saccade (fix stim)')
+    # ndns.append(ndn3)
+    # models.append('stim x saccade + saccade (fix stim)')
 
 
     return ndns, models
@@ -869,7 +1559,7 @@ def unit_basis(th, rho):
 def tent_basis_log(x, n=5, b=0.25,pows=2):
     ''' tent basis on a log(2) scale
     Input:
-        x [n x 1] value at whih to 
+        x [n x 1] value at whih to x
         n [int or m x 1] number of basis functions or list of centers (after log transform)
         b [1 x 1] center of the base frequency
         pows [1 x 1] stretching (default: 2 means each center is double the previous)
@@ -1255,7 +1945,7 @@ def polarRF(xy, amplitude, xo, yo, sigma_x, sigma_y, offset):
     g = offset + amplitude*np.exp(sfRF+oriRF)
     return g.ravel()
 
-def fit_polar_rf(wts, basis, plotit=False):
+def fit_polar_rf(wts, basis, plotit=False, initial_guess=[]):
     '''
     Fit a parametric model to the polar RF assuming that Orientation and Spatial-Frequency
     are separable
@@ -1289,7 +1979,8 @@ def fit_polar_rf(wts, basis, plotit=False):
     r0 = 0.5
     amp = np.max(rf)
     offset = np.min(rf)
-    initial_guess = (amp,th0,rho0,s0,r0,offset)
+    if len(initial_guess)!=6:
+        initial_guess = (amp,th0,rho0,s0,r0,offset)
 
     # threshold RF
     rfThresh = np.maximum(rf, 0.2*np.max(rf))
@@ -1315,8 +2006,11 @@ def fit_polar_rf(wts, basis, plotit=False):
         plt.title('Initial Guess')
         plt.colorbar()    
 
+    try:
+        popt, pcov = opt.curve_fit(polarRF, (th, rho), rfThresh.ravel(), p0=initial_guess)
+    except RuntimeError:
+        popt, pcov = np.zeros(6), np.zeros((6,6))
 
-    popt, pcov = opt.curve_fit(polarRF, (th, rho), rfThresh.ravel(), p0=initial_guess)
     guess0 = polarRF((th,rho),popt[0],popt[1],popt[2],popt[3],popt[4],popt[5])
     
     if plotit:
@@ -1347,6 +2041,8 @@ def fit_polar_rf(wts, basis, plotit=False):
         'thB': popt[3],
         'sfB': popt[4],
         'offset': popt[5],
+        'paramsHat': popt,
+        'paramsCov': pcov,
         'erroB': np.sqrt(np.diag(pcov)),
         'initial_guess': initial_guess,
     }
