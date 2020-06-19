@@ -3,6 +3,7 @@ function spkS = get_visual_units(Exp, varargin)
 
 ip = inputParser();
 ip.addParameter('plotit', false)
+ip.addParameter('visStimField', 'BackImage')
 ip.parse(varargin{:});
 
 % get waveforms
@@ -52,10 +53,14 @@ for cc = 1:NC
     Stmp.cid = cids(cc);
     for iStim = 1:numel(stimSets)
         validTrials = io.getValidTrials(Exp, stimSets{iStim});
-        Stmp.(stimSets{iStim}) = ismodulated(stimFr, isiFr, validTrials);
+        if numel(validTrials) < 10
+            Stmp.(stimSets{iStim}) = nan;
+        else
+            Stmp.(stimSets{iStim}) = ismodulated(stimFr, isiFr, validTrials);
+        end
     end
     
-    validTrials = io.getValidTrials(Exp, 'BackImage'); % we know we show this every time
+    validTrials = io.getValidTrials(Exp, ip.Results.visStimField); % we know we show this every time
     
     sfr = stimFr(validTrials(1:end-1));
     ifr = isiFr(validTrials(1:end-1));

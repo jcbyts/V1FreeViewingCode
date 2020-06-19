@@ -14,7 +14,7 @@ if ~ismember('GratingSubspace', data.Properties.VariableNames)
 end
 
 % load session
-Exp = io.dataFactoryGratingSubspace(sessionId);
+Exp = io.dataFactoryGratingSubspace(sessionId, 'spike_sorting', 'kilo', 'cleanup_spikes', 1);
 
 % get subspace data
 [~, ~, grating] = io.preprocess_grating_subspace_data(Exp);
@@ -47,11 +47,23 @@ end
 Tag = strrep(Exp.FileTag, '.mat', '');
 sessix = strcmp(data.Tag, Tag);
 
+% get visual units stats
+visUnits = io.get_visual_units(Exp, 'plotit', false, 'visStimField', 'Grating');
+
+rf.isviz = arrayfun(@(x) x.Grating, visUnits);
+rf.srf = reshape(cell2mat(arrayfun(@(x) x.srf(:)', visUnits, 'uni', 0))', [size(visUnits(1).srf) numel(visUnits)]);
+rf.xax = visUnits(1).xax;
+rf.yax = visUnits(1).yax;
 rf.mu = [data.retx(sessix), data.rety(sessix)];
 rf.cov = [data.retc1(sessix), data.retc2(sessix); data.retc2(sessix) data.retc4(sessix)];
 
+if isfield(spikes, 'wfs')
+    spikes = rmfield(spikes, 'wfs');
+    spikes = rmfield(spikes, 'wftax');
+end
+
 fname = fullfile(dataDir, strrep(Exp.FileTag, '.mat', '_gratingsubspace.mat'));
-save(fname, '-v7', 'grating', 'dots', 'slist', 'spikes', 'eyepos', 'rf')
+save(fname, '-v7.3', 'grating', 'dots', 'slist', 'spikes', 'eyepos', 'rf')
 
 data.GratingSubspace(sessix) = true;
 writetable(data, meta_file);
