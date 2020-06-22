@@ -15,12 +15,20 @@ function [Y, binfun] = binNeuronSpikeTimesFast(sp, eventTimes, binSize)
 NT = numel(eventTimes);
 NC = max(sp.cids);
 
-eventTimes = [eventTimes(:); eventTimes(end) + binSize];
+bs = min(diff(eventTimes)) - eps;
+if bs < binSize
+    warning('maximum bin size is the minimum distance between events')
+    binSize = bs;
+end
+
+eventTimes = [eventTimes(:)'; eventTimes(:)' + binSize];
+eventTimes = eventTimes(:);
+% eventTimes = [eventTimes(:); eventTimes(end) + binSize];
 Y = zeros(NT, NC);
 for cc = sp.cids(:)'
     cnt = histcounts(sp.st(sp.clu==cc), eventTimes);
-    cnt(diff(eventTimes) > .1) = 0;
-    Y(:,cc) = cnt;
+%     cnt(diff(eventTimes) > .1) = 0;
+    Y(:,cc) = cnt(1:2:end);
 end
 
 % conversion from time to bins

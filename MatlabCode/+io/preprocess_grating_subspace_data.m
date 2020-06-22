@@ -47,6 +47,11 @@ opts.fs_spikes = opts.fs_stim;
 opts.up_samp_fac = 1;
 
 validTrials = io.getValidTrials(Exp, stimField);
+if numel(validTrials) < 2
+    stim = [];
+    spks = [];
+    return
+end
 
 frameTime = cellfun(@(x) Exp.ptb2Ephys(x.PR.NoiseHistory(:,1)), Exp.D(validTrials), 'uni', 0);
 ori = cellfun(@(x) x.PR.NoiseHistory(:,2), Exp.D(validTrials), 'uni', 0);

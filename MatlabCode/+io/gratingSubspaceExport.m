@@ -14,7 +14,24 @@ if ~ismember('GratingSubspace', data.Properties.VariableNames)
 end
 
 % load session
-Exp = io.dataFactoryGratingSubspace(sessionId, 'spike_sorting', 'kilo', 'cleanup_spikes', 1);
+[Exp,~,lfp] = io.dataFactoryGratingSubspace(sessionId, 'spike_sorting', 'kilo', 'cleanup_spikes', 1);
+
+if isempty(lfp.deadChan)
+    v = var(lfp.data);
+
+    thresh = median(v)*.5;
+    deadChan = find(v < thresh);
+    lfp.deadChan = deadChan;
+end
+
+try
+    et = csd.getCSDEventTimes(Exp);
+    cstruct = csd.getCSD(lfp, et);
+    csdReversal = nanmean(cellfun(@(x) x(1), cstruct.reversalPointDepth));
+catch
+    csdReversal = nan;
+end
+
 
 % get subspace data
 [~, ~, grating] = io.preprocess_grating_subspace_data(Exp);
@@ -48,7 +65,7 @@ Tag = strrep(Exp.FileTag, '.mat', '');
 sessix = strcmp(data.Tag, Tag);
 
 % get visual units stats
-visUnits = io.get_visual_units(Exp, 'plotit', false, 'visStimField', 'Grating');
+evalc('[visUnits,W] = io.get_visual_units(Exp, ''plotit'', false, ''visStimField'', ''Grating'');');
 
 rf.isviz = arrayfun(@(x) x.Grating, visUnits);
 rf.srf = reshape(cell2mat(arrayfun(@(x) x.srf(:)', visUnits, 'uni', 0))', [size(visUnits(1).srf) numel(visUnits)]);
@@ -61,6 +78,8 @@ if isfield(spikes, 'wfs')
     spikes = rmfield(spikes, 'wfs');
     spikes = rmfield(spikes, 'wftax');
 end
+
+spikes.csdReversal = csdReversal;
 
 fname = fullfile(dataDir, strrep(Exp.FileTag, '.mat', '_gratingsubspace.mat'));
 save(fname, '-v7.3', 'grating', 'dots', 'slist', 'spikes', 'eyepos', 'rf')

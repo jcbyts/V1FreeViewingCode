@@ -1,4 +1,4 @@
-function spkS = get_visual_units(Exp, varargin)
+function [spkS,W] = get_visual_units(Exp, varargin)
 % spkS = get_visual_units(Exp, varargin)
 
 ip = inputParser();
@@ -65,6 +65,9 @@ for cc = 1:NC
     sfr = stimFr(validTrials(1:end-1));
     ifr = isiFr(validTrials(1:end-1));
     isviz = Stmp.BackImage;
+    if isnan(isviz)
+        isviz = false;
+    end
     
     gtrials = validTrials;
     isiX = isiFr(validTrials(1:end-1));
@@ -132,7 +135,7 @@ for cc = 1:NC
         
     end
     
-    if isviz
+    if isviz && ~isempty(Xstim)
         nlags = 15;
         sta = simpleRevcorr(Xstim, RobsSpace(:,cc)-mean(RobsSpace(:,cc)), nlags);
         thresh = sqrt(robustcov(sta(:)))*4;
@@ -195,10 +198,17 @@ for cc = 1:NC
         Stmp.y0 = interp1(1:opts.dims(2), opts.yax, y0);
     else
         Stmp.best_lag = nan;
-        Stmp.unit_mask = zeros(opts.dims);
-        Stmp.srf = zeros(opts.dims);
-        Stmp.xax = opts.xax;
-        Stmp.yax = opts.yax;
+        try
+            Stmp.unit_mask = zeros(opts.dims);
+            Stmp.srf = zeros(opts.dims);
+            Stmp.xax = opts.xax;
+            Stmp.yax = opts.yax;
+        catch
+            Stmp.unit_mask = nan;
+            Stmp.srf = nan;
+            Stmp.xax = nan;
+            Stmp.yax = nan;
+        end
         Stmp.x0 = nan;
         Stmp.y0 = nan;
         

@@ -29,7 +29,7 @@ ip = inputParser();
 ip.addParameter('ROI', [-500 -500 500 500]);
 ip.addParameter('binSize', ceil(Exp.S.pixPerDeg))
 ip.addParameter('debug', false)
-ip.addParameter('spikeBinSize', 3/Exp.S.frameRate)
+ip.addParameter('spikeBinSize', 1/Exp.S.frameRate)
 ip.addParameter('latency', 0)
 ip.addParameter('eyePosExclusion', 400)
 ip.addParameter('verbose', true)
