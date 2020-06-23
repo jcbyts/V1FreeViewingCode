@@ -24,6 +24,7 @@ ip = inputParser();
 ip.addParameter('binSize', 1e-3)
 ip.addParameter('numLags', 200)
 ip.addParameter('spacing', [-100 -50 0 50 100])
+ip.addParameter('validEpochs', [])
 ip.parse(varargin{:});
 
 S = io.getUnitLocations(osp);
@@ -52,16 +53,37 @@ W = repmat(struct('cid', [], ...
     'waveform', [], ...
     'shiftlags', [], ...
     'shiftwaveform', [], ...
+    'BRI', [], ...
+    'normrate', [], ...
     'spacing', []), NC, 1);
 
+% bin spike times
+binEdges = min(osp.st):binSize:max(osp.st);
+if ~isempty(ip.Results.validEpochs)
+    nepochs = size(ip.Results.validEpochs,1);
+    vix = false(1, numel(binEdges)-1);
+    for epoch = 1:nepochs
+        vix(binEdges(1:end-1) >= ip.Results.validEpochs(epoch,1) & binEdges(2:end) < ip.Results.validEpochs(epoch,2)) = true;
+    end
+else
+    vix = true(1, numel(binEdges)-1);
+end
+        
+    
 for cc = 1:NC
 
     cid = osp.cids(cc);
 
     sptimes = osp.st(osp.clu==cid);
+    
+    if ~isempty(ip.Results.validEpochs)
+        vix = getTimeIdx(sptimes, ip.Results.validEpochs(:,1), ip.Results.validEpochs(:,2));
+        sptimes = sptimes(vix);        
+    end
 
-    % bin spike times
-    [spcnt, ~, id] = histcounts(sptimes, min(sptimes):binSize:max(sptimes));
+    
+    [spcnt, ~, id] = histcounts(sptimes, binEdges);
+    
     
     % get autocorrelation in units of excess firing rate
     lags = -numLags:numLags;
@@ -71,8 +93,8 @@ for cc = 1:NC
     I(:,lags==0)= 0; % remove zero-lag spike
     
     mu = mean(I);
-    mu0 = mean(spcnt);
-    
+    mu0 = mean(spcnt(vix));
+        
     % binomial confidence intervals
     n = size(I,1);
     binoerr = 2*sqrt( (mu - mu.^2)/n);
@@ -82,18 +104,16 @@ for cc = 1:NC
     % push error through same nonlinearity ( baseline subtract / binsize)
     err = ((mu + binoerr) - mu0)/binSize - xc;
     
-%     % get autocorrelation the matlab way
-%     [xc, lags] = xcorr(spcnt, numLags, 'coef');
-%     xc(lags==0) = 0;
+    % rate in the refractory period (1ms after spike)
+    refrate = xc(lags==1);
     
-%     figure(1); clf
-%     subplot(121)
-%     plot(S.templates(:,:,cc) + (1:size(S.templates,2))*10, 'k')
-%     title('Waveform')
-%     subplot(122)
-%     plot(lags, xc, '-')
-%     title('ISI')
+    % expected rate using shoulders of the autocorrelation as a baseline
+    expectedminrate = mean(xc([1 end])) - mean(err([1 end]));
     
+    normrate = mu/mu0;
+    
+    BRI = mean(normrate(lags>=1 & lags<=4));
+        
     % interpolate waveform around the center of mass (handles different
     % electrode spacing / centers)
     nsp = numel(spacing);
@@ -156,23 +176,37 @@ for cc = 1:NC
     locality = wamp(1) / wamp(3);
     
     % trough
-    [pks, locs] = findpeaks(-wf(:,3),ts);
-    [trough,id] = max(pks);
-    trough = -trough;
-    troughloc = locs(id);
-    if isempty(trough)
-        trough = nan;
-        troughloc = nan;
-    end
+    softmax = @(x,y,p) x(:)'*(y(:).^p./sum(y(:).^p));
     
-    % peak
-    [pks, locs] = findpeaks(wf(:,3),ts);
-    [peak,id] = max(pks);
-    peakloc = locs(id);
-    if isempty(peak)
-        peak = nan;
-        peakloc = nan;
-    end
+    
+    troughloc = softmax(ts, max(-wf(:,3),0), 10);
+    trough = interp1(ts, wf(:,3), troughloc);
+    
+    peakloc = softmax(ts, max(wf(:,3),0), 10);
+    peak = interp1(ts, wf(:,3), peakloc);
+    
+%     figure,
+%     plot(ts, wf(:,3)); hold on
+%     plot(troughloc, trough, 'o')
+%     plot(peakloc, peak, 'o')
+    
+%     [pks, locs] = findpeaks(-wf(:,3),ts);
+%     [trough,id] = max(pks);
+%     trough = -trough;
+%     troughloc = locs(id);
+%     if isempty(trough)
+%         trough = nan;
+%         troughloc = nan;
+%     end
+%     
+%     % peak
+%     [pks, locs] = findpeaks(wf(:,3),ts);
+%     [peak,id] = max(pks);
+%     peakloc = locs(id);
+%     if isempty(peak)
+%         peak = nan;
+%         peakloc = nan;
+%     end
     
     W(cc).cid = cid;
     W(cc).isiV = osp.isiV(cc);
@@ -181,7 +215,7 @@ for cc = 1:NC
     W(cc).x = S.x(cc);
     W(cc).lags = lags;
     W(cc).isi = xc;
-    W(cc).isiRate = xc(lags==1);
+    W(cc).isiRate = refrate/expectedminrate;
     W(cc).localityIdx = locality;
     W(cc).isiE = err;
     W(cc).isiL = std(detrend(xc(1:floor(numLags/2)))); % look for line noise in ISI:
@@ -194,4 +228,6 @@ for cc = 1:NC
     W(cc).spacing = spacing;
     W(cc).shiftlags = centeredTimestamps;
     W(cc).shiftwaveform = wnew;
+    W(cc).BRI = BRI;
+    W(cc).normrate = normrate;
 end

@@ -25,7 +25,7 @@ end
 
 %% copy to server
 server_string = 'jcbyts@sigurros';
-output_dir = '/home/jcbyts/Data/MitchellV1FreeViewing/';
+output_dir = '/home/jcbyts/Data/MitchellV1FreeViewing/grating_subspace';
 
 data_dir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 data_dir = fullfile(data_dir, 'grating_subspace');

@@ -79,6 +79,9 @@ if isfield(spikes, 'wfs')
     spikes = rmfield(spikes, 'wftax');
 end
 
+spikes.peakMinusTrough = arrayfun(@(x) x.peaktime-x.troughtime, W);
+spikes.isiRate = arrayfun(@(x) x.isiRate, W);
+spikes.localityIdx = arrayfun(@(x) x.localityIdx, W);
 spikes.csdReversal = csdReversal;
 
 fname = fullfile(dataDir, strrep(Exp.FileTag, '.mat', '_gratingsubspace.mat'));
