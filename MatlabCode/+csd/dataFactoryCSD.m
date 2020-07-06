@@ -6,10 +6,10 @@ function stats = dataFactoryCSD(sessionId, varargin)
 %   Session [Number or ID string]
 %   type: either 'csd' or 'gamma'
 % Output: 
-%   Exp [struct]
+%   stats [struct]
 %
 % Example:
-%   Exp = io.dataFactory(5); % load the 5th session
+%   stats = io.dataFactoryCSD(5, 'type', 'csd'); % load the 5th session CSD
 
 
 
@@ -55,12 +55,12 @@ switch type
         % try loading the file
         if exist(fname, 'file')
             fprintf('Loading [%s]\n', S.processedFileName)
-            stats = load(spfname);
+            stats = load(fname);
         else
             fprintf('Could not find CSD for [%s]\n', fname)
             fprintf('Generating CSD to save in [%s]\n', fname)
             [Exp, ~, lfp] = io.dataFactoryGratingSubspace(sessionId);
-            stats = csd.getCSD(lfp, Exp);
+            stats = csd.getCSD(lfp, Exp, 'plot', false);
             save(fname,'-v7.3', '-struct', 'stats')
             disp('Done')
         end
@@ -69,12 +69,12 @@ switch type
         % try loading the file
         if exist(fname, 'file')
             fprintf('Loading [%s]\n', S.processedFileName)
-            stats = load(spfname);
+            stats = load(fname);
         else
             fprintf('Could not find gamma for [%s]\n', fname)
             fprintf('Generating gamma to save in [%s]\n', fname)
             [~, ~, lfp] = io.dataFactoryGratingSubspace(sessionId);
-            stats = csd.getGamma(lfp);
+            stats = csd.getGamma(lfp, 'plotIt', false);
             save(fname,'-v7.3', '-struct', 'stats')
             disp('Done')
         end
