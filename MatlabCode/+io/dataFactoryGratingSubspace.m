@@ -62,10 +62,11 @@ if exist(fname, 'file')
         if exist(spfname, 'file')
             sp = load(spfname);
             Exp.osp = sp;
-        elseif contains(dataPath, 'Gabe')
-            disp('Skipping sp error') % do nothing - Gabe currently does not use sp 6/18/20
         else
             error('dataFactory: requested spike sorting does not exist')
+        end
+        if contains(dataPath, 'Gabe') %temporary for Gabe
+            Exp.osp = sp.sp;
         end
     end
     
