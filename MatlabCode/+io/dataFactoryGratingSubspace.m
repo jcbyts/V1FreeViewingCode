@@ -50,6 +50,12 @@ S.processedFileName = [thisSession.Tag{1} '.mat'];
 
 rootDir = strrep(thisSession.RootDirectory{1}, '/', filesep);
 rawDir = strrep(thisSession.Directory{1}, '/', filesep);
+serverDir = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
+
+S.rootDir = rootDir;
+S.rawDir = rawDir;
+S.serverDir = serverDir;
+S.rawFilePath = fullfile(serverDir, rootDir, rawDir);
 
 % try loading the file
 fname = fullfile(dataPath, S.processedFileName);
@@ -71,9 +77,9 @@ if exist(fname, 'file')
     
     fprintf('Done\n')
 else % try importing the file
-    serverDir = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
+    
 
-    S.rawFilePath = fullfile(serverDir, rootDir, rawDir);
+   
     S.importFun = str2func(['io.' thisSession.ImportFun{1}]);
     fprintf('Could not find [%s]\n', fname)
     fprintf('Trying to import the data from [%s]\n', S.rawFilePath)
