@@ -47,7 +47,7 @@ ip.addParameter('plotIt', false)
 %ip.addParameter('norm', true)
 ip.addParameter('inds', [100000 200000])
 ip.addParameter('exclude', true)
-ip.addParameter('method', 'softmax')
+ip.addParameter('method', 'weightedMin')
 ip.parse(varargin{:});
 
 method = ip.Results.method; % method for fidning low gamma trough - NOTE: hard coded
@@ -80,6 +80,7 @@ for shankInd = 1:numShanks
     % Use softmax function (instead of exponential use power p) to find
     % trough
     if strcmp(method, 'softmax')
+        disp('Method: softmax')
         p = 5; % power taken for softmax equation (not using exp)
         x = currLGPower;
         x = 1-x;
@@ -102,6 +103,7 @@ for shankInd = 1:numShanks
     % Find corresponding depth of this weighted average
     % search for minimum only below this depth by using softmax  
     elseif strcmp(method, 'weightedMin')
+        disp('Method: weighted min')
         meanlgpower = mean(lgPower(curShankInds));
         stdlgpower = std(lgPower(curShankInds));
         threshLGPower = currLGPower(lgPower(curShankInds)>meanlgpower+stdlgpower);
@@ -112,6 +114,13 @@ for shankInd = 1:numShanks
         weightedmax = threshLGPower*threshLGCoords;
         weightedmax = weightedmax / sum(threshLGPower); % find weighted max depth of power
         lgplot = currLGPower; % for plotting purposes
+        
+%         p = 5; % power taken for softmax equation (not using exp)
+%         x = currLGPower;
+%         %x = 1-x;
+%         x = (x.^p/sum(x.^p)); % apply power softmax
+%         weightedmax = x*ycoords;
+        
         currLGPower(ycoords<weightedmax) = 1; % only search for min below weighted max depth
         
         % Interpolate for better estimate
@@ -127,8 +136,9 @@ for shankInd = 1:numShanks
             figure(29); clf
             plot(ycoords_new, interpLgPower); hold on; 
             plot(lgTroughDepth(shankInd)*[1 1], ylim, 'r');
-            plot(ycoords, lgplot); hold off
-            legend('interp power', 'min trough', 'original lg power')
+            plot(ycoords, lgplot); 
+            plot(weightedmax*[1 1], ylim, 'r'); hold off
+            legend('interp power', 'min trough', 'original lg power', 'weightedmax')
             title(['lg weighted min, depth=' num2str(lgTroughDepth(shankInd))])
         end
     else

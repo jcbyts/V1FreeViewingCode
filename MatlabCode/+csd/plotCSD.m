@@ -11,15 +11,15 @@ function plotCSD(stats)
     if numShanks == 1
         figure; clf;
         imagesc(stats.time, stats.depth, stats.CSD-mean(stats.CSD(:))); axis ij
-        colormap(parula);
+        colormap(colormap_redblackblue);
         hold on
         plot(stats.time, bsxfun(@plus, stats.STA, stats.chDepths), 'Color', repmat(.1, 1, 3))
         xlim(stats.time([1 end]))
-        plot(stats.time([1 end]), stats.sinkDepth(1)*[1 1], 'w--', 'Linewidth', 2)
-        plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{1}, 'r--', 'Linewidth', 2)
-        tmp = abs(stats.reversalPointDepth{1} - stats.sinkDepth(1));
-        tmp = tmp + stats.sinkDepth(1);
-        plot(stats.time([1 end]), [1; 1]*tmp, 'r--', 'Linewidth', 2)
+%         plot(stats.time([1 end]), stats.sinkDepth(1)*[1 1], 'w--', 'Linewidth', 2)
+        plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{1}(1), 'r--', 'Linewidth', 2)
+%         tmp = abs(stats.reversalPointDepth{1} - stats.sinkDepth(1));
+%         tmp = tmp + stats.sinkDepth(1);
+%         plot(stats.time([1 end]), [1; 1]*tmp, 'r--', 'Linewidth', 2)
         %                 axis ij
         hold off
         colorbar
@@ -30,15 +30,15 @@ function plotCSD(stats)
         curCSD = stats.CSD(:,:,shankInd);
         subplot(1,numShanks,shankInd)
         imagesc(stats.time, stats.depth, curCSD-mean(curCSD(:))); axis ij
-        colormap(parula);
+        colormap(colormap_redblackblue);
         hold on
         plot(stats.time, bsxfun(@plus, stats.STA(:,:,shankInd), stats.chDepths), 'Color', repmat(.1, 1, 3))
         xlim(stats.time([1 end]))
-        plot(stats.time([1 end]), stats.sinkDepth(shankInd)*[1 1], 'w--', 'Linewidth', 2)
-        plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{shankInd}, 'r--', 'Linewidth', 2)
-        tmp = abs(stats.reversalPointDepth{1} - stats.sinkDepth(shankInd));
-        tmp = tmp + stats.sinkDepth(shankInd);
-        plot(stats.time([1 end]), [1; 1]*tmp, 'r--', 'Linewidth', 2)
+%         plot(stats.time([1 end]), stats.sinkDepth(shankInd)*[1 1], 'w--', 'Linewidth', 2)
+        plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{shankInd}(1), 'r--', 'Linewidth', 2)
+%         tmp = abs(stats.reversalPointDepth{1} - stats.sinkDepth(shankInd));
+%         tmp = tmp + stats.sinkDepth(shankInd);
+%         plot(stats.time([1 end]), [1; 1]*tmp, 'r--', 'Linewidth', 2)
         %                 axis ij
         hold off
         colorbar

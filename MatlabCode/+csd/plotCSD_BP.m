@@ -29,7 +29,9 @@ function plotCSD_BP(stats, gamma, onlyPlotOneShank)
         plot(stats.time, bsxfun(@plus, stats.STA(:,:,1), stats.chDepths), 'Color', repmat(.1, 1, 3))
         xlim(stats.time([1 end]))
         %plot(stats.time([1 end]), stats.sinkDepth(1)*[1 1], 'w--', 'Linewidth', 2)
-        h3 = plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{1}(1), 'r--', 'Linewidth', 2);
+        if ~isempty(stats.reversalPointDepth{1})
+            h3 = plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{1}(1), 'r--', 'Linewidth', 2);
+        end
         %tmp = abs(stats.reversalPointDepth{1} - stats.sinkDepth(shankInd));
         %tmp = tmp + stats.sinkDepth(shankInd);
         %plot(stats.time([1 end]), [1; 1]*tmp, 'r--', 'Linewidth', 2)
@@ -59,7 +61,9 @@ function plotCSD_BP(stats, gamma, onlyPlotOneShank)
         plot(stats.time, bsxfun(@plus, stats.STA(:,:,shankInd), stats.chDepths), 'Color', repmat(.1, 1, 3))
         xlim(stats.time([1 end]))
         %plot(stats.time([1 end]), stats.sinkDepth(shankInd)*[1 1], 'w--', 'Linewidth', 2)
-        h3 = plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{shankInd}(1), 'r--', 'Linewidth', 2);
+        if ~isempty(stats.reversalPointDepth{shankInd})
+            h3 = plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{shankInd}(1), 'r--', 'Linewidth', 2);
+        end
         %tmp = abs(stats.reversalPointDepth{1} - stats.sinkDepth(shankInd));
         %tmp = tmp + stats.sinkDepth(shankInd);
         %plot(stats.time([1 end]), [1; 1]*tmp, 'r--', 'Linewidth', 2)

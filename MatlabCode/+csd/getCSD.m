@@ -29,7 +29,7 @@ function stats = getCSD(lfp, eventTimes, varargin)
 ip = inputParser();
 ip.addParameter('window', [-100 200])
 ip.addParameter('channelDepths', [])
-ip.addParameter('plot', true)
+ip.addParameter('plot', false)
 ip.addParameter('method', 'spline')
 ip.addParameter('sampleRate', 1000)
 ip.addParameter('exclude', true)
