@@ -10,8 +10,8 @@ function varargout = dataFactoryGratingSubspace(sessionId, varargin)
 % Example:
 %   Exp = io.dataFactory(5); % load the 5th session
 ip = inputParser();
-ip.addParameter('spike_sorting', 'kilo')
-ip.addParameter('cleanup_spikes', 1)
+ip.addParameter('spike_sorting', 'kilowf')
+ip.addParameter('cleanup_spikes', 0)
 ip.parse(varargin{:});
 
 dataPath = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');

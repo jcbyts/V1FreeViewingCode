@@ -11,16 +11,14 @@ function plotCSD(stats)
     if numShanks == 1
         figure; clf;
         imagesc(stats.time, stats.depth, stats.CSD-mean(stats.CSD(:))); axis ij
-        colormap(colormap_redblackblue);
+        colormap(parula);
         hold on
         plot(stats.time, bsxfun(@plus, stats.STA, stats.chDepths), 'Color', repmat(.1, 1, 3))
         xlim(stats.time([1 end]))
-%         plot(stats.time([1 end]), stats.sinkDepth(1)*[1 1], 'w--', 'Linewidth', 2)
+        plot(stats.latency, stats.sinkDepth(1), 'w*', 'Linewidth', 2)
+        plot(stats.latency, stats.sourceDepth(1), 'c*', 'Linewidth', 2)
         plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{1}(1), 'r--', 'Linewidth', 2)
-%         tmp = abs(stats.reversalPointDepth{1} - stats.sinkDepth(1));
-%         tmp = tmp + stats.sinkDepth(1);
-%         plot(stats.time([1 end]), [1; 1]*tmp, 'r--', 'Linewidth', 2)
-        %                 axis ij
+
         hold off
         colorbar
     elseif numShanks > 1
