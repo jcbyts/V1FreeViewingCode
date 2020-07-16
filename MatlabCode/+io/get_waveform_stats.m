@@ -77,8 +77,8 @@ for cc = 1:NC
     sptimes = osp.st(osp.clu==cid);
     
     if ~isempty(ip.Results.validEpochs)
-        vix = getTimeIdx(sptimes, ip.Results.validEpochs(:,1), ip.Results.validEpochs(:,2));
-        sptimes = sptimes(vix);        
+        vixsp = getTimeIdx(sptimes, ip.Results.validEpochs(:,1), ip.Results.validEpochs(:,2));
+        sptimes = sptimes(vixsp);        
     end
 
     
@@ -112,6 +112,7 @@ for cc = 1:NC
     
     normrate = mu/mu0;
     
+    % burst-refractoriness index
     BRI = mean(normrate(lags>=1 & lags<=4));
         
     % interpolate waveform around the center of mass (handles different
@@ -119,94 +120,100 @@ for cc = 1:NC
     nsp = numel(spacing);
     nts = size(S.templates, 1);
     wf = zeros(nts, nsp);
-    nshanks = numel(unique(osp.xcoords));
-    offset = 20;
+    nshanks = numel(unique(S.xcoords));
+    if S.useWF
+        offset = 1;
+    else
+        offset = 20;
+    end
     
     for i = 1:nts
         
         if nshanks > 1
-            mask = abs(S.x(cc) - osp.xcoords) < mean(diff(unique(osp.xcoords)))/2;
+            mask = abs(S.x(cc) - S.xcoords) < mean(diff(unique(S.xcoords)))/2;
         else
-            mask = true(numel(osp.ycoords),1);
+            mask = true(numel(S.ycoords),1);
         end
         
         if sum(mask) >= numel(spacing)
-            wf(i,:) = interp1(osp.ycoords(mask), squeeze(S.templates(i, mask, cc)), S.y(cc)+spacing);
+            wf(i,:) = interp1(S.ycoords(mask), squeeze(S.templates(i, mask, cc)), S.y(cc)+spacing);
         else
             wf_ = squeeze(S.templates(i, mask, cc));
             wf(i,1:numel(wf_)) = wf_(:);
         end
     end
 
+    % center waveform on trough
     wf = wf(offset:end,:);
     nts = size(wf,1);
-    ts = (1:nts)/30e3; % NOTE: sampling rate is hard coded here
+    if S.useWF
+        ts = osp.WFtax/1e3;
+        centeredTimestamps = (-15:30)/30e3;
+    else
+        ts = (1:nts)/30e3; % NOTE: sampling rate is hard coded here    
+        % shift waveform aligned to maximum excursion (peak or trough)
+        centeredTimestamps = (-20:40)/30e3;
+    end
     
-    % shift waveform aligned to maximum excursion (peak or trough)
-    centeredTimestamps = (-20:40)/30e3;
+    %--- find peak and trough
+    dwdt = diff(wf(:,3));
+    
+    % get trough
+    troughloc = findZeroCrossings(dwdt, 1);
+    troughloc = troughloc(ts(troughloc) < .35/1e3); % only troughs before .35 ms after clipping
+    tvals = wf(troughloc,3);
+    [~, mxid] = min(tvals);
+    troughloc = ts(troughloc(mxid));
+
+    % get peak
+    peakloc = findZeroCrossings(dwdt, -1);
+    peakloc = peakloc(ts(peakloc) < .65/1e3 & ts(peakloc) > -.25/1e3); % only troughs before .35 ms after clipping
+    pvals = wf(peakloc,3);
+    [~, mxid] = max(pvals);
+    peakloc = ts(peakloc(mxid));
+    
+    if isempty(peakloc)
+        peakloc = nan;
+    end
+    
+    if isempty(troughloc)
+        troughloc = 0;
+    end
+    
+    % do the centering
     wnew = zeros(numel(centeredTimestamps), size(wf,2));
-    
-    if max(-wf(:,3))> max(wf(:,3)) % align to trough
-        [pks, locs] = findpeaks(-wf(:,3),ts);
-        [~,id] = max(pks);
-        tloc = locs(id);
-        
-        if isempty(tloc)
-            tloc = nan;
-        end
-        
-        for isp = 1:size(wf,2)
-            wnew(:,isp) = interp1(ts, wf(:,isp), centeredTimestamps+tloc);
-        end
-    else % align to peak
-        [pks, locs] = findpeaks(wf(:,3),ts);
-        [~,id] = max(pks);
-        tloc = locs(id);
-        
-        if isempty(tloc)
-            tloc = nan;
-        end
-        
-        for isp = 1:size(wf,2)
-            wnew(:,isp) = interp1(ts, wf(:,isp), centeredTimestamps+tloc);
-        end
+   
+    for isp = 1:size(wf,2)
+        wnew(:,isp) = interp1(ts, wf(:,isp), centeredTimestamps+troughloc);
     end
     
     wamp = sqrt(sum(wf.^2));
     locality = wamp(1) / wamp(3);
     
-    % trough
+    % interpolate trough / peak with softamx
     softmax = @(x,y,p) x(:)'*(y(:).^p./sum(y(:).^p));
     
     
-    troughloc = softmax(ts, max(-wf(:,3),0), 10);
+    winix = abs(ts - troughloc) < .25/1e3;
+    
+    troughloc = softmax(ts(winix), max(-wf(winix,3),0), 10);
+    
+    winix = abs(ts - peakloc) < .25/1e3;
+    peakloc = softmax(ts(winix), max(wf(winix,3),0), 10);
+    
     trough = interp1(ts, wf(:,3), troughloc);
-    
-    peakloc = softmax(ts, max(wf(:,3),0), 10);
     peak = interp1(ts, wf(:,3), peakloc);
+
     
-%     figure,
-%     plot(ts, wf(:,3)); hold on
-%     plot(troughloc, trough, 'o')
-%     plot(peakloc, peak, 'o')
+    if isempty(peakloc)
+        peakloc = nan;
+        peak = nan;
+    end
     
-%     [pks, locs] = findpeaks(-wf(:,3),ts);
-%     [trough,id] = max(pks);
-%     trough = -trough;
-%     troughloc = locs(id);
-%     if isempty(trough)
-%         trough = nan;
-%         troughloc = nan;
-%     end
-%     
-%     % peak
-%     [pks, locs] = findpeaks(wf(:,3),ts);
-%     [peak,id] = max(pks);
-%     peakloc = locs(id);
-%     if isempty(peak)
-%         peak = nan;
-%         peakloc = nan;
-%     end
+    if isempty(troughloc)
+        troughloc = nan;
+        trough = nan;
+    end
     
     W(cc).cid = cid;
     W(cc).isiV = osp.isiV(cc);

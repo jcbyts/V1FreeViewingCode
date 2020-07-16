@@ -1,4 +1,8 @@
-function plotWaveforms(W)
+function plotWaveforms(W, scale)
+    
+    if nargin < 2
+        scale = 1;
+    end
     
     if ~isfield(W, 'waveform') && isfield(W, 'osp')
         W = io.get_waveform_stats(W.osp);
@@ -22,7 +26,7 @@ function plotWaveforms(W)
         else
             clr = .5*[1 1 1];
         end
-        plot(xax, W(cc).waveform + W(cc).spacing + W(cc).depth, 'Color', clr, 'Linewidth', 2); hold on
+        plot(xax, W(cc).waveform*scale + W(cc).spacing + W(cc).depth, 'Color', clr, 'Linewidth', 2); hold on
         text(mean(xax),  W(cc).spacing(end)+20 + W(cc).depth, sprintf('%d', cc))
         
     end
