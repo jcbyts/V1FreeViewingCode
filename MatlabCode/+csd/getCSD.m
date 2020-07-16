@@ -33,6 +33,7 @@ ip.addParameter('plot', false)
 ip.addParameter('method', 'spline')
 ip.addParameter('sampleRate', 1000)
 ip.addParameter('exclude', true)
+ip.addParameter('spatsmooth', 0)
 ip.parse(varargin{:});
 
 exclude = ip.Results.exclude;
@@ -54,7 +55,7 @@ end
 [~,~,ev] = histcounts(eventTimes, lfp.timestamps); % convert time to samples
 
 if isempty(lfp.ycoords)
-    ch0_all = ((-32:-1)*50)';
+    ch0_all = ((32:-1:1)*50)';
 else
     ch0_all = lfp.ycoords; % row vector
 end
@@ -71,7 +72,7 @@ for shankInd = 1:numShanks
     
     if exclude
         curDeadChan = excChan(excChan>=curShankInds(1)&excChan<=curShankInds(end));
-        curDeadChan = curDeadChan - (shankInd-1)*lenShanks; 
+        curDeadChan = curDeadChan - (shankInd-1)*lenShanks;
         
         for indDChan = 1:length(curDeadChan)% interpolate dead channels
             DChan = curDeadChan(indDChan);
@@ -82,46 +83,103 @@ for shankInd = 1:numShanks
         
     end
     
+    if ip.Results.spatsmooth > 0
+        for t = 1:size(sta,1)
+            sta(t,:) = imgaussfilt(sta(t,:), ip.Results.spatsmooth);
+        end
+    end
+    
     switch ip.Results.method
         case 'spline'
             % compute the CSD using the spline inverse method
             CSD = csd.splineCSD(sta', 'el_pos', ch0);
         case 'standard'
-            CSD = csd.standardCSD(sta', 'el_pos', ch0);
+            CSD = diff(sta, 2, 2)';
+            %             CSD = csd.standardCSD(sta', 'el_pos', ch0);
         case 'step'
             CSD = csd.stepCSD(sta', 'el_pos', ch0);
         otherwise
             error('valid methods are {spline, standard, step}')
     end
     
+    
+    
+    
     % find the sink and reversal point
-    ix = time > 0 & time < 100; % look over time window after flash
     
-    % sink should be the minimum value
-    [~,id] = min(reshape(CSD(:,ix), [], 1));
-    % convert to indices
-    [depthIndex,timeIndex] = ind2sub(size(CSD(:,ix)), id);
-    % upsample channels to index into them
-    chUp   = linspace(1, numel(ch0), size(CSD,1));
-    depthUp= linspace(ch0(1), ch0(end), size(CSD,1));
+%     figure(1); clf
+%     imagesc(CSD');
     
-    % find reversal point
-    CSD_ = CSD(:,ix);
-    reversalPoints = findZeroCrossings(CSD_(:,timeIndex));
     
+    tpower = std(CSD).^5;
+    ix = time < 0;
+    
+    tpower = imgaussfilt(tpower, 3);
+    
+    tpower = fix(tpower/ (10*max(tpower(ix))));
+%     plot(tpower)
+    
+    dpdt = diff(tpower);
+    
+    zc = find(diff(sign(dpdt))==-2);
+    [~, ind] = sort(tpower(zc), 'descend');
+    zc = sort(zc(ind(1:3))); % three biggest peaks in order
+    
+%     figure(3); clf
+%     subplot(121)
+%     plot(time, tpower); hold on
+%     cmap = lines;
+%     for i = 1:3
+%         plot(time(zc(i)), tpower(zc(i)), 'o', 'Color', cmap(i,:), 'Linewidth', 2)
+%     end
+%     xlim([0 150])
+%     
+%     figure(2); clf
+%     imagesc(time, ch0, CSD)
+%     hold on
+%     for i = 1:3
+%         plot(time(zc(i))*[1 1], ylim, 'Linewidth', 2)
+%     end
+    
+    spower = CSD(:,zc(1));
+    
+    % get peak
+    [~, mx] = max(spower);
+    [~, mn] = min(spower);
+    
+    if mx > mn
+        ind = mn:mx;
+        rvrsl = ind(find(diff(sign(spower(ind)))==2, 1));
+    else
+        ind = mx:mn;
+        rvrsl = ind(find(diff(sign(spower(ind)))==-2, 1));
+    end
+    
+    t = time(zc(1));
+    source = ch0(mx+1); % plus 1 because CSD cuts channel (due to derivative)
+    sink = ch0(mn+1); % same here
+    reversal = ch0(rvrsl+2); % plus 2 because we took the derivative again to
+    
+%     plot(t, sink, 'or')
+%     plot(t, source, 'sr')
+%     plot(t, reversal, 'dr')
+%     
     % output structure
     stats.STA(:,:,shankInd) = sta';
     stats.CSD(:,:,shankInd) = CSD;
-    stats.reversalPointDepth{shankInd} = depthUp(reversalPoints);
-    stats.sinkDepth(shankInd) = depthUp(depthIndex);
-    stats.sinkChannel(shankInd) = chUp(depthIndex);
+    stats.latency = t;
+    stats.reversalPointDepth{shankInd} = reversal;
+    stats.sinkDepth(shankInd) = sink;
+    stats.sourceDepth(shankInd) = source;
+    stats.sinkChannel(shankInd) = mn+1;
+    stats.sourceChannel(shankInd) = mx+1;
 end
 
 % Output
 stats.time  = time;
-stats.depth = depthUp;
+stats.depth = ch0;
 stats.chDepths = ch0;
-stats.chUp  = chUp;
+stats.chUp  = ch0;
 stats.numShanks = numShanks;
 
 if ip.Results.plot % afterall, it is a plot function
@@ -131,35 +189,35 @@ if ip.Results.plot % afterall, it is a plot function
 end
 end
 
-function i = findZeroCrossings(data, mode)
-%FINDZEROCROSSINGS Find zero crossing points.
-%   I = FINDZEROCROSSINGS(DATA,MODE) returns the indicies into the supplied
-%   DATA vector, corresponding to the zero crossings.
+% function i = findZeroCrossings(data, mode)
+% %FINDZEROCROSSINGS Find zero crossing points.
+% %   I = FINDZEROCROSSINGS(DATA,MODE) returns the indicies into the supplied
+% %   DATA vector, corresponding to the zero crossings.
+% %
+% %   MODE specifies the type of crossing required:
+% %     MODE < 0 - results in indicies for the -ve going zero crossings,
+% %     MODE = 0 - results in indicies for ALL zero crossings (default), and
+% %     MODE > 0 - results in indicies for the +ve going zero crossings.
 %
-%   MODE specifies the type of crossing required:
-%     MODE < 0 - results in indicies for the -ve going zero crossings,
-%     MODE = 0 - results in indicies for ALL zero crossings (default), and
-%     MODE > 0 - results in indicies for the +ve going zero crossings.
-
-% $Id: findZeroCrossings.m,v 1.1 2008-07-21 23:31:50 shaunc Exp $
-
-if nargin < 2
-    mode = 0;
-end
-
-[i,~,p] = find(data); % ignore zeros in the data vector
-
-switch sign(mode)
-    case -1
-        % find -ve going crossings
-        ii = find(diff(sign(p))==-2);
-    case 0
-        % find all zero crossings
-        ii = find(abs(diff(sign(p)))==2);
-    case 1
-        % find +ve going crossings
-        ii = find(diff(sign(p))==2);
-end;
-
-i = round((i(ii)+i(ii+1))/2);
-end
+% % $Id: findZeroCrossings.m,v 1.1 2008-07-21 23:31:50 shaunc Exp $
+%
+% if nargin < 2
+%     mode = 0;
+% end
+%
+% [i,~,p] = find(data); % ignore zeros in the data vector
+%
+% switch sign(mode)
+%     case -1
+%         % find -ve going crossings
+%         ii = find(diff(sign(p))==-2);
+%     case 0
+%         % find all zero crossings
+%         ii = find(abs(diff(sign(p)))==2);
+%     case 1
+%         % find +ve going crossings
+%         ii = find(diff(sign(p))==2);
+% end;
+%
+% i = round((i(ii)+i(ii+1))/2);
+% end
