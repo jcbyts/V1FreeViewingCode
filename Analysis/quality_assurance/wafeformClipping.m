@@ -1,11 +1,13 @@
 
 %% 
-for iEx = 1:55
+for iEx = 43:57
     disp(iEx)
+    fclose('all');
     [Exp,S] = io.dataFactoryGratingSubspace(iEx);
 
     sp = io.clip_waveforms(Exp, S);
     disp('Done')
+    
 end
 
 %%
