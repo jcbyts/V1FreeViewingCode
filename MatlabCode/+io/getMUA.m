@@ -91,8 +91,11 @@ for iBatch = 1:nBatch
     % downsample
     data(ix,:) = downdata;
     
-    ctr = ix(end);
-   
+    try
+        ctr = ix(end);
+    catch
+        break
+    end
 end
 
 % close up shop

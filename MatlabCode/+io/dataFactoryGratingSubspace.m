@@ -182,5 +182,40 @@ if nargout > 1
         varargout{3} = lfp;
         
     end
+    
+    if nargout > 3 % get MUA
+        disp('gretting MUA')
+        fname = fullfile(dataPath, 'mua', S.processedFileName);
+        
+        fprintf('Loading [@s]\n', S.processedFileName)
+        if exist(fname, 'file')
+            mua = load(fname);
+            disp('Done')
+        else
+            serverDir = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
+
+            S.rawFilePath = fullfile(serverDir, rootDir, rawDir);            
+            fprintf('Could not find LFP file for [%s]\n', fname)
+            fprintf('Trying to import the data from [%s]\n', S.rawFilePath)
+    
+            % some more meta data
+            ops = io.loadOps(S.rawFilePath);
+            if numel(ops)>1
+                ops = ops(1);
+            end
+            
+            ops = io.convertOpsToNewDirectory(ops, S.rawFilePath);
+            
+            load(ops.chanMap);
+            
+            [data, timestamps] = io.getMUA(ops);
+            
+            save(fname, '-v7.3', 'timestamps', 'data', 'xcoords', 'ycoords', 'zcoords') % v7 flag can be read easily by scipy
+            mua = struct('timestamps', timestamps, 'data', data, 'xcoords', xcoords, 'ycoords', ycoords, 'zcoords', zcoords);
+        end
+        
+        varargout{4} = mua;
+        
+    end
 end
     

@@ -1,15 +1,19 @@
 
 
-iEx = 5;
+for iEx = 37:55
 
-[Exp, S] = io.dataFactoryGratingSubspace(iEx);
+[Exp, S, lfp, mua] = io.dataFactoryGratingSubspace(iEx);
 
+end
+
+
+%% test single session extraction from server
 ops = io.loadOps(S.rawFilePath);
 
 if numel(ops) > 1
     ops = ops(1);
 end
 
-%% get MUA
+% get MUA
 
 [MUA, timestamps] = io.getMUA(ops);
