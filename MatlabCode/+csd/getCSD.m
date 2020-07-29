@@ -39,6 +39,25 @@ ip.parse(varargin{:});
 exclude = ip.Results.exclude;
 excChan = lfp.deadChan;
 
+if isempty(eventTimes)
+    stats = struct();
+    stats.time = ip.Results.window(1):ip.Results.window(2);
+    stats.STA = nan(32, numel(stats.time));
+    stats.CSD = nan(30, numel(stats.time));
+    stats.latency = nan;
+    stats.reversalPointDepth{1} = nan;
+    stats.sinkDepth = nan;
+    stats.sourceDepth = nan;
+    stats.sinkChannel=nan;
+    stats.sourceChannel = nan;
+    stats.depth = nan(32,1);
+    stats.depth = nan(32,1);
+    stats.depth = nan(32,1);
+    stats.numShanks = 0;
+    return
+end
+   
+
 if isa(eventTimes, 'double')
     eventTimes = eventTimes(:);
 elseif isa(eventTimes, 'struct') % Get CSD event times (if not already input)
@@ -68,7 +87,7 @@ for shankInd = 1:numShanks
     curShankInds = shankInd*lenShanks-lenShanks+1:shankInd*lenShanks;
     
     % event-triggered LFP
-    [sta,~, time] = eventTriggeredAverage(lfp.data(:,curShankInds), ev(:), ip.Results.window);
+    [sta,~, time] = eventTriggeredAverage(-1*lfp.data(:,curShankInds), ev(:), ip.Results.window);
     
     if exclude
         curDeadChan = excChan(excChan>=curShankInds(1)&excChan<=curShankInds(end));
@@ -107,8 +126,8 @@ for shankInd = 1:numShanks
     
     % find the sink and reversal point
     
-%     figure(1); clf
-%     imagesc(CSD');
+    %     figure(1); clf
+    %     imagesc(CSD');
     
     
     tpower = std(CSD).^5;
@@ -117,35 +136,60 @@ for shankInd = 1:numShanks
     tpower = imgaussfilt(tpower, 3);
     
     tpower = fix(tpower/ (10*max(tpower(ix))));
-%     plot(tpower)
+    %     plot(tpower)
     
     dpdt = diff(tpower);
     
-    zc = find(diff(sign(dpdt))==-2);
-    [~, ind] = sort(tpower(zc), 'descend');
-    zc = sort(zc(ind(1:3))); % three biggest peaks in order
+    inds = find(sign(dpdt)~=0); % remove indices that don't have a sign
     
-%     figure(3); clf
-%     subplot(121)
-%     plot(time, tpower); hold on
-%     cmap = lines;
-%     for i = 1:3
-%         plot(time(zc(i)), tpower(zc(i)), 'o', 'Color', cmap(i,:), 'Linewidth', 2)
-%     end
-%     xlim([0 150])
+    zc = inds((diff(sign(dpdt(inds)))==-2));
+    [~, ind] = sort(tpower(zc), 'descend');
+    zc = sort(zc(ind(1:min(numel(ind), 3)))); % three biggest peaks in order
+    
+%         figure(3); clf
+%         subplot(121)
+%         plot(time, tpower); hold on
+%         cmap = lines;
+%         for i = 1:3
+%             plot(time(zc(i)), tpower(zc(i)), 'o', 'Color', cmap(i,:), 'Linewidth', 2)
+%         end
+%         xlim([0 150])
 %     
-%     figure(2); clf
-%     imagesc(time, ch0, CSD)
-%     hold on
-%     for i = 1:3
-%         plot(time(zc(i))*[1 1], ylim, 'Linewidth', 2)
-%     end
+%         figure(2); clf
+%         imagesc(time, ch0, CSD)
+%         hold on
+%         for i = 1:3
+%             plot(time(zc(i))*[1 1], ylim, 'Linewidth', 2)
+%         end
+    ch00 = ch0;
+     if strcmp(ip.Results.method, 'spline')
+            ch0 = imresize(ch0, size(CSD,1)/numel(ch0));
+            ch0 = ch0(:,1);
+    end
+    
+    
+    if isempty(zc)
+        stats.STA(:,:,shankInd) = sta';
+        stats.CSD(:,:,shankInd) = CSD;
+        stats.time  = time;
+        stats.chDepths = ch00;
+        stats.depth = ch0;
+        stats.chUp  = ch0;
+        stats.numShanks = numShanks;
+        return
+    end
     
     spower = CSD(:,zc(1));
     
     % get peak
-    [~, mx] = max(spower);
-    [~, mn] = min(spower);
+    [~, peaks] = findpeaks(spower, 'MinPeakWidth', 2, 'MinPeakHeight', .5);
+    [~, vals] = findpeaks(-spower, 'MinPeakWidth', 2, 'MinPeakHeight', .5);
+    
+    mx = min(peaks);
+    mn = min(vals);
+    
+    %     [~, mx] = max(spower);
+    %     [~, mn] = min(spower);
     
     if mx > mn
         ind = mn:mx;
@@ -156,14 +200,27 @@ for shankInd = 1:numShanks
     end
     
     t = time(zc(1));
-    source = ch0(mx+1); % plus 1 because CSD cuts channel (due to derivative)
-    sink = ch0(mn+1); % same here
-    reversal = ch0(rvrsl+2); % plus 2 because we took the derivative again to
     
-%     plot(t, sink, 'or')
-%     plot(t, source, 'sr')
-%     plot(t, reversal, 'dr')
-%     
+        source = ch0(mx+1); % plus 1 because CSD cuts channel (due to derivative)
+        sink = ch0(mn+1); % same here
+        reversal = ch0(rvrsl+2); % plus 2 because we took the derivative again to
+%     end
+    %     plot(t, sink, 'or')
+    %     plot(t, source, 'sr')
+    %     plot(t, reversal, 'dr')
+    %
+    if isempty(source)
+        source = nan;
+        mx = nan;
+    end
+    if isempty(sink)
+        sink = nan;
+        mn = nan;
+    end
+    
+    if isempty(reversal)
+        reversal = nan;
+    end
     % output structure
     stats.STA(:,:,shankInd) = sta';
     stats.CSD(:,:,shankInd) = CSD;
@@ -177,9 +234,9 @@ end
 
 % Output
 stats.time  = time;
-stats.depth = ch0;
-stats.chDepths = ch0;
+stats.chDepths = ch00;
 stats.chUp  = ch0;
+stats.depth = ch0;
 stats.numShanks = numShanks;
 
 if ip.Results.plot % afterall, it is a plot function

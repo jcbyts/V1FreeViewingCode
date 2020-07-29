@@ -28,7 +28,7 @@ function plotCSD(stats)
         curCSD = stats.CSD(:,:,shankInd);
         subplot(1,numShanks,shankInd)
         imagesc(stats.time, stats.depth, curCSD-mean(curCSD(:))); axis ij
-        colormap(colormap_redblackblue);
+        colormap(parula);
         hold on
         plot(stats.time, bsxfun(@plus, stats.STA(:,:,shankInd), stats.chDepths), 'Color', repmat(.1, 1, 3))
         xlim(stats.time([1 end]))
@@ -38,6 +38,10 @@ function plotCSD(stats)
 %         tmp = tmp + stats.sinkDepth(shankInd);
 %         plot(stats.time([1 end]), [1; 1]*tmp, 'r--', 'Linewidth', 2)
         %                 axis ij
+        plot(stats.latency, stats.sinkDepth(shankInd), 'w*', 'Linewidth', 2)
+        plot(stats.latency, stats.sourceDepth(shankInd), 'c*', 'Linewidth', 2)
+        plot(stats.time([1 end]), [1; 1]*stats.reversalPointDepth{shankInd}(1), 'r--', 'Linewidth', 2)
+        
         hold off
         colorbar
         end

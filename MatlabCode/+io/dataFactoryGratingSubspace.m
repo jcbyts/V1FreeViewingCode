@@ -184,10 +184,10 @@ if nargout > 1
     end
     
     if nargout > 3 % get MUA
-        disp('gretting MUA')
+        disp('getting MUA')
         fname = fullfile(dataPath, 'mua', S.processedFileName);
         
-        fprintf('Loading [@s]\n', S.processedFileName)
+        fprintf('Loading [%s]\n', S.processedFileName)
         if exist(fname, 'file')
             mua = load(fname);
             disp('Done')
