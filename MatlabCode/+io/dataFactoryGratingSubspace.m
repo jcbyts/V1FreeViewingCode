@@ -208,7 +208,7 @@ if nargout > 1
             
             load(ops.chanMap);
             
-            [data, timestamps] = io.getMUA(ops);
+            [data, timestamps] = io.getMUA(ops, true);
             
             save(fname, '-v7.3', 'timestamps', 'data', 'xcoords', 'ycoords', 'zcoords') % v7 flag can be read easily by scipy
             mua = struct('timestamps', timestamps, 'data', data, 'xcoords', xcoords, 'ycoords', ycoords, 'zcoords', zcoords);
