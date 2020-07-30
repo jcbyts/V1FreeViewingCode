@@ -17,6 +17,8 @@ function stats = getCSD(lfp, eventTimes, varargin)
 %
 %   'exclude'        logical         - exclude lfp.deadChan channels and
 %                                      interpolate to get them
+%   'spatsmooth'     double          - apply spatial smoothing to sta
+%                                      before computing CSD
 %
 % valid csd methods:
 %       'standard' - second spatial derivative
@@ -29,11 +31,11 @@ function stats = getCSD(lfp, eventTimes, varargin)
 ip = inputParser();
 ip.addParameter('window', [-100 200])
 ip.addParameter('channelDepths', [])
-ip.addParameter('plot', false)
-ip.addParameter('method', 'spline')
+ip.addParameter('plotIt', true)
+ip.addParameter('method', 'standard')
 ip.addParameter('sampleRate', 1000)
 ip.addParameter('exclude', true)
-ip.addParameter('spatsmooth', 0)
+ip.addParameter('spatsmooth', 1.5)
 ip.parse(varargin{:});
 
 exclude = ip.Results.exclude;
@@ -56,7 +58,6 @@ if isempty(eventTimes)
     stats.numShanks = 0;
     return
 end
-   
 
 if isa(eventTimes, 'double')
     eventTimes = eventTimes(:);
@@ -87,7 +88,7 @@ for shankInd = 1:numShanks
     curShankInds = shankInd*lenShanks-lenShanks+1:shankInd*lenShanks;
     
     % event-triggered LFP
-    [sta,~, time] = eventTriggeredAverage(-1*lfp.data(:,curShankInds), ev(:), ip.Results.window);
+    [sta,~, time] = eventTriggeredAverage(lfp.data(:,curShankInds), ev(:), ip.Results.window);
     
     if exclude
         curDeadChan = excChan(excChan>=curShankInds(1)&excChan<=curShankInds(end));
@@ -102,26 +103,56 @@ for shankInd = 1:numShanks
         
     end
     
-    if ip.Results.spatsmooth > 0
-        for t = 1:size(sta,1)
-            sta(t,:) = imgaussfilt(sta(t,:), ip.Results.spatsmooth);
-        end
-    end
+    %     if ip.Results.spatsmooth > 0
+    %         for t = 1:size(sta,1)
+    %             sta(t,:) = imgaussfilt(sta(t,:), ip.Results.spatsmooth);
+    %         end
+    %     end
     
     switch ip.Results.method
         case 'spline'
             % compute the CSD using the spline inverse method
             CSD = csd.splineCSD(sta', 'el_pos', ch0);
         case 'standard'
+            
+            sta = -1.*sta;
+            
+                        %spatial smoothing
+                        if ip.Results.spatsmooth > 0
+                            for t = 1:size(sta,1)
+                                sta(t,:) = imgaussfilt(sta(t,:), ip.Results.spatsmooth);
+                            end
+                        end
+            
+%             % spatial smoothing
+%             if ip.Results.spatsmooth > 0
+%                 for t = 1:size(sta,1)
+%                     sta(t,:) = smooth(sta(t,:),11,'lowess');
+%                 end
+%             end
+%             
+%             % temporal smoothing
+%             if ip.Results.tempsmooth > 0
+%                 for ch = 1:size(sta,2)
+%                     sta(:,ch) = smooth(sta(:,ch),11,'sgolay');
+%                 end
+%             end
+            
+            
+            
+            % compute CSD
             CSD = diff(sta, 2, 2)';
             %             CSD = csd.standardCSD(sta', 'el_pos', ch0);
+            
+            %             % remove first and last depth since CSD takes derivative twice
+            %             chSTA = ch0;
+            %             ch0(1) = [];
+            %             ch0(end) = [];
         case 'step'
             CSD = csd.stepCSD(sta', 'el_pos', ch0);
         otherwise
             error('valid methods are {spline, standard, step}')
     end
-    
-    
     
     
     % find the sink and reversal point
@@ -130,7 +161,7 @@ for shankInd = 1:numShanks
     %     imagesc(CSD');
     
     
-    tpower = std(CSD).^5;
+    tpower = std(CSD).^4.*-1;
     ix = time < 0;
     
     tpower = imgaussfilt(tpower, 3);
@@ -142,31 +173,26 @@ for shankInd = 1:numShanks
     
     inds = find(sign(dpdt)~=0); % remove indices that don't have a sign
     
-    zc = inds((diff(sign(dpdt(inds)))==-2));
+    zc = find(diff(sign(dpdt))==-2);
     [~, ind] = sort(tpower(zc), 'descend');
-    zc = sort(zc(ind(1:min(numel(ind), 3)))); % three biggest peaks in order
     
-%         figure(3); clf
-%         subplot(121)
-%         plot(time, tpower); hold on
-%         cmap = lines;
-%         for i = 1:3
-%             plot(time(zc(i)), tpower(zc(i)), 'o', 'Color', cmap(i,:), 'Linewidth', 2)
-%         end
-%         xlim([0 150])
-%     
-%         figure(2); clf
-%         imagesc(time, ch0, CSD)
-%         hold on
-%         for i = 1:3
-%             plot(time(zc(i))*[1 1], ylim, 'Linewidth', 2)
-%         end
-    ch00 = ch0;
-     if strcmp(ip.Results.method, 'spline')
-            ch0 = imresize(ch0, size(CSD,1)/numel(ch0));
-            ch0 = ch0(:,1);
+    if length(zc) >= 3
+        numP = 3;
+    else
+        numP = length(zc);
     end
     
+    %numP = 3;
+    
+    %zc = sort(zc(ind(1:numP))); % three biggest peaks in order
+    
+    zc = sort(zc(ind(1:min(numel(ind), 3))));
+    
+    ch00 = ch0;
+    if strcmp(ip.Results.method, 'spline')
+        ch0 = imresize(ch0, size(CSD,1)/numel(ch0));
+        ch0 = ch0(:,1);
+    end
     
     if isempty(zc)
         stats.STA(:,:,shankInd) = sta';
@@ -176,7 +202,25 @@ for shankInd = 1:numShanks
         stats.depth = ch0;
         stats.chUp  = ch0;
         stats.numShanks = numShanks;
-        return
+        stats.latency = nan;
+        stats.sinkDepth(shankInd) = nan;
+        stats.sourceDepth(shankInd) = nan;
+        stats.sinkChannel(shankInd) = nan;
+        stats.sourceChannel(shankInd) = nan;
+        
+        % try to locate using other method
+        ix = time > 0 & time < 100;
+        % sink should be the minimum value
+        [~,id] = min(reshape(CSD(:,ix), [], 1));
+        % convert to indices
+        [depthIndex,timeIndex] = ind2sub(size(CSD(:,ix)), id);
+        % find reversal point
+        CSD_ = CSD(:,ix);
+        reversalPoints = findZeroCrossings(CSD_(:,timeIndex));
+        stats.reversalPointDepth{shankInd} = reversalPoints(1);
+        
+        continue
+        %return
     end
     
     spower = CSD(:,zc(1));
@@ -201,14 +245,10 @@ for shankInd = 1:numShanks
     
     t = time(zc(1));
     
-        source = ch0(mx+1); % plus 1 because CSD cuts channel (due to derivative)
-        sink = ch0(mn+1); % same here
-        reversal = ch0(rvrsl+2); % plus 2 because we took the derivative again to
-%     end
-    %     plot(t, sink, 'or')
-    %     plot(t, source, 'sr')
-    %     plot(t, reversal, 'dr')
-    %
+    source = ch0(mx+1); % plus 1 because CSD cuts channel (due to derivative)
+    sink = ch0(mn+1); % same here
+    reversal = ch0(rvrsl+2); % plus 2 because we took the derivative again to
+
     if isempty(source)
         source = nan;
         mx = nan;
@@ -239,42 +279,64 @@ stats.chUp  = ch0;
 stats.depth = ch0;
 stats.numShanks = numShanks;
 
-if ip.Results.plot % afterall, it is a plot function
+if ip.Results.plotIt
+    
+    figure(3); clf
+    subplot(121)
+    plot(time, tpower); hold on
+    cmap = lines;
+    for i = 1:numP
+        plot(time(zc(i)), tpower(zc(i)), 'o', 'Color', cmap(i,:), 'Linewidth', 2)
+    end
+    xlim([0 150])
+    
+    figure(2); clf
+    imagesc(time, ch0, CSD)
+    hold on
+    for i = 1:numP
+        plot(time(zc(i))*[1 1], ylim, 'Linewidth', 2)
+    end
+    
+    if exist('sink','var')
+        plot(t, sink, 'or')
+        plot(t, source, 'sr')
+        plot(t, reversal, 'dr')
+    end
     
     csd.plotCSD(stats) % Plot CSD
     
 end
 end
 
-% function i = findZeroCrossings(data, mode)
-% %FINDZEROCROSSINGS Find zero crossing points.
-% %   I = FINDZEROCROSSINGS(DATA,MODE) returns the indicies into the supplied
-% %   DATA vector, corresponding to the zero crossings.
-% %
-% %   MODE specifies the type of crossing required:
-% %     MODE < 0 - results in indicies for the -ve going zero crossings,
-% %     MODE = 0 - results in indicies for ALL zero crossings (default), and
-% %     MODE > 0 - results in indicies for the +ve going zero crossings.
+function i = findZeroCrossings(data, mode)
+%FINDZEROCROSSINGS Find zero crossing points.
+%   I = FINDZEROCROSSINGS(DATA,MODE) returns the indicies into the supplied
+%   DATA vector, corresponding to the zero crossings.
 %
-% % $Id: findZeroCrossings.m,v 1.1 2008-07-21 23:31:50 shaunc Exp $
-%
-% if nargin < 2
-%     mode = 0;
-% end
-%
-% [i,~,p] = find(data); % ignore zeros in the data vector
-%
-% switch sign(mode)
-%     case -1
-%         % find -ve going crossings
-%         ii = find(diff(sign(p))==-2);
-%     case 0
-%         % find all zero crossings
-%         ii = find(abs(diff(sign(p)))==2);
-%     case 1
-%         % find +ve going crossings
-%         ii = find(diff(sign(p))==2);
-% end;
-%
-% i = round((i(ii)+i(ii+1))/2);
-% end
+%   MODE specifies the type of crossing required:
+%     MODE < 0 - results in indicies for the -ve going zero crossings,
+%     MODE = 0 - results in indicies for ALL zero crossings (default), and
+%     MODE > 0 - results in indicies for the +ve going zero crossings.
+
+% $Id: findZeroCrossings.m,v 1.1 2008-07-21 23:31:50 shaunc Exp $
+
+if nargin < 2
+    mode = 0;
+end
+
+[i,~,p] = find(data); % ignore zeros in the data vector
+
+switch sign(mode)
+    case -1
+        % find -ve going crossings
+        ii = find(diff(sign(p))==-2);
+    case 0
+        % find all zero crossings
+        ii = find(abs(diff(sign(p)))==2);
+    case 1
+        % find +ve going crossings
+        ii = find(diff(sign(p))==2);
+end;
+
+i = round((i(ii)+i(ii+1))/2);
+end
