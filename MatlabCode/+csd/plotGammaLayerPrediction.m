@@ -4,7 +4,7 @@ function plotGammaLayerPrediction(lfp, Exp, varargin)
 
 ip = inputParser();
 ip.addParameter('onlyPlotOneShank', false)
-ip.addParameter('method', 'softmax')
+ip.addParameter('method', 'weightedMin')
 ip.parse(varargin{:});
 
 gamma = csd.getGamma(lfp, 'method', ip.Results.method);

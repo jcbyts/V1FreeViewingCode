@@ -1,10 +1,16 @@
-function visualizeLayers(sessNums)
+function visualizeLayers(sessNums, varargin)
 % Plotting function that allows you to visualize layer analyses of multiple
 % sessions (plots CSD and BP with landmarks)
 %   input:
 %        sessNums          [1xnumSessions] vector of session numbers
 
-method = 'softmax';
+ip = inputParser();
+ip.addParameter('gamma_method', 'weightedMin')
+ip.addParameter('CSD_method', 'standard')
+ip.parse(varargin{:});
+
+gamma_method = ip.Results.gamma_method;
+CSD_method = ip.Results.CSD_method;
 
 dataPath = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 
@@ -33,7 +39,14 @@ for indSess = 1:length(sessNums)
     [Exp, ~, lfp] = io.dataFactoryGratingSubspace(sessNums(indSess));
     
     axes(ha(indSess))
-    csd.plotGammaLayerPrediction(lfp, Exp, 'method', method, 'onlyPlotOneShank', true)
+    %csd.plotGammaLayerPrediction(lfp, Exp, 'method', method, 'onlyPlotOneShank', true)
+    
+    gamma = csd.getGamma(lfp, 'method', gamma_method);
+
+    stats = csd.getCSD(lfp, Exp, 'window', [-100 200], 'plot', false, 'method',...
+        CSD_method, 'sampleRate', 1000, 'exclude', true);
+
+    csd.plotCSD_BP(stats, gamma, ip.Results.onlyPlotOneShank)
     
     colorbar off
     

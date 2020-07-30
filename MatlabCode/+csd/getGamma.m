@@ -69,6 +69,7 @@ lgTroughDepth = nan(1, numShanks);
 hgMaxDepth = nan(1, numShanks);
 lgInputLayerDepths = nan(1, 2, numShanks);
 hgInputLayerDepths = nan(1, 2, numShanks);
+reversal = nan(1, numShanks);
 
 for shankInd = 1:numShanks
     
@@ -150,7 +151,7 @@ for shankInd = 1:numShanks
     
     lgInputLayerDepths(:,:,shankInd) = [lgTroughDepth(shankInd)-lgDist lgTroughDepth(shankInd)-lgDist-inputLayerDist];
     hgInputLayerDepths(:,:,shankInd) = [hgMaxDepth(shankInd)+hgDist hgMaxDepth(shankInd)+hgDist-inputLayerDist];
-    
+    reversal(shankInd) = lgTroughDepth(shankInd)-lgDist;
 end
 
 % See documentation for explanations of outputs
@@ -160,6 +161,7 @@ gamma.lgTroughDepth = lgTroughDepth;
 gamma.hgMaxDepth = hgMaxDepth;
 gamma.lgInputLayerDepths = lgInputLayerDepths; 
 gamma.hgInputLayerDepths = hgInputLayerDepths; 
+gamma.reversal = reversal;
 
 
 
