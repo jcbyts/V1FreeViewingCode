@@ -195,7 +195,7 @@ if nargout > 1
             serverDir = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
 
             S.rawFilePath = fullfile(serverDir, rootDir, rawDir);            
-            fprintf('Could not find LFP file for [%s]\n', fname)
+            fprintf('Could not find MUA file for [%s]\n', fname)
             fprintf('Trying to import the data from [%s]\n', S.rawFilePath)
     
             % some more meta data
@@ -208,13 +208,19 @@ if nargout > 1
             
             load(ops.chanMap);
             
+            datatmp = data;
             [data, timestamps] = io.getMUA(ops, true);
-            
+            if ~isfolder(fullfile(dataPath, 'lfp'))
+                mkdir(fullfile(dataPath, 'lfp'))
+            end
             save(fname, '-v7.3', 'timestamps', 'data', 'xcoords', 'ycoords', 'zcoords') % v7 flag can be read easily by scipy
             mua = struct('timestamps', timestamps, 'data', data, 'xcoords', xcoords, 'ycoords', ycoords, 'zcoords', zcoords);
+            data = datatmp;
         end
-        
-        varargout{4} = mua;
+        if ~isfield(mua, 'deadChans')
+            mua.deadChan = str2num(data.deadChan{sessionId});
+        end
+        varargout{3} = mua;
         
     end
 end
