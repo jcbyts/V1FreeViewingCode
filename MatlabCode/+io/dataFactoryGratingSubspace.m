@@ -220,7 +220,7 @@ if nargout > 1
         if ~isfield(mua, 'deadChans')
             mua.deadChan = str2num(data.deadChan{sessionId});
         end
-        varargout{3} = mua;
+        varargout{4} = mua;
         
     end
 end
