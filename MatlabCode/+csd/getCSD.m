@@ -31,31 +31,34 @@ function stats = getCSD(lfp, eventTimes, varargin)
 ip = inputParser();
 ip.addParameter('window', [-100 200])
 ip.addParameter('channelDepths', [])
-ip.addParameter('plotIt', true)
+ip.addParameter('plotIt', false)
 ip.addParameter('method', 'standard')
 ip.addParameter('sampleRate', 1000)
 ip.addParameter('exclude', true)
 ip.addParameter('spatsmooth', 1.5)
+ip.addParameter('debug', false)
 ip.parse(varargin{:});
 
 exclude = ip.Results.exclude;
 excChan = lfp.deadChan;
 
+% initialize output struct
+stats = struct();
+stats.time = ip.Results.window(1):ip.Results.window(2);
+stats.STA = nan(32, numel(stats.time));
+stats.CSD = nan(30, numel(stats.time));
+stats.latency = nan;
+stats.reversalPointDepth{1} = nan;
+stats.sinkDepth = nan;
+stats.sourceDepth = nan;
+stats.sinkChannel=nan;
+stats.sourceChannel = nan;
+stats.depth = nan(32,1);
+stats.depth = nan(32,1);
+stats.depth = nan(32,1);
+stats.numShanks = 0;
+
 if isempty(eventTimes)
-    stats = struct();
-    stats.time = ip.Results.window(1):ip.Results.window(2);
-    stats.STA = nan(32, numel(stats.time));
-    stats.CSD = nan(30, numel(stats.time));
-    stats.latency = nan;
-    stats.reversalPointDepth{1} = nan;
-    stats.sinkDepth = nan;
-    stats.sourceDepth = nan;
-    stats.sinkChannel=nan;
-    stats.sourceChannel = nan;
-    stats.depth = nan(32,1);
-    stats.depth = nan(32,1);
-    stats.depth = nan(32,1);
-    stats.numShanks = 0;
     return
 end
 
@@ -84,7 +87,7 @@ numShanks = size(ch0_all, 2); % number of shanks
 lenShanks = size(ch0_all, 1); % number of channels on each shank
 for shankInd = 1:numShanks
     ch0 = ch0_all(:,shankInd);
-    
+    ch00 = ch0;
     curShankInds = shankInd*lenShanks-lenShanks+1:shankInd*lenShanks;
     
     % event-triggered LFP
@@ -103,51 +106,25 @@ for shankInd = 1:numShanks
         
     end
     
-    %     if ip.Results.spatsmooth > 0
-    %         for t = 1:size(sta,1)
-    %             sta(t,:) = imgaussfilt(sta(t,:), ip.Results.spatsmooth);
-    %         end
-    %     end
-    
     switch ip.Results.method
         case 'spline'
             % compute the CSD using the spline inverse method
             CSD = csd.splineCSD(sta', 'el_pos', ch0);
+            
         case 'standard'
             
             sta = -1.*sta;
             
-                        %spatial smoothing
-                        if ip.Results.spatsmooth > 0
-                            for t = 1:size(sta,1)
-                                sta(t,:) = imgaussfilt(sta(t,:), ip.Results.spatsmooth);
-                            end
-                        end
-            
-%             % spatial smoothing
-%             if ip.Results.spatsmooth > 0
-%                 for t = 1:size(sta,1)
-%                     sta(t,:) = smooth(sta(t,:),11,'lowess');
-%                 end
-%             end
-%             
-%             % temporal smoothing
-%             if ip.Results.tempsmooth > 0
-%                 for ch = 1:size(sta,2)
-%                     sta(:,ch) = smooth(sta(:,ch),11,'sgolay');
-%                 end
-%             end
-            
-            
+            %spatial smoothing
+            if ip.Results.spatsmooth > 0
+                for t = 1:size(sta,1)
+                    sta(t,:) = imgaussfilt(sta(t,:), ip.Results.spatsmooth);
+                end
+            end
             
             % compute CSD
             CSD = diff(sta, 2, 2)';
-            %             CSD = csd.standardCSD(sta', 'el_pos', ch0);
             
-            %             % remove first and last depth since CSD takes derivative twice
-            %             chSTA = ch0;
-            %             ch0(1) = [];
-            %             ch0(end) = [];
         case 'step'
             CSD = csd.stepCSD(sta', 'el_pos', ch0);
         otherwise
@@ -156,39 +133,56 @@ for shankInd = 1:numShanks
     
     
     % find the sink and reversal point
-    
-    %     figure(1); clf
-    %     imagesc(CSD');
-    
-    
     tpower = std(CSD).^4.*-1;
     ix = time < 0;
     
-    tpower = imgaussfilt(tpower, 3);
+    % smooth temporally
+    tpower = sgolayfilt(tpower, 1, 3);
     
     tpower = fix(tpower/ (10*max(tpower(ix))));
-    %     plot(tpower)
+    tpower = tpower ./ max(tpower);
+    tpower(tpower < .05) = 0;
     
-    dpdt = diff(tpower);
-    
-    inds = find(sign(dpdt)~=0); % remove indices that don't have a sign
-    
-    zc = find(diff(sign(dpdt))==-2);
-    [~, ind] = sort(tpower(zc), 'descend');
-    
-    if length(zc) >= 3
-        numP = 3;
-    else
-        numP = length(zc);
+    if ip.Results.debug
+        figure(1); clf
+        subplot(2,2,1,'align')
+        imagesc(time, ch0, CSD)
+        xlabel('Time from Flash')
+        xlim([0 100])
+        
+        subplot(2,2,2, 'align')
+        plot(time, tpower)
+        hold on
     end
     
-    %numP = 3;
+    [~,zc] = findpeaks(tpower);
     
-    %zc = sort(zc(ind(1:numP))); % three biggest peaks in order
+    minLatency = 20; %ms
+    if isempty(zc)
+        continue
+    end
     
-    zc = sort(zc(ind(1:min(numel(ind), 3))));
+    while time(zc(1)) < minLatency
+        zc(1) = [];
+        if isempty(zc)
+            break
+        end
+    end
     
-    ch00 = ch0;
+    if isempty(zc)
+        continue
+    end
+    
+    if ip.Results.debug
+        plot(time(zc), tpower(zc), 'o')
+    end
+    %     zc = zc(1) + 2;
+    
+    %     plot(zc, tpower(zc), 'o')
+    
+    firstpeak = zc(1)+[-1];
+    
+    
     if strcmp(ip.Results.method, 'spline')
         ch0 = imresize(ch0, size(CSD,1)/numel(ch0));
         ch0 = ch0(:,1);
@@ -223,36 +217,82 @@ for shankInd = 1:numShanks
         %return
     end
     
-    spower = CSD(:,zc(1));
+    
+    
+    spower = mean(CSD(:,firstpeak), 2);
+    spower = imgaussfilt(spower, 1);
+    
+    
     
     % get peak
-    [~, peaks] = findpeaks(spower, 'MinPeakWidth', 2, 'MinPeakHeight', .5);
-    [~, vals] = findpeaks(-spower, 'MinPeakWidth', 2, 'MinPeakHeight', .5);
+    [~, peaks] = findpeaks(spower, 'MinPeakWidth', 2, 'MinPeakHeight', .25);
+    [sink, vals] = findpeaks(-spower, 'MinPeakWidth', 2, 'MinPeakHeight', .25);
     
-    mx = min(peaks);
-    mn = min(vals);
-    
-    %     [~, mx] = max(spower);
-    %     [~, mn] = min(spower);
-    
-    if mx > mn
-        ind = mn:mx;
-        rvrsl = ind(find(diff(sign(spower(ind)))==2, 1));
-    else
-        ind = mx:mn;
-        rvrsl = ind(find(diff(sign(spower(ind)))==-2, 1));
+    peakid = 2;
+    while isempty(sink)
+        firstpeak = zc(peakid)-1;
+        spower = mean(CSD(:,firstpeak), 2);
+        spower = imgaussfilt(spower, 1);
+        [~, peaks] = findpeaks(spower, 'MinPeakWidth', 2, 'MinPeakHeight', .25);
+        [sink, vals] = findpeaks(-spower, 'MinPeakWidth', 2, 'MinPeakHeight', .25);
+        peakid = peakid + 1;
+        if peakid > numel(zc)
+            break
+        end
     end
     
-    t = time(zc(1));
+    if ip.Results.debug
+        subplot(2,2,3,'align')
+        chax = ch0(2:end-1);
+        plot(chax, spower); hold on
+    end
+    
+    % find biggest sink
+    [~, id] = max(sink);
+    vals = vals(id);
+    
+%     % normalize sinks to the max sink
+%     sink = sink/max(sink);
+%     % remove sinks that are less that half of the max
+%     vals(sink < .5) = [];
+%     % look for deepest sink
+%     vals(vals < 6) = []; % excluding sinks that are at the very edge
+    
+    mn = min(vals); % deepest sink
+    
+    % find source
+    mx = min(peaks);
+    
+    if isempty(mx) || mn < mx
+        [~, mx] = max(spower(1:mn));
+    end
+    
+    if ip.Results.debug
+        plot(chax(mx), spower(mx), 'o')
+        plot(chax(mn), spower(mn), 'd')
+        if mn < mx
+            warning('source must be above sink to work')
+            keyboard
+        end
+    end
+    
+    
+    % --- find reversal point
+    ind = mx:mn; % index between source and sink
+    % find zero crossing
+    rvrsl = ind(find(diff(sign(spower(ind)))==-2, 1));
+    
+    t = time(firstpeak(min(numel(firstpeak),2)));
     
     source = ch0(mx+1); % plus 1 because CSD cuts channel (due to derivative)
     sink = ch0(mn+1); % same here
     reversal = ch0(rvrsl+2); % plus 2 because we took the derivative again to
-
+    
     if isempty(source)
         source = nan;
         mx = nan;
     end
+    
     if isempty(sink)
         sink = nan;
         mn = nan;
@@ -261,6 +301,7 @@ for shankInd = 1:numShanks
     if isempty(reversal)
         reversal = nan;
     end
+    
     % output structure
     stats.STA(:,:,shankInd) = sta';
     stats.CSD(:,:,shankInd) = CSD;
@@ -306,6 +347,7 @@ if ip.Results.plotIt
     csd.plotCSD(stats) % Plot CSD
     
 end
+
 end
 
 function i = findZeroCrossings(data, mode)
