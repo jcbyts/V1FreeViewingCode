@@ -8,8 +8,10 @@ function S = getUnitLocations(osp, pow)
 %       x 
 %       y 
 %       templates
+debug = false;
+
 if nargin < 2
-    pow = 2;
+    pow = 20;
 end
 
 NC = numel(osp.cids);
@@ -52,11 +54,36 @@ for cc = 1:NC
     
     x(cc) = w*xcoords;
     y(cc) = w*ycoords;
+    
+    if debug
+        figure(1); clf
+        for ch = 1:nChan
+            plot(xcoords(ch)/100 + osp.WFtax, ycoords(ch) + unitTemp(:,ch), 'k', 'Linewidth', 2); hold on
+        end
+        
+        shctrs = unique(xcoords);
+        unorm = u/max(u);
+        for sh = 1:numel(shctrs)
+            shix = xcoords==shctrs(sh);
+            plot(mean(xcoords(shix)/100) + unorm(shix), ycoords(shix), 'r', 'Linewidth', 2)
+        end
+        
+        plot(xlim, y(cc)*[1 1], 'r--', 'Linewidth', 2)
+        plot(x(cc)/100*[1 1], ylim, 'r--', 'Linewidth', 2)
+        title(sprintf('Unit %d', cc))
+        ylabel('Depth')
+        input('Check')
+        
+    end
 end
 
 S.x = x;
 S.y = y;
 S.templates = templates;
+if useWF
+    S.ciHi = permute(osp.WFciHi, [2 3 1]);
+    S.ciLow = permute(osp.WFciLow, [2 3 1]);
+end
 S.xcoords = xcoords;
 S.ycoords = ycoords;
 S.useWF = useWF;
