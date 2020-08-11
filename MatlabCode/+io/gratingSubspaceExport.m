@@ -2,7 +2,19 @@ function gratingSubspaceExport(sessionId)
 % Export session info for grating subspace analysis
 % gratingSubspaceExport(sessionId)
 % sessionId can be a number or a session tag (e.g., "logan_20200303")
-
+% 'ellie_20181223'
+% 'ellie_20181224'
+csdExclusionList = {'ellie_20190107', ...
+    'ellie_20190111', ...
+    'logan_20191119', ...
+    'logan_20191121', ...
+    'logan_20191209', ...
+    'logan_20200228', ...
+    'logan_20200229', ...
+    'logan_20200302', ...
+    'milo_20190607', ...
+    'milo_20190621'};
+    
 % handle data csv
 meta_file = fullfile(fileparts(which('addFreeViewingPaths')), 'Data', 'datasets.csv');
 data = readtable(meta_file);
@@ -24,12 +36,17 @@ if isempty(lfp.deadChan)
     lfp.deadChan = deadChan;
 end
 
-try
-    et = csd.getCSDEventTimes(Exp);
-    cstruct = csd.getCSD(lfp, et);
-    csdReversal = nanmean(cellfun(@(x) x(1), cstruct.reversalPointDepth));
-catch
+
+if any(strcmp(csdExclusionList, Exp.FileTag(1:end-4)))
     csdReversal = nan;
+else
+    try
+        et = csd.getCSDEventTimes(Exp);
+        cstruct = csd.getCSD(lfp, et);
+        csdReversal = nanmean(cellfun(@(x) x(1), cstruct.reversalPointDepth));
+    catch
+        csdReversal = nan;
+    end
 end
 
 
@@ -67,7 +84,7 @@ sessix = strcmp(data.Tag, Tag);
 % get visual units stats
 evalc('[visUnits,W] = io.get_visual_units(Exp, ''plotit'', false, ''visStimField'', ''Grating'');');
 
-rf.isviz = arrayfun(@(x) x.Grating, visUnits);
+rf.isviz = arrayfun(@(x) double(x.Grating), visUnits);
 rf.srf = reshape(cell2mat(arrayfun(@(x) x.srf(:)', visUnits, 'uni', 0))', [size(visUnits(1).srf) numel(visUnits)]);
 rf.xax = visUnits(1).xax;
 rf.yax = visUnits(1).yax;
