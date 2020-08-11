@@ -3,19 +3,20 @@
 
 %% Load dataset
 
-[Exp, S] = io.dataFactory(12);
+[Exp, S] = io.dataFactoryGratingSubspace(56, 'spike_sorting', 'kilo', 'cleanup_spikes', 1);
+
+
 
 %% get valid trials
 validTrials = io.getValidTrials(Exp, 'FixRsvpStim');
 
-
 %% bin spikes and eye pos
 binsize = 1e-3; % 1 ms bins for rasters
 win = [-.1 2]; % -100ms to 2sec after fixation onset
+
 % resample the eye position at the rate of the time-resolution of the
 % ephys. When upsampling, use linear or spline (pchip) interpolation
 eyePosInterpolationMethod = 'linear'; %'pchip'
-
 
 % --- get eye position
 eyeTime = Exp.vpx2ephys(Exp.vpx.smo(:,1)); % time
@@ -37,14 +38,12 @@ eyeY(remove) = [];
 % trial length
 n = cellfun(@(x) numel(x.PR.NoiseHistory(:,1)), Exp.D(validTrials));
 
-% time fixation start
-tstart = Exp.ptb2Ephys(cellfun(@(x) x.PR.NoiseHistory(1,1), Exp.D(validTrials)));
-tend = Exp.ptb2Ephys(cellfun(@(x) x.PR.NoiseHistory(end,1), Exp.D(validTrials)));
-
-% trials < 100 frames remove
 bad = n < 100;
-tstart(bad) = [];
-tend(bad) = [];
+
+validTrials(bad) = [];
+
+tstart = Exp.ptb2Ephys(cellfun(@(x) x.PR.NoiseHistory(1), Exp.D(validTrials)));
+tend = Exp.ptb2Ephys(cellfun(@(x) x.PR.NoiseHistory(end,1), Exp.D(validTrials)));
 n(bad) = [];
 
 % sort trials by fixation duration
@@ -54,7 +53,9 @@ n(bad) = [];
 lags = win(1):binsize:win(2);
 nlags = numel(lags);
 nt = numel(tstart);
+S.cids = Exp.osp.cids;
 NC = numel(S.cids);
+
 spks = zeros(nt,NC,nlags);
 xpos = zeros(nt,nlags);
 ypos = zeros(nt,nlags);
@@ -68,12 +69,14 @@ for i = 1:nt
     ypos(i,:) = interp1(eyeTime, eyeY, tstart(i)+lags, eyePosInterpolationMethod);
 end
 
+fprintf('Done\n')
 % initialize iterator for plotting cells
 cc = 19;
 %%
 
+NC = numel(Exp.osp.cids);
 cc = mod(cc + 1, NC); cc = max(cc, 1);
-% cc = 20;
+cc = 37;
 
 figure(1); clf
 set(gcf, 'Color', 'w')
@@ -148,6 +151,23 @@ xlabel('Time from fixation onset')
 ylabel('Fixation #')
 title('Eye speed')
 
+%%
 
-
+figure(4); clf
+i = 1;
+nt = size(xpos,1);
+for j = 1:nt
+    h(j) = plot(xpos(j,i:i+5), ypos(j,i:i+5), '-'); hold on
+end
+xlim([-1 1])
+ylim([-1 1])
+for i = 1:size(xpos,2)-5
+    for j = 1:nt
+       h(j).XData = xpos(j,i:i+5);
+       h(j).YData = ypos(j,i:i+5);
+    end
+        
+    pause(0.02)
+   
+end
 
