@@ -378,7 +378,9 @@ for cc = 1:NC
         xlim([0 50])
     end
     
-    input('check')
+    if debug
+        input('check')
+    end
     
     % smoothed autocorrelation in spike rate
     aclags = lags(posix)*binSize*1e3;

@@ -17,15 +17,18 @@ for sess = imported(:)'
 end
 
 %% subset of sessions
-% for sess = 1:57
+for sess = 1:57
 %     try
-%     io.gratingSubspaceExport(sess);
+    io.gratingSubspaceExport(sess);
 %     end
-% end
+end
 
 %% copy to server
-server_string = 'jcbyts@sigurros';
-output_dir = '/home/jcbyts/Data/MitchellV1FreeViewing/grating_subspace';
+% server_string = 'jcbyts@sigurros';
+% output_dir = '/home/jcbyts/Data/MitchellV1FreeViewing/grating_subspace';
+
+server_string = 'jake@bancanus';
+output_dir = '/home/jake/Data/Datasets/MitchellV1FreeViewing/grating_subspace';
 
 data_dir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 data_dir = fullfile(data_dir, 'grating_subspace');
@@ -42,3 +45,12 @@ command = [command server_string ':' output_dir];
 system(command)
 
 fprintf('%s\n', fname{:})
+
+%%
+
+for i = 1:numel(fname)
+    tmp = load(fullfile(data_dir, fname{i}));
+    tmp.spikes.csdReversal
+%     assert(numel(unique(tmp.eyepos(:,1)))==size(tmp.eyepos,1))
+%     sum(diff(tmp.grating.frameTime)<=0)
+end

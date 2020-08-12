@@ -17,10 +17,10 @@ csdExclusionList = {'ellie_20190107', ...
     'milo_20190607', ...
     'milo_20190621'};
 %%
-for iEx = 1
+for iEx = 56
     tic; 
    
-    [Exp, ~, lfp] = io.dataFactoryGratingSubspace(iEx);
+    [Exp, ~, lfp] = io.dataFactoryGratingSubspace(iEx, 'spike_sorting', 'jrclustwf');
     
     session = strrep(Exp.FileTag, '.mat', '');
     sessions{iEx} = session;

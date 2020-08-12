@@ -1,4 +1,4 @@
-from scipy.io import loadmat
+# from scipy.io import loadmat
 # from scipy.sparse import csr_matrix, find
 import numpy as np
 import sklearn.linear_model as lm
@@ -17,6 +17,21 @@ def list_sessions(metafile="/home/jcbyts/Repos/V1FreeViewingCode/Data/datasets.c
     sesslist = df.Tag[goodsess]
     return sesslist
 
+def loadmat(fname):
+    import numpy as np
+    import scipy.io as sio
+    import deepdish as dd
+    try:
+        matdat = sio.loadmat(fname)
+        for f in matdat.keys():
+            if isinstance(matdat[f], np.ndarray):
+                matdat[f] = matdat[f].T
+            
+    except NotImplementedError:
+        matdat = dd.io.load(fname)
+    
+    return matdat
+
 def load_data(sessionid=2,datadir="/home/jcbyts/Data/MitchellV1FreeViewing/grating_subspace/",metafile="/home/jcbyts/Repos/V1FreeViewingCode/Data/datasets.csv", verbose=False):
     '''
     Load data exported from matlab
@@ -32,37 +47,44 @@ def load_data(sessionid=2,datadir="/home/jcbyts/Data/MitchellV1FreeViewing/grati
     fname = df.Tag[sessionid] + "_gratingsubspace.mat"
     if verbose:
         print('loading [%s]' %(df.Tag[sessionid]))
-    matdat = loadmat(datadir+fname,squeeze_me=False)
+    matdat = loadmat(datadir+fname)
 
     out = dict()
     out['exname'] = df.Tag[sessionid]
     out['grating'] = dict()
-    out['grating']['frameTime'] = matdat['grating']['frameTime'][0][0].flatten()
-    out['grating']['ori'] = matdat['grating']['ori'][0][0].flatten()
-    out['grating']['cpd'] = matdat['grating']['cpd'][0][0].flatten()
-    out['grating']['frozen_seq_starts'] = matdat['grating']['frozen_seq_starts'][0][0].flatten()
-    out['grating']['frozen_seq_dur'] = matdat['grating']['frozen_seq_dur'][0][0].flatten()
-    out['grating']['frozen_repeats'] = matdat['grating']['frozen_repeats'][0][0].flatten()
+    out['grating']['frameTime'] = matdat['grating']['frameTime'].flatten()
+    out['grating']['ori'] = matdat['grating']['ori'].flatten()
+    out['grating']['cpd'] = matdat['grating']['cpd'].flatten()
+    
+    fstarts = matdat['grating']['frozen_seq_starts'].flatten()
+    out['grating']['frozen_seq_starts'] = fstarts.astype(int)
+    out['grating']['frozen_seq_dur'] = matdat['grating']['frozen_seq_dur'].flatten().astype(int)
+    out['grating']['frozen_repeats'] = matdat['grating']['frozen_repeats'].flatten().astype(int)
 
     out['spikes'] = dict()
-    out['spikes']['st'] = matdat['spikes']['st'][0][0].flatten()
-    out['spikes']['clu'] = matdat['spikes']['clu'][0][0].flatten()
-    out['spikes']['cids'] = matdat['spikes']['cids'][0][0].flatten()
-    out['spikes']['isiV'] = matdat['spikes']['isiV'][0][0].flatten()
+    out['spikes']['st'] = matdat['spikes']['st'].flatten()
+    out['spikes']['clu'] = matdat['spikes']['clu'].flatten()
+    out['spikes']['cids'] = matdat['spikes']['cids'].flatten()
+    out['spikes']['isiV'] = matdat['spikes']['isiV'].flatten()
+    out['spikes']['isiRate'] = matdat['spikes']['isiRate'].flatten()
+    out['spikes']['localityIdx'] = matdat['spikes']['localityIdx'].flatten()
+    out['spikes']['depth'] = matdat['spikes']['clusterDepths'].flatten() - matdat['spikes']['csdReversal']
+    out['spikes']['peak2trough'] = matdat['spikes']['peakMinusTrough']
 
-    out['slist'] = matdat['slist']
-    out['eyepos'] = matdat['eyepos']
+    out['slist'] = matdat['slist'].T
+    out['eyepos'] = matdat['eyepos'].T
 
     out['dots'] = dict()
-    out['dots']['frameTime'] = matdat['dots']['frameTimes'][0][0]
-    out['dots']['xpos'] = matdat['dots']['xPosition'][0][0]
-    out['dots']['ypos'] = matdat['dots']['yPosition'][0][0]
-    out['dots']['eyePosAtFrame'] = matdat['dots']['eyePosAtFrame'][0][0]
-    out['dots']['validFrames'] = matdat['dots']['validFrames'][0][0]
-    out['dots']['numDots'] = matdat['dots']['numDots'][0][0].flatten()
+    out['dots']['frameTime'] = matdat['dots']['frameTimes'].flatten()
+    out['dots']['xpos'] = matdat['dots']['xPosition'].flatten()
+    out['dots']['ypos'] = matdat['dots']['yPosition'].flatten()
+    out['dots']['eyePosAtFrame'] = matdat['dots']['eyePosAtFrame'].flatten()
+    out['dots']['validFrames'] = matdat['dots']['validFrames'].flatten()
+    out['dots']['numDots'] = matdat['dots']['numDots'].flatten()
 
-    out['rf'] = {'mu': matdat['rf']['mu'][0][0][0],
-            'cov': matdat['rf']['cov'][0][0]}
+    out['rf'] = {'mu': matdat['rf']['mu'],
+            'cov': matdat['rf']['cov']}
+    out['rf']['isviz'] = matdat['rf']['isviz'].flatten()
 
     return out
 
@@ -216,7 +238,7 @@ def load_and_preprocess(sessionid, basis={}, opts={}):
     valid = np.zeros(NT, dtype='bool')
     valid[vinds] = True
 
-    if len(matdat['grating']['frozen_repeats']) > 0:
+    if len(matdat['grating']['frozen_repeats']) > 2:
         print("Using frozen repeats as test set")
         defopts['has_frozen'] = True
         Ti = np.reshape(matdat['grating']['frozen_repeats'], (-1, matdat['grating']['frozen_seq_dur'][0]+1)).astype(int)
@@ -234,6 +256,11 @@ def load_and_preprocess(sessionid, basis={}, opts={}):
     defopts['Xi'] = Xi
     defopts['Ui'] = Ui
     defopts['exname'] = matdat['exname']
+    defopts['spike_depths'] = matdat['spikes']['depth']
+    defopts['isiRate'] = matdat['spikes']['isiRate']
+    defopts['cids'] = matdat['spikes']['cids']
+    defopts['localityIdx'] = matdat['spikes']['localityIdx']
+    defopts['isviz'] = matdat['rf']['isviz']
 
     return stim, RobsAll, sacon, sacoff, basisopts, defopts, sacboxcar, valid, eyepos
 
@@ -261,20 +288,16 @@ def load_sessions(sesslist, basis={'name': 'tent', 'nori': 7, 'nsf': 6, 'endpoin
         else:
             bigOpts['exname'].append(opts['exname'])
 
-        # Nspks = np.sum(RobsAll,axis=0)
-        # valcell = np.where(Nspks > 500)[0]
-
         AvFr = np.average(RobsAll, axis=0)*opts['frate']
-        # print(AvFr)
 
-        valcell = np.where(AvFr > 1)[0]
+        valcell = np.where(AvFr >= 0)[0] # keep all units
 
         opts['cids'] = valcell
         NC = len(valcell)
         Robs = RobsAll[:,valcell]
         # print(NC, 'selected')
         NT = Robs.shape[0]
-        print("Found %d/%d units that had > 1 spike/sec" %(NC, RobsAll.shape[1]))
+        # print("Found %d/%d units that had > 1 spike/sec" %(NC, RobsAll.shape[1]))
         DF = np.ones([NT,NC])
         bigStim.append(stim)
         bigRobs.append(Robs)
@@ -322,6 +345,7 @@ def load_and_setup(indexlist, npow=1.8, opts={}):
     sessmincpd = []
     sessmaxcpd = []
     for sess in sesslist:
+        print(sess)
         matdat = load_data(sess)
         sessmincpd.append(np.min(matdat['grating']['cpd'][matdat['grating']['cpd']>0.0]))
         sessmaxcpd.append(np.max(matdat['grating']['cpd']))
@@ -432,6 +456,7 @@ def get_eyepos_at_frames(ep,ft,slist=None,sm=50,minDur=5,velThresh=5,minDurBins=
     # eyepos Y
     f = interp1d(tt,ep[:,2],kind='linear', axis=0, fill_value='extrapolate')
     ey = f(ft)
+
 
     ind = np.digitize(ft, tt)
     saccades = ep[:,3]==2
@@ -691,7 +716,6 @@ def fit_sac_model_basic(stim, Robs, sacbc, eyepos, opts, Ui, Xi, num_lags=15, nu
 
     glm = glms[-1]
 
-    num_durlags = 2
     num_sacsubs = 3
     num_sactkerns = 3
 

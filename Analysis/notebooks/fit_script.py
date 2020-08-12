@@ -4,7 +4,7 @@ sys.path.insert(0, '/home/jcbyts/Repos/')
 import Utils as U
 import gratings as gt
 
-
+import warnings; warnings.simplefilter('ignore')
 import NDN3.NDNutils as NDNutils
 
 which_gpu = NDNutils.assign_gpu()
@@ -58,9 +58,10 @@ for iSess in range(1, 45): #range(len(sesslist)):
 
 # %% Load one model
 indexlist = [17]
-stim, sacon, sacoff, Robs, DF, basis, opts, sacbc = gt.load_and_setup(indexlist,npow=1.8, opts={'padding':20})
+stim, sacon, sacoff, Robs, DF, basis, opts, sacbc, valid, eyepos = gt.load_and_setup(indexlist,npow=1.8, opts={'padding':0})
+
 # build time-embedded stimulus
-num_saclags = 40
+num_saclags = 60
 back_shifts = 20
 num_lags = 15
 NX,NY = opts['NX'],opts['NY']
@@ -73,20 +74,20 @@ XsacOnCausal = NDNutils.create_time_embedding( sacon, [num_saclags, 1, 1], tent_
 XsacOffCausal = NDNutils.create_time_embedding( sacoff, [num_saclags, 1, 1], tent_spacing=1)
 XsacDur = NDNutils.create_time_embedding( sacbc, [3, 1, 1], tent_spacing=1)
 Robs = Robs.astype('float32')
+ed = np.hypot(eyepos[:,1], eyepos[:,2]) < 20
+v = np.intersect1d(np.where(valid)[0], np.where(ed)[0])
 # %% fit models
 ndns, names = gt.fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts,
+    valid=v,
     datapath='/home/jcbyts/Data/MitchellV1FreeViewing/grating_analyses/lbfgs',
-    tag=opts['exname'][0],
-    l2=1e-2,
-    smooth=1e-4,
-    batch_size=5000
+    tag=opts['exname'][0]
 )
 
 # %% evaluate models
 Ti = opts['Ti']
 LLx = []
 for i in range(len(ndns)):
-    print(i)
+    print("%d) %s" %(i, names[i]))
     ndn0 = ndns[i].copy_model()
     l=len(ndn0.input_sizes)
     if l==1:
@@ -94,6 +95,9 @@ for i in range(len(ndns)):
         data_indxs=Ti, nulladjusted=True)
     elif l==2:
         LLx0 = ndn0.eval_models(input_data=[Xstim, XsacOn], output_data=Robs,
+        data_indxs=opts['Ti'], nulladjusted=True)
+    elif l==3:
+        LLx0 = ndn0.eval_models(input_data=[Xstim, XsacOn, XsacOff], output_data=Robs,
         data_indxs=opts['Ti'], nulladjusted=True)
     elif l==4:
         LLx0 = ndn0.eval_models(input_data=[Xstim, XsacOn, XsacOff, XsacDur], output_data=Robs,
@@ -103,8 +107,8 @@ for i in range(len(ndns)):
 
 #%% compare two models
 plt.figure()
-modi = 0
-modj = 1
+modi = 1
+modj = 6
 plt.plot(LLx[modi], LLx[modj], '.')
 plt.plot(plt.xlim(), plt.xlim(), 'k')
 plt.xlabel(names[modi])
@@ -112,24 +116,25 @@ plt.ylabel(names[modj])
 
 # %% plot learned RFs
 
-
-print(names[1])
-filters = DU.compute_spatiotemporal_filters(ndns[1])
+i = 6
+print(names[i])
+filters = DU.compute_spatiotemporal_filters(ndns[i])
 gt.plot_3dfilters(filters, basis=basis)
-
-#%%
-stas = Xstim.T @ (Robs - np.average(Robs, axis=0))
-stas = stas.reshape(filters.shape)
-gt.plot_3dfilters(stas, basis=basis)
 # %% plot gain and offset
-plt.figure(figsize=(5,4))
-# plt.subplot(1,3,1)
-xax = np.arange(-back_shifts, num_saclags-back_shifts, 1)
 modj = 6
-ix = LLx[modj]>0.1
-f = plt.plot(xax, ndns[modj].networks[1].layers[0].weights[:,ix==0], '0.8')
+xax = np.arange(-back_shifts, num_saclags-back_shifts, 1)
+ix = LLx[modj]>0.5
+
+plt.figure(figsize=(5,4))
+
+if len(ndns[modj].networks)>3:
+    plt.subplot(1,2,2)
+    f = plt.plot(xax, ndns[modj].networks[2].layers[0].weights[:,ix], '#3ed8e6')
+    plt.subplot(1,2,1)
+
 f = plt.plot(xax, ndns[modj].networks[1].layers[0].weights[:,ix], '#3ed8e6')
 
+#%%
 plt.figure()
 f = plt.plot(ndns[modj].networks[2].layers[0].weights)
 # f = plt.plot(xax, ndns[modj].networks[2].layers[0].weights[:,ix], '#3ed8e6')
@@ -193,7 +198,7 @@ for cc in range(NC):
 
 # %%
 # cc = cc+1
-Rpred0 = ndns[0].generate_prediction(input_data=[Xstim])
+Rpred0 = ndns[1].generate_prediction(input_data=[Xstim])
 
 cc =26
 Ti = opts['Ti']

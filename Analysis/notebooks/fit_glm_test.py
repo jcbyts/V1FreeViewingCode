@@ -94,13 +94,12 @@ Xi = opts['Xi']
 Ti = opts['Ti']
 
 glm_par = NDNutils.ffnetwork_params(
-    input_dims=[num_lags,NX,NY],
-    # input_dims=[1,NX,NY,num_lags],
+    input_dims=[1,NX,NY,num_lags],
     layer_sizes=[NC],
     layer_types=['readout'],
     act_funcs=['softplus'],
     normalization=[0],
-    reg_list={'l2':1e-2, 'l1':1e-5}
+    reg_list={'l2':1e-2, 'd2xt': 1e-5, 'l1':1e-5}
     )
 
 glm = NDN.NDN([glm_par], tf_seed=seed, noise_dist=noise_dist)
@@ -122,27 +121,7 @@ glm.set_regularization(reg_type='l2', reg_val=reg_min, ffnet_target=0, layer_tar
 #%%
 _ = glm.train(input_data=[Xstim], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
     learning_alg=optimizer, opt_params=opt_params, use_dropout=False)
-# %% fit NIM
-Ui = opts['Ui']
-Xi = opts['Xi']
-Ti = opts['Ti']
 
-# num_subs = 10
-
-# glm_par = NDNutils.ffnetwork_params(input_dims=[1,NX,NY,num_lags],
-#     layer_sizes=[num_subs, NC],
-#     layer_types=['normal', 'normal'],
-#     act_funcs=['relu', 'softplus'],
-#     normalization=[0, -1],
-#     reg_list={'l2':1e-2, 'l1':1e-5, 'd2xt':1e-5}
-#     )
-
-# glm = NDN.NDN([glm_par], tf_seed=seed, noise_dist=noise_dist)
-
-# _ = glm.train(input_data=[Xstim], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
-#     learning_alg=optimizer, opt_params=opt_params, use_dropout=False)
-
-# print("Done")
 # %% evaluate models
 Ti = opts['Ti']
 LLx0 = glm.eval_models(input_data=[Xstim], output_data=Robs, data_indxs=Ti, nulladjusted=null_adjusted)
@@ -171,5 +150,64 @@ U.r_squared(np.reshape(r, (-1,1)), np.reshape(r0, (-1,1)))
 
 # %%
 
+# %% add saccade kernels
 
+stim_par = glm_par()
+stim_par['act_funcs'] = 'lin'
+
+num_subs = 4
+
+l2=1e-2
+
+sac_on_par = NDNutils.ffnetwork_params( 
+    input_dims=[1,1,1,num_saclags],
+    xstim_n=[1],
+    layer_sizes=[num_subs,NC], 
+    layer_types=['normal', 'normal'], act_funcs=['lin', 'lin'], 
+    normalization=[0],
+    reg_list={'d2t':[10],'l2':[l2,l2], 'l1':[None,1e-5]}
+)
+
+sac_off_par = NDNutils.ffnetwork_params( 
+    input_dims=[1,1,1,num_saclags],
+    xstim_n=[2],
+    layer_sizes=[NC], 
+    layer_types=['normal', 'normal'], act_funcs=['lin', 'lin'], 
+    normalization=[0],
+    reg_list={'d2t':[10],'l2':[l2,l2], 'l1':[None, 1e-5]}
+)
+
+# # model 3: stim x saccade + saccade
+mult_par = NDNutils.ffnetwork_params(
+    xstim_n=None, ffnet_n=[0,1], layer_sizes=[NC],
+    layer_types=['mult'], act_funcs=['lin']
+)
+
+# only combine the onset kernel
+comb_par = NDNutils.ffnetwork_params(
+    xstim_n=None, ffnet_n=[2,3], layer_sizes=[NC],
+    layer_types=['add'], act_funcs=['softplus']
+)
+
+
+ndn0 = NDN.NDN([stim_par, sac_on_par, sac_off_par, mult_par, comb_par], noise_dist='poisson')
+    
+
+
+# num_subs = 10
+
+# glm_par = NDNutils.ffnetwork_params(input_dims=[1,NX,NY,num_lags],
+#     layer_sizes=[num_subs, NC],
+#     layer_types=['normal', 'normal'],
+#     act_funcs=['relu', 'softplus'],
+#     normalization=[0, -1],
+#     reg_list={'l2':1e-2, 'l1':1e-5, 'd2xt':1e-5}
+#     )
+
+# glm = NDN.NDN([glm_par], tf_seed=seed, noise_dist=noise_dist)
+
+# _ = glm.train(input_data=[Xstim], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+#     learning_alg=optimizer, opt_params=opt_params, use_dropout=False)
+
+# print("Done")
 # %%
