@@ -1,7 +1,7 @@
 
 %% add paths
 
-user = 'jakelaptop';
+user = 'jakework';
 addFreeViewingPaths(user);
 
 switch user
@@ -10,8 +10,8 @@ switch user
         addpath C:\Users\Jake\Dropbox\MatlabCode\Repos\sNIMclass
         addpath(genpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\L1General'))    
         addpath(genpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\minFunc_2012'))  
-        addpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\lowrankrgc')
-        setpaths_lowrankRGC
+%         addpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\lowrankrgc')
+%         setpaths_lowrankRGC
     case 'jakelaptop'
         addpath ~/Dropbox/MatlabCode/Repos/NIMclass/
         addpath ~/Dropbox/MatlabCode/Repos/sNIMclass/
@@ -27,9 +27,8 @@ eyePos = io.getCorrectedEyePosFixCalib(Exp);
 eyePos(:,1) = sgolayfilt(eyePos(:,1), 3, 9);
 eyePos(:,2) = sgolayfilt(eyePos(:,2), 3, 9);
 Exp.vpx.smo(:,2:3) = eyePos;
-S.rect = [-20 0 20 40];
-%%
-stimuli = {'Gabor'};
+
+stimuli = {'Gabor', 'Grating'};
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 %% load stimulus
 stim = [];
@@ -58,9 +57,6 @@ end
 cc = 1;
 nky = numel(tmp.yax)/tmp.opts.s_downsample;
 nkx = numel(tmp.xax)/tmp.opts.s_downsample;
-NX = tmp.NX;
-NY = size(stim, 2)/NX;
-
 xax = tmp.xax;
 yax = tmp.yax;
 clear tmp
@@ -69,9 +65,8 @@ clear tmp
 nlags = 10; % number of time lags in STA
 NC = size(Robs,2);
 
-
 % Test RFs?
-dims = [NX NY];
+dims = [nkx nky];
 
 fprintf('Building time-embedded stimulus\n')
 tic
@@ -88,35 +83,16 @@ for cc = 1:NC
 end
 fprintf('Done [%02.2f]\n', toc)
 
-%%
-
-iLag = 1;
-%% play movie
-
-figure(1); clf
-h = imagesc(reshape(stim(1,:), [NX, NY]), [-127 127]);
-for iFrame = 1:size(stim,1)
-    I = reshape(stim(iFrame,:), [NX, NY]);
-    % Fourier energy
-    h.CData = I;
-    title(iFrame)
-    drawnow
-    pause(0.005)
-end
-
-%% probe 
-find(frameInfo.probeDistance < 20)
 %% compute STA
-inds = find(iix & (hypot(eyeiix(:,1), eyeiix(:,2)) < 200));
+inds = find(iix & (hypot(eyeiix(:,1), eyeiix(:,2)) < 170));
+% inds = find(eyeiix(:,1)>0 & eyeiix(:,1) < 170 & eyeiix(:,2)>0 & eyeiix(:,2) < 170);
 fprintf('%d valid samples\n', numel(inds))
-xy = [(X(inds,:)).^2 ones(numel(inds),1)]'*sps(inds,:);
-  
-
+xy = [(X(inds,:)) ones(numel(inds),1)]'*sps(inds,:);
+    
 %% plot
-
 ppa = 60/Exp.S.pixPerDeg;
 d = size(X,2);
-[~, cids] = sort(Exp.osp.clusterDepths);
+% [~, cids] = sort(Exp.osp.clusterDepths);
 cids = 1:NC;
 stas = xy(1:end-1,cids);
 % stas = xy;
@@ -126,7 +102,8 @@ for cc = 1:NC
     a = reshape(stas(:,cc),[nlags prod(dims)]);  
     a = (a - min(a(:))) ./ (max(a(:)) - min(a(:)));
     subplot(ceil(sqrt(NC)), round(sqrt(NC)), cc, 'align')
-    imagesc(xax*ppa, yax*ppa, reshape(a(10,:), dims), [0 1])
+    imagesc(xax*ppa, yax*ppa, reshape(a(5,:), dims), [0 1])
+    title(cc)
     
 end
 
@@ -148,6 +125,7 @@ for cc = 1:NC
 %     subplot(2,1,1); hold off; plot(a,'b')
     
     title(sprintf('cell %d', cc ))
+    colormap gray
     drawnow
 %     subplot(2,1,2); imagesc(xax/Exp.S.pixPerDeg/2, yax/Exp.S.pixPerDeg/2, reshape(a(3,:), dims))
     input('more?')

@@ -1,7 +1,132 @@
 
+%%
+
+tmp = load(fullfile('Data', 'Cstim3_raw_output.mat'));
+tmp2 = load(fullfile('Data', 'modelSTAs.mat'));
+
+
+%%
+
+figure(1); clf
+dim = [40 40];
+NC = size(tmp.stas, 3);
+
+
+for cc = 1:NC
+    subplot(ceil(sqrt(NC)), round(sqrt(NC)), cc, 'align')
+
+    a = squeeze(tmp.stas(:,:,(cc)));
+    a = (a - median(a(:))) / std(a(:));
+    [~, peakLag] = max(mean(a));
+    
+    
+       
+    I = reshape(a(:,peakLag), dim);
+   
+    imagesc(I)
+    axis off
+    
+end
+
+figure(2); clf
+dim = [40 40];
+NC = size(tmp.stas, 3);
+
+
+for cc = 1:NC
+    subplot(ceil(sqrt(NC)), round(sqrt(NC)), cc, 'align')
+
+    a = squeeze(tmp2.staModel(:,:,(cc)));
+    a = (a - median(a(:))) / std(a(:));
+    [~, peakLag] = max(mean(a));
+    
+    
+       
+    I = reshape(a(:,peakLag), dim);
+   
+    imagesc(I)
+    axis off
+    title(cc)
+    
+end
+    
+
+
+%%
+dims = [40 40];
+xax = ((-dims(2)/2 + 1):dims(2)/2)*1.5;
+yax = -(1:dims(1))*1.5;
+figure(1); clf
+NC = size(tmp.stas,3);
+cc = mod(cc + 1, NC); cc = max(cc, 1);
+nlags = size(tmp.stas,2);
+a = squeeze(tmp.stas(:,:,cc));
+a = (a - median(a(:))) / std(a(:));
+
+b = squeeze(tmp2.staModel(:,:,cc));
+b = (b - median(b(:))) / std(b(:));
+
+clim = max(abs(a(:)))*[-1 1]*.75;    
+for ilag = 1:nlags
+    subplot(2,nlags,ilag, 'align')
+    imagesc(xax, yax, reshape(a(:,ilag), dims), clim)
+    axis xy
+    
+    subplot(2,nlags,nlags + ilag, 'align')
+    imagesc(xax, yax, reshape(b(:,ilag), dims), clim)
+    axis xy
+%     contourf(reshape(a(:,ilag), [40 40]),[-4:.1:-2  0 2:6], 'Linestyle', 'none')
+end
+title(cc)
+colormap(gray)
+
+%%
+
+cmap = gray;
+[xx,tt,yy] = meshgrid(xax, (1:nlags)*8, yax);
+% [xx,yy] = meshgrid(xax, yax);
+I = reshape(a, [dims nlags]);
+I = permute(I, [3 2 1]);
+
+I2 = reshape(b, [dims nlags]);
+I2 = permute(I2, [3 2 1]);
+
+figure(2); clf
+set(gcf, 'Color', 'w')
+subplot(2,1,1)
+h = slice(xx,tt, yy, I, [], (1:10)*8,[]);
+set(gca, 'CLim', [-9 9])
+for i = 1:numel(h)
+    h(i).EdgeColor = 'none';
+%     text(-12, i*8-4, 5, sprintf('%i ms', (i)*8))
+end
+view(79,11)
+colormap(cmap)
+axis off
+
+subplot(2,1,2)
+h = slice(xx,tt, yy, I2, [], (1:10)*8,[]);
+set(gca, 'CLim', [-9 9])
+for i = 1:numel(h)
+    h(i).EdgeColor = 'none';
+%     text(-12, i*8-4, 5, sprintf('%i ms', (i)*8))
+end
+view(79,11)
+colormap(cmap)
+axis off
+
+%%
+
+hold on
+plot3(10+[10 16], [1 1]*39, -[50 50], 'r', 'Linewidth', 2)
+% plot3(10+[10 16], [1 1]*30.5, -[50 50], 'r', 'Linewidth', 2)
+% text(40, 32, -50, '0.1 d.v.a', 'Color', 'r')
+
+plot.fixfigure(gcf, 8, [14 3])
+saveas(gcf, fullfile('Figures', 'K99', sprintf('sta%02.0f.png', cc)))
 %% add paths
 
-user = 'jakelaptop';
+user = 'jakework';
 addFreeViewingPaths(user);
 
 switch user
@@ -10,8 +135,8 @@ switch user
         addpath C:\Users\Jake\Dropbox\MatlabCode\Repos\sNIMclass
         addpath(genpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\L1General'))    
         addpath(genpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\minFunc_2012'))  
-        addpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\lowrankrgc')
-        setpaths_lowrankRGC
+%         addpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\lowrankrgc')
+%         setpaths_lowrankRGC
     case 'jakelaptop'
         addpath ~/Dropbox/MatlabCode/Repos/NIMclass/
         addpath ~/Dropbox/MatlabCode/Repos/sNIMclass/
@@ -22,20 +147,21 @@ end
 %% load data
 sessId = 12;
 [Exp, S] = io.dataFactory(sessId);
-
+out = load(fullfile('Data','gmodsac0_output.mat'));
 eyePos = io.getCorrectedEyePosFixCalib(Exp);
 eyePos(:,1) = sgolayfilt(eyePos(:,1), 3, 9);
 eyePos(:,2) = sgolayfilt(eyePos(:,2), 3, 9);
 Exp.vpx.smo(:,2:3) = eyePos;
-S.rect = [-20 0 20 40];
-%%
-stimuli = {'Gabor'};
+
+stimuli = {'Gabor', 'Grating'};
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 %% load stimulus
 stim = [];
 Robs = [];
 iix = [];
 eyeiix = [];
+spacerS = zeros(60, 1600);
+spacerR = zeros(60, 61);
 for i = 1:numel(stimuli)
     stimulus = stimuli{i};
     fname = strrep(Exp.FileTag, '.mat', ['_' stimulus '.mat']);
@@ -51,27 +177,36 @@ for i = 1:numel(stimuli)
 %     eyeix = hypot(eyePosAtFrame(:,1),eyePosAtFrame(:,2)) < 200;
 %     ix = tmp.valdata == 1 & tmp.labels == 1 & eyeix;
     ix = tmp.valdata == 1 & tmp.labels == 1;
+    if i>1
+        iix = [iix; false(60,1); ix(:)];
+        stim = [stim; spacerS; tmp.stim];
+    Robs = [Robs; spacerR; tmp.Robs];
+    else
     iix = [iix; ix(:)];
     stim = [stim; tmp.stim];
     Robs = [Robs; tmp.Robs];
+    end
 end
 cc = 1;
 nky = numel(tmp.yax)/tmp.opts.s_downsample;
 nkx = numel(tmp.xax)/tmp.opts.s_downsample;
-NX = tmp.NX;
-NY = size(stim, 2)/NX;
-
 xax = tmp.xax;
 yax = tmp.yax;
 clear tmp
 %%
+load(fullfile('Data', 'Cstim2.mat'))
+stim = Cstim; 
+clear Cstim
+Robs(:,sum(Robs) < 500) = [];
+Robs = out.Robs(1:size(Robs,1),:);
+Rhat = out.Robs(1:size(Robs,1), :);
 
+%%
 nlags = 10; % number of time lags in STA
 NC = size(Robs,2);
 
-
 % Test RFs?
-dims = [NX NY];
+dims = [nkx nky];
 
 fprintf('Building time-embedded stimulus\n')
 tic
@@ -88,37 +223,20 @@ for cc = 1:NC
 end
 fprintf('Done [%02.2f]\n', toc)
 
-%%
-
-iLag = 1;
-%% play movie
-
-figure(1); clf
-h = imagesc(reshape(stim(1,:), [NX, NY]), [-127 127]);
-for iFrame = 1:size(stim,1)
-    I = reshape(stim(iFrame,:), [NX, NY]);
-    % Fourier energy
-    h.CData = I;
-    title(iFrame)
-    drawnow
-    pause(0.005)
-end
-
-%% probe 
-find(frameInfo.probeDistance < 20)
 %% compute STA
-inds = find(iix & (hypot(eyeiix(:,1), eyeiix(:,2)) < 200));
+inds = find(iix & (hypot(eyeiix(:,1), eyeiix(:,2)) < 150));
 fprintf('%d valid samples\n', numel(inds))
-xy = [(X(inds,:)).^2 ones(numel(inds),1)]'*sps(inds,:);
-  
+xy = [(X(inds,:)) ones(numel(inds),1)]'*sps(inds,:);
+% xy2 = [X(inds,:) ones(numel(inds), 1)]'*Rhat(inds,:);
 
+    
 %% plot
-
 ppa = 60/Exp.S.pixPerDeg;
 d = size(X,2);
-[~, cids] = sort(Exp.osp.clusterDepths);
+% [~, cids] = sort(Exp.osp.clusterDepths);
 cids = 1:NC;
 stas = xy(1:end-1,cids);
+% stas2 = xy2(1:end-1,cids);
 % stas = xy;
 
 figure; clf
@@ -126,11 +244,23 @@ for cc = 1:NC
     a = reshape(stas(:,cc),[nlags prod(dims)]);  
     a = (a - min(a(:))) ./ (max(a(:)) - min(a(:)));
     subplot(ceil(sqrt(NC)), round(sqrt(NC)), cc, 'align')
-    imagesc(xax*ppa, yax*ppa, reshape(a(10,:), dims), [0 1])
+    imagesc(xax*ppa, yax*ppa, reshape(a(4,:), dims), [0 1])
+    title(cc)
     
 end
 
 colormap gray
+
+% figure; clf
+% for cc = 1:NC
+%     a = reshape(stas2(:,cc),[nlags prod(dims)]);  
+%     a = (a - min(a(:))) ./ (max(a(:)) - min(a(:)));
+%     subplot(ceil(sqrt(NC)), round(sqrt(NC)), cc, 'align')
+%     imagesc(xax*ppa, yax*ppa, reshape(a(4,:), dims), [0 1])
+%     title(cc)
+%     
+% end
+
 
 %% plot one by one
 figure
@@ -138,9 +268,14 @@ for cc = 1:NC
     a = reshape(stas(:,cc),[nlags prod(dims)]);  
     a = (a - min(a(:))) ./ (max(a(:)) - min(a(:)));
     
+    b = reshape(stas2(:,cc),[nlags prod(dims)]);  
+    b = (b - min(b(:))) ./ (max(b(:)) - min(b(:)));
+    
     for i = 1:nlags
-        subplot(1, nlags, i, 'align')
+        subplot(2, nlags, i, 'align')
         imagesc(xax*ppa, yax*ppa, reshape(a(i,:), dims), [0 1])
+        subplot(2,nlags,i+nlags,'align')
+        imagesc(xax*ppa, yax*ppa, reshape(b(i,:), dims), [0 1])
 %         xlim([0 25])
 %         ylim([15 40])
 %         imagesc(xax/Exp.S.pixPerDeg/2, yax/Exp.S.pixPerDeg/2, reshape(a(i,:), dims), [0 1])
@@ -148,6 +283,7 @@ for cc = 1:NC
 %     subplot(2,1,1); hold off; plot(a,'b')
     
     title(sprintf('cell %d', cc ))
+    colormap gray
     drawnow
 %     subplot(2,1,2); imagesc(xax/Exp.S.pixPerDeg/2, yax/Exp.S.pixPerDeg/2, reshape(a(3,:), dims))
     input('more?')

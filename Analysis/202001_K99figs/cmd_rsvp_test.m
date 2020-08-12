@@ -3,7 +3,7 @@
 
 %% Load dataset
 
-[Exp, S] = io.dataFactoryGratingSubspace(56, 'spike_sorting', 'kilo', 'cleanup_spikes', 1);
+[Exp, S] = io.dataFactoryGratingSubspace(56, 'spike_sorting', 'JRC', 'cleanup_spikes', 0);
 
 
 
@@ -76,7 +76,7 @@ cc = 19;
 
 NC = numel(Exp.osp.cids);
 cc = mod(cc + 1, NC); cc = max(cc, 1);
-cc = 37;
+% cc = 37;
 
 figure(1); clf
 set(gcf, 'Color', 'w')
