@@ -26,7 +26,7 @@ if ~ismember('GratingSubspace', data.Properties.VariableNames)
 end
 
 % load session
-[Exp,~,lfp] = io.dataFactoryGratingSubspace(sessionId, 'spike_sorting', 'kilo', 'cleanup_spikes', 1);
+[Exp,~,lfp] = io.dataFactoryGratingSubspace(sessionId, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
 
 if isempty(lfp.deadChan)
     v = var(lfp.data);
