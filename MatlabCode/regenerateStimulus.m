@@ -37,6 +37,7 @@ ip.addParameter('ExclusionRadius', 500)
 ip.addParameter('Latency', 0)
 ip.addParameter('EyePos', [])
 ip.addParameter('includeProbe', true)
+ip.addParameter('debug', false)
 ip.parse(varargin{:});
 
 spatialBinSize = ip.Results.spatialBinSize;
@@ -135,10 +136,17 @@ for iTrial = 1:nTrials
             % zero mean
             Im = mean(Im,3)-127;
             Im = imresize(Im, fliplr(Exp.S.screenRect(3:4)));
+            
             % no probe
             probeX = nan(nFrames,1);
             probeY = nan(nFrames,1);
             probeId = nan(nFrames,1);
+            
+            if ip.Results.debug
+                figure(999); clf
+                ax = subplot(5,5,setdiff(1:25, [5 10 15 20 25]));
+                imagesc(Im); hold on
+            end
             
         case 'FixRsvpStim'
             useNoiseObject = false;
@@ -244,6 +252,18 @@ for iTrial = 1:nTrials
             imrect = [tmprect(1:2) (tmprect(3)-tmprect(1))-1 (tmprect(4)-tmprect(2))-1];
             I = imcrop(Im, imrect); % requires the imaging processing toolbox
             I = I(1:spatialBinSize:end,1:spatialBinSize:end);
+            
+            if ip.Results.debug
+                set(gcf, 'currentaxes', ax)
+                plot(eyeX, eyeY, 'or')
+                plot([imrect(1) imrect(1) + imrect(3)], imrect([2 2]), 'r')
+                plot([imrect(1) imrect(1) + imrect(3)], imrect(2)+imrect([4 4]), 'r')
+                plot(imrect([1 1]),[imrect(2), imrect(2) + imrect(4)], 'r')
+                plot(imrect(1)+imrect([3 3]), [imrect(2), imrect(2) + imrect(4)], 'r')
+                subplot(5,5,5)
+                imagesc(I)
+                drawnow
+            end
         
         else % fix rsvp stim
             posx = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2);
