@@ -12,20 +12,25 @@ addFreeViewingPaths(user);
 
 close all
 sessId = 56;
-[Exp, S] = io.dataFactoryGratingSubspace(sessId, 'spike_sorting', 'kilo', 'cleanup_spikes', 1);
-% eyePosOrig = Exp.vpx.smo(:,2:3);
+[Exp, S] = io.dataFactoryGratingSubspace(sessId, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
+
+eyePosOrig = Exp.vpx.smo(:,2:3);
 
 eyePos = io.getCorrectedEyePos(Exp, 'plot', true, 'usebilinear', false);
 
 lam = .5; % mixing between original eye pos and corrected eye pos
 Exp.vpx.smo(:,2:3) = lam*eyePos + (1-lam)*Exp.vpx.smo(:,2:3);
 
-eyePosOrig = Exp.vpx.smo(:,2:3);
+
 
 
 %% get visually driven units
 
 spkS = io.get_visual_units(Exp, 'plotit', true);
+
+%%
+
+
 
 %% plot spatial RFs to try to select a ROI
 unit_mask = 0;
@@ -91,7 +96,7 @@ options = {'stimulus', stimset, ...
     'includeProbe', true, ...
     'correctEyePos', false, ...
     'nonlinearEyeCorrection', false, ...
-    'overwrite', false};
+    'overwrite', true};
 
 fname{1} = io.dataGenerate(Exp, S, options{:});
 
@@ -118,7 +123,7 @@ fname{4} = io.dataGenerate(Exp, S, options{:});
 
 %% test that it worked
 
-load(fullfile('Data', fname{1}))
+load(fullfile('Data', fname{4}))
 iFrame = 1;
 
 %% show sample frame
@@ -139,7 +144,7 @@ stim = zscore(stim);
 
 % only take central eye positions
 ecc = hypot(eyeAtFrame(:,1)-Exp.S.centerPix(1), eyeAtFrame(:,2)-Exp.S.centerPix(2))/Exp.S.pixPerDeg;
-ix = ecc > 3.1 | labels ~= 1;
+ix = ecc > 5.1 | labels ~= 1;
 
 NC = size(Robs,2);
 nlags = 10;
@@ -184,8 +189,8 @@ end
 title(cc)
 
 %% copy to server
-server_string = 'jcbyts@sigurros';
-output_dir = '/home/jcbyts/Data/MitchellV1FreeViewing/stim_movies/';
+server_string = 'jake@bancanus'; %'jcbyts@sigurros';
+output_dir = '/home/jake/Data/Datasets/MitchellV1FreeViewing/stim_movies/'; %/home/jcbyts/Data/MitchellV1FreeViewing/stim_movies/';
 
 data_dir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 command = 'scp ';

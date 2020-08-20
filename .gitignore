@@ -21,3 +21,4 @@ MatlabCode/+session
 Data/spikes
 *.asv
 Data/
+*.pyc

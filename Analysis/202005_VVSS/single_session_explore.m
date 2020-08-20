@@ -1,8 +1,8 @@
 
 %% Load dataset 
 
-sessid = 55;
-[Exp, S] = io.dataFactoryGratingSubspace(sessid);
+sessid = 56;
+[Exp, S] = io.dataFactoryGratingSubspace(sessid, 'spike_sorting', 'jrclustwf');
 
 %%
 field = 'raw0';
