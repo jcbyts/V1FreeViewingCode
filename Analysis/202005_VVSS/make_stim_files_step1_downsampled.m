@@ -96,7 +96,7 @@ options = {'stimulus', stimset, ...
     'includeProbe', true, ...
     'correctEyePos', false, ...
     'nonlinearEyeCorrection', false, ...
-    'overwrite', true};
+    'overwrite', false};
 
 fname{1} = io.dataGenerate(Exp, S, options{:});
 
@@ -123,7 +123,7 @@ fname{4} = io.dataGenerate(Exp, S, options{:});
 
 %% test that it worked
 
-load(fullfile('Data', fname{4}))
+load(fullfile('Data', fname{1}))
 iFrame = 1;
 
 %% show sample frame
@@ -136,6 +136,13 @@ imagesc(I)
 % 
 % 
 %  imagesc( (I - imgaussfilt(I,2)).^2)
+%%
+rtmp = Robs(:,8);
+rtmp(ix) = 0;
+iix = 1:50000;
+sta = simpleSTC(stim(iix,:), rtmp(iix), 10);
+figure(1); clf
+plot(sta)
 
 
 %% get STAs to check that you have the right rect

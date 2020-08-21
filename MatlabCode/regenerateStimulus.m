@@ -146,6 +146,13 @@ for iTrial = 1:nTrials
                 figure(999); clf
                 ax = subplot(5,5,setdiff(1:25, [5 10 15 20 25]));
                 imagesc(Im); hold on
+                eyeIx = eyeTimes >= frameRefreshesOe(1) & eyeTimes < frameRefreshesOe(end);
+                plot(eyePos(eyeIx,1)*Exp.S.pixPerDeg + Exp.S.centerPix(1), Exp.S.centerPix(2) - eyePos(eyeIx,2)*Exp.S.pixPerDeg, 'r'); axis ij
+                colormap gray
+                skip = input('skip?');
+                if skip
+                    continue
+                end
             end
             
         case 'FixRsvpStim'
