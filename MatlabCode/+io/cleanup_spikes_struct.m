@@ -49,7 +49,12 @@ for cc = 1:NC
     rempots = rfviols(:)+[1 0];
     nviol = numel(rfviols);
     
-    mamp = sp.clusterAmps(cc);
+    if ~isfield(sp, 'clusterAmps')
+        mamp = mean(sp.spikeAmps(spix));
+    else
+        mamp = sp.clusterAmps(cc);
+    end
+    
     ampdev = abs((spamps(rempots) - mamp) / sdev);
     if nviol==1
         ampdev = ampdev(:)';

@@ -10,7 +10,7 @@ function varargout = dataFactoryGratingSubspace(sessionId, varargin)
 % Example:
 %   Exp = io.dataFactory(5); % load the 5th session
 ip = inputParser();
-ip.addParameter('spike_sorting', 'kilowf')
+ip.addParameter('spike_sorting', 'kilo')
 ip.addParameter('cleanup_spikes', 0)
 ip.parse(varargin{:});
 
@@ -130,7 +130,7 @@ else % try importing the file
 end
 
 if ip.Results.cleanup_spikes
-    Exp.osp = io.cleanup_spikes_struct(Exp.osp, 'firingratethresh', 1);
+    Exp.osp = io.cleanup_spikes_struct(Exp.osp, 'firingratethresh', .1);
 end
 
 varargout{1} = Exp;

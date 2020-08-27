@@ -31,10 +31,10 @@ if ~isempty(processedDir)
     assert(numel(processedDir)==1, 'import_spike_sorting: I don''t know how to handle multiple processed directories yet. You have to implement that')
     
     % find kilosort file in the processed directory
-    kiloFile = dir(fullfile(DataFolder, processedDir.name, sprintf('*%s*.mat', spikesTag)));
-    if ~isempty(kiloFile)
-        fprintf('Found kilosort file\n')
-        sp = load(fullfile(DataFolder, processedDir.name, kiloFile(1).name));
+    spFile = dir(fullfile(DataFolder, processedDir.name, sprintf('*%s*.mat', spikesTag)));
+    if ~isempty(spFile)
+        fprintf('Found spikes file [%s]\n', spFile(1).name)
+        sp = load(fullfile(DataFolder, processedDir.name, spFile(1).name));
         
         %**********************
         % convert kilosort spike struct to Jude's cell array

@@ -7,8 +7,14 @@ ip.addParameter('Fs', 30000)
 ip.addParameter('Win', -10:40)
 ip.parse(varargin{:})
 
+if ~isfield(Exp.osp, 'sorter')
+    Tag = 'kilo';
+else
+    Tag = lower(Exp.osp.sorter);
+end
+
 dataPath = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-spfname = fullfile(dataPath, 'spikes', sprintf('%s_%s.mat', strrep(Exp.FileTag, '.mat', ''), 'kilowf'));
+spfname = fullfile(dataPath, 'spikes', sprintf('%s_%s.mat', strrep(Exp.FileTag, '.mat', ''), [Tag 'wf']));
 
 if exist(spfname, 'file')
     sp = load(spfname);
