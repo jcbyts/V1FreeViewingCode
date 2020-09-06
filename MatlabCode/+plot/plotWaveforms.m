@@ -1,4 +1,4 @@
-function plotWaveforms(W, scale)
+function plotWaveforms(W, scale, varargin)
     
     if nargin < 2
         scale = 1;
@@ -11,13 +11,24 @@ function plotWaveforms(W, scale)
 
 %     figure; clf
     NC = numel(W);
-    cmap = lines(NC);
+    ip = inputParser();
+    ip.addParameter('cmap',lines(NC))
+    ip.addParameter('overloadSU', false)
+    ip.parse(varargin{:})
+    
+    cmap = ip.Results.cmap;
+    
     
     SU = false(NC,1);
     
     for cc = 1:NC
         nw = norm(W(cc).waveform(:,3));
-        SU(cc) = nw > 20 & W(cc).isiL > .1 & W(cc).isiL < 1 & W(cc).uQ > 5 & W(cc).isi(200) < 0;
+%         SU(cc) = nw > 20 & W(cc).isiL > .1 & W(cc).isiL < 1 & W(cc).uQ > 5 & W(cc).isi(200) < 0;
+        if ip.Results.overloadSU
+            SU(cc) = true;
+        else
+            SU(cc) = W(cc).isiRate < 0;
+        end
         
         nts = size(W(1).waveform,1);
         xax = linspace(0, 1, nts) + cc;

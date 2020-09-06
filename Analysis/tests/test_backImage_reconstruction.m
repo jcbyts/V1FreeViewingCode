@@ -115,3 +115,10 @@ for ilag = 1:nlags
     imagesc(reshape(sta(ilag,:), frameInfo.dims), [0 1])
 end
 
+%%
+
+figure,
+ilag = 10;
+imagesc(reshape(sta(ilag,:), frameInfo.dims), [0 1])
+
+figure, plot(rtmp)

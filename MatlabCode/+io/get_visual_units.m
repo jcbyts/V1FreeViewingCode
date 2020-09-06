@@ -4,10 +4,15 @@ function [spkS,W] = get_visual_units(Exp, varargin)
 ip = inputParser();
 ip.addParameter('plotit', false)
 ip.addParameter('visStimField', 'BackImage')
+ip.addParameter('waveforms', [])
 ip.parse(varargin{:});
 
 % get waveforms
-W = io.get_waveform_stats(Exp.osp);
+if isempty(ip.Results.waveforms)
+    W = io.get_waveform_stats(Exp.osp);
+else
+    W = ip.Results.waveforms;
+end
 
 figure(66); clf
 plotWaveforms(W)

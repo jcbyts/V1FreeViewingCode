@@ -1,4 +1,4 @@
-function gratingSubspaceExport(sessionId)
+function gratingSubspaceExport(sessionId, varargin)
 % Export session info for grating subspace analysis
 % gratingSubspaceExport(sessionId)
 % sessionId can be a number or a session tag (e.g., "logan_20200303")
@@ -14,6 +14,11 @@ csdExclusionList = {'ellie_20190107', ...
     'logan_20200302', ...
     'milo_20190607', ...
     'milo_20190621'};
+
+ip = inputParser();
+ip.addParameter('spike_sorting', 'jrclustwf')
+ip.addParameter('cleanup_spikes', 0)
+ip.parse(varargin{:});
     
 % handle data csv
 meta_file = fullfile(fileparts(which('addFreeViewingPaths')), 'Data', 'datasets.csv');
@@ -26,7 +31,7 @@ if ~ismember('GratingSubspace', data.Properties.VariableNames)
 end
 
 % load session
-[Exp,~,lfp] = io.dataFactoryGratingSubspace(sessionId, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
+[Exp,~,lfp] = io.dataFactoryGratingSubspace(sessionId, 'spike_sorting', ip.Results.spike_sorting, 'cleanup_spikes', ip.Results.cleanup_spikes);
 
 if isempty(lfp.deadChan)
     v = var(lfp.data);

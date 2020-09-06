@@ -31,9 +31,11 @@ nLags = size(temps,2);
 nChan = size(temps,3);
 
 if nChan == 64
-    warning('hack channel map for 2-shank probes')
-    osp.xcoords = [zeros(32, 1); 200*ones(32, 1)];
-    osp.ycoords = [(1:32)'*35; (1:32)'*35];
+    if numel(osp.xcoords)~=nChan
+        warning('hack channel map for 2-shank probes')
+        osp.xcoords = [zeros(32, 1); 200*ones(32, 1)];
+        osp.ycoords = [(1:32)'*35; (1:32)'*35];
+    end
 end
 
 xcoords = osp.xcoords;
