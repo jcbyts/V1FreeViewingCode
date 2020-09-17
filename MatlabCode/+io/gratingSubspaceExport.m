@@ -105,6 +105,9 @@ spikes.peakMinusTrough = arrayfun(@(x) x.peaktime-x.troughtime, W);
 spikes.isiRate = arrayfun(@(x) x.isiRate, W);
 spikes.localityIdx = arrayfun(@(x) x.localityIdx, W);
 spikes.csdReversal = csdReversal;
+spikes.isi = cell2mat(arrayfun(@(x) x.isi, W, 'uni', 0));
+spikes.isifit = cell2mat(arrayfun(@(x) x.isifit(:)', W, 'uni', 0));
+spikes.isilags = cell2mat(arrayfun(@(x) x.lags, W, 'uni', 0));
 
 fname = fullfile(dataDir, strrep(Exp.FileTag, '.mat', '_gratingsubspace.mat'));
 save(fname, '-v7.3', 'grating', 'dots', 'slist', 'spikes', 'eyepos', 'rf')

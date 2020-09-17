@@ -1,7 +1,8 @@
 %%
 RoiS = struct();
-RoiS.('logan0304') = [-20 -60 40 10];
-RoiS.('logan0306') = [-20 -60 40 10];
+RoiS.('logan_20200304') = [-20 -60 40 10];
+RoiS.('logan_20200306') = [-20 -60 40 10];
+RoiS.('logan_20191231') = [-20 -60 40 10];
 %% add paths
 
 user = 'jakelaptop';
@@ -11,7 +12,7 @@ addFreeViewingPaths(user);
 %% load data
 
 close all
-sessId = 56;
+sessId = 57;
 [Exp, S] = io.dataFactoryGratingSubspace(sessId, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
 
 eyePosOrig = Exp.vpx.smo(:,2:3);
@@ -67,8 +68,8 @@ for cc = 1:NC %hasrf(:)'
 end
 
 figure(1); clf
-
-imagesc(xax, yax,unit_mask); axis xy
+ppd = Exp.S.pixPerDeg;
+imagesc(xax*ppd, yax*ppd,unit_mask); axis xy
 [i,j] = find(unit_mask>NC);
 [min(xax(j)) max(xax(j))]
 
@@ -77,7 +78,7 @@ imagesc(xax, yax,unit_mask); axis xy
 
 close all
 
-S.rect = [-20 -60 40 10];
+S.rect = RoiS.(strrep(Exp.FileTag, '.mat', ''));
 % pixels run down (where do we want to enforce this?)
 S.rect([2 4]) = sort(-S.rect([2 4]));
 fname = {};
@@ -96,7 +97,7 @@ options = {'stimulus', stimset, ...
     'includeProbe', true, ...
     'correctEyePos', false, ...
     'nonlinearEyeCorrection', false, ...
-    'overwrite', false};
+    'overwrite', true};
 
 fname{1} = io.dataGenerate(Exp, S, options{:});
 
@@ -133,16 +134,6 @@ iFrame = iFrame + 1;
 I = reshape(stim(iFrame,:), [NX,NY]);
 figure(1); clf
 imagesc(I)
-% 
-% 
-%  imagesc( (I - imgaussfilt(I,2)).^2)
-%%
-rtmp = Robs(:,8);
-rtmp(ix) = 0;
-iix = 1:50000;
-sta = simpleSTC(stim(iix,:), rtmp(iix), 10);
-figure(1); clf
-plot(sta)
 
 
 %% get STAs to check that you have the right rect

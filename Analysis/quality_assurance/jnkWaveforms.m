@@ -2,6 +2,7 @@
 %% get waveform stats across all experimental sessions
 W = [];
 exid = [];
+cgs = [];
 sessions = {};
 csdStim = {};
 csdSac = {};
@@ -17,7 +18,7 @@ csdExclusionList = {'ellie_20190107', ...
     'milo_20190607', ...
     'milo_20190621'};
 %%
-for iEx = 56
+for iEx = 56:57
     tic; 
    
     [Exp, ~, lfp] = io.dataFactoryGratingSubspace(iEx, 'spike_sorting', 'jrclustwf');
@@ -33,7 +34,7 @@ for iEx = 56
     else
         et = Exp.vpx2ephys(Exp.slist(:,1));
     end
-    cstruct = csd.getCSD(lfp, et, 'spatsmooth', 2.5, 'method', 'standard', 'plot', false, 'debug', true);
+    cstruct = csd.getCSD(lfp, et, 'spatsmooth', 2.5, 'method', 'standard', 'plot', false, 'debug', false);
     
     cstruct.session = session;
     csdSac{iEx} = cstruct;
@@ -56,7 +57,7 @@ for iEx = 56
     epochs = [tstop(1:end-1) tstart(2:end)];
     
     % get waveform statistics over valid epochs
-    W_ = io.get_waveform_stats(Exp.osp, 'validEpochs', epochs, 'binSize', .25e-3, 'debug', true);
+    W_ = io.get_waveform_stats(Exp.osp, 'validEpochs', epochs, 'binSize', .25e-3, 'debug', false);
     for cc = 1:numel(W_)
         W_(cc).session = session;
 %         W_(cc).depth = W_(cc).depth - csdReversal;
@@ -64,6 +65,7 @@ for iEx = 56
     
     % append session to struct-array of units
     exid = [exid; iEx*ones(numel(W_),1)];
+    cgs = [cgs; Exp.osp.cgs(:)];
     W = [W; W_];
     toc
     drawnow
@@ -168,10 +170,11 @@ BRI = arrayfun(@(x) x.BRI, W); % burstiness-refractoriness index
 
 figure(1); clf
 monkix = arrayfun(@(x) strcmp(x.session(1), 'e'), W);
+% monkix = true(numel(W),1);
 w1 = arrayfun(@(x) x.ExtremityCiRatio(1), W);
 w2 = arrayfun(@(x) x.ExtremityCiRatio(2), W);
 ix = w1 > 1 & w2 > 2 & monkix;
-
+ix = cgs == 2;
 
 
 % ix = localIdx < .5 & isiR<=1 & p2t > 0 & p2v > 50;% & p2v > 10 & p2t < .5/1e3;
@@ -185,8 +188,8 @@ wx = (wf(ix,:)); %./max(wf(ix,:),[],2));
 
 figure(3); clf
 % normalized waveforms
-% wxn = (wx - min(wx,[],2))./(max(wx,[],2)- min(wx,[],2));
-wxn = wx ./ abs(min(wx, [], 2));
+wxn = (wx - min(wx,[],2))./(max(wx,[],2)- min(wx,[],2));
+% wxn = wx ./ abs(min(wx, [], 2));
 
 p  = p2t(ix)*1e3; % peak - trough (miliseconds)
 bri = BRI(ix);
