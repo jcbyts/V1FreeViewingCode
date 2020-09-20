@@ -35,12 +35,21 @@ ip.addParameter('plotIt', false)
 ip.addParameter('method', 'standard')
 ip.addParameter('sampleRate', 1000)
 ip.addParameter('exclude', true)
-ip.addParameter('spatsmooth', 1.5)
+ip.addParameter('spatsmooth', 2.5)
 ip.addParameter('debug', false)
+ip.addParameter('noisetype', 3) % used for MT sessions
 ip.parse(varargin{:});
 
+if strcmp(ip.Results.method, 'standard')
+    disp(['Using spatial smoothing of ' num2str(ip.Results.spatsmooth)])
+end
+
+
+
 exclude = ip.Results.exclude;
-excChan = lfp.deadChan;
+if exclude
+    excChan = lfp.deadChan;
+end
 
 % initialize output struct
 stats = struct();
@@ -65,7 +74,7 @@ end
 if isa(eventTimes, 'double')
     eventTimes = eventTimes(:);
 elseif isa(eventTimes, 'struct') % Get CSD event times (if not already input)
-    eventTimes = csd.getCSDEventTimes(eventTimes);
+    eventTimes = csd.getCSDEventTimes(eventTimes, ip.Results.noisetype);
     eventTimes = eventTimes(:);
 else
     error('eventTimes input must be double or struct')

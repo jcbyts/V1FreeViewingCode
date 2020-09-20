@@ -1,10 +1,14 @@
-function eventTimes = getCSDEventTimes(Exp)
+function eventTimes = getCSDEventTimes(Exp, noisetype)
 % gets the event times of the current source density trials
 % Inputs:
 %   Exp              [struct] - Exp struct from io.dataFactoryGratingSubspace
 % 
 % jfm wrote it 2020
 % ghs edit it 2020
+
+if nargin < 2
+    noisetype = 3;
+end
 
 sanitycheck = 0; % check spike histogram to verify CSD activity
 
@@ -29,14 +33,25 @@ for k = 1:Trials
            CSD.Trials = [CSD.Trials ; [k 1]];  % 1 indicate contrast onset
        end
        if (type == 2) && ( (NoiseType == 3) || (NoiseType == 6) ) 
-           if (NoiseType == 3)
-              CSD.Trials = [CSD.Trials ; [k 2]];
-           end
-           if (NoiseType == 6)
-              CSD.Trials = [CSD.Trials ; [k 3]];
+           if noisetype == 3
+               if (NoiseType == 3)
+                   CSD.Trials = [CSD.Trials ; [k 2]];
+               end
+           elseif noisetype == 6
+               if (NoiseType == 6)
+                   CSD.Trials = [CSD.Trials ; [k 3]];
+               end
            end
        end
    end
+end
+
+try
+    disp(['Total number of events found: ' num2str(length(CSD.Trials))])
+    disp(['Numer of NoiseType = 6: ' num2str(length(find(CSD.Trials(:,2)==3)))])
+    disp(['Numer of NoiseType = 3: ' num2str(length(find(CSD.Trials(:,2)==2)))])
+catch
+    % no trials
 end
 
 CSD.Onsets = [];
