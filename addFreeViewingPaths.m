@@ -82,6 +82,18 @@ switch user
         setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
         %setpref('FREEVIEWING', 'SERVER_DATA_DIR', 'Z:\Data')
         
+    case 'gabemac'
+        
+        marmoViewPath = [];
+        % we only need marmopipe to import raw data
+        marmoPipePath = [];
+        % where the data live
+        dataPath = '/Users/gabrielsarch/Documents/Mitchelllab/FreeViewingData';
+        
+        % processed data:
+        setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
+        %setpref('FREEVIEWING', 'SERVER_DATA_DIR', 'Z:\Data')
+        
     otherwise
         error('addFreeViewingPaths: I don''t know this user')
 end
