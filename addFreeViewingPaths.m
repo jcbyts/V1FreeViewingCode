@@ -25,7 +25,7 @@ switch user
         % regenerate properly
         marmoViewPath = '~/Documents/MATLAB/MarmoV5/';
         % we only need marmopipe to import raw data
-        marmoPipePath = '~/Dropbox/Marmo Lab Website/PSA/Code/';
+        marmoPipePath = '~/Dropbox/MarmoLabWebsite/PSA/Code/';
         % where the data live
         dataPath = '~/Dropbox/Projects/FreeViewing/Data';
         
@@ -38,7 +38,7 @@ switch user
         % regenerate properly
         marmoViewPath = 'C:\Users\Jake\Documents\MATLAB\MarmoV5';
         % we need the full marmopipe / import paths
-        marmoPipePath = 'C:\Users\Jake\Dropbox\Marmo Lab Website\PSA\Code';
+        marmoPipePath = 'C:\Users\Jake\Dropbox\MarmoLabWebsite\PSA\Code';
         % where the data live
         dataPath = 'C:\Users\Jake\Dropbox\Projects\FreeViewing\Data';
         
@@ -55,7 +55,7 @@ switch user
         
         marmoViewPath = 'C:\Users\Jake\Documents\MarmoV5';
         % we only need marmopipe to import raw data
-        marmoPipePath = 'C:\Users\Jake\Dropbox\Marmo Lab Website\PSA\Code';
+        marmoPipePath = 'C:\Users\Jake\Dropbox\MarmoLabWebsite\PSA\Code';
         % where the data live
 %         dataPath = 'C:\Users\Jake\Documents\FreeViewingData';
         dataPath = 'C:\Users\Jake\Dropbox\FreeViewingImported\'; % copy straight to dropbox
