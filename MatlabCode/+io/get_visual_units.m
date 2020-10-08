@@ -4,6 +4,8 @@ function [spkS,W] = get_visual_units(Exp, varargin)
 ip = inputParser();
 ip.addParameter('plotit', false)
 ip.addParameter('visStimField', 'BackImage')
+ip.addParameter('ROI', [-100 -100 100 100])
+ip.addParameter('binSize', 10)
 ip.addParameter('waveforms', [])
 ip.parse(varargin{:});
 
@@ -41,7 +43,7 @@ end
 % eyePos = io.getCorrectedEyePos(Exp, 'usebilinear', false);
 eyePos = Exp.vpx.smo(:,2:3);
 
-[Xstim, RobsSpace, opts] = io.preprocess_spatialmapping_data(Exp, 'ROI', [-100 -100 100 100], 'binSize', 10, 'eyePos', eyePos);
+[Xstim, RobsSpace, opts] = io.preprocess_spatialmapping_data(Exp, 'ROI', ip.Results.ROI, 'binSize', ip.Results.binSize, 'eyePos', eyePos);
 
 stimSets = {'Grating', 'Dots', 'BackImage', 'FixRsvpStim'};
 
@@ -140,7 +142,7 @@ for cc = 1:NC
         
     end
     
-    if isviz && ~isempty(Xstim)
+    if ~isempty(Xstim)
         nlags = 15;
         sta = simpleRevcorr(Xstim, RobsSpace(:,cc)-mean(RobsSpace(:,cc)), nlags);
         thresh = sqrt(robustcov(sta(:)))*4;
@@ -185,7 +187,7 @@ for cc = 1:NC
         
         [x0,y0] = radialcenter(I);
         
-        unit_mask = exp(-hypot((1:opts.dims(1)) - x0, (1:opts.dims(2))' - y0)) .* srf;
+        unit_mask = exp(-hypot((1:opts.dims(2)) - x0, (1:opts.dims(1))' - y0)) .* srf;
         
         if plotit
             figure(5); clf
@@ -194,13 +196,15 @@ for cc = 1:NC
             plot(x0, y0, '.r')
         end
         
+        Stmp.sta = sta;
+        Stmp.thresh = thresh;
         Stmp.best_lag = bestlag;
         Stmp.unit_mask = unit_mask;
         Stmp.srf = srf;
         Stmp.xax = opts.xax;
         Stmp.yax = opts.yax;
-        Stmp.x0 = interp1(1:opts.dims(1), opts.xax, x0);
-        Stmp.y0 = interp1(1:opts.dims(2), opts.yax, y0);
+        Stmp.x0 = interp1(1:opts.dims(2), opts.xax, x0);
+        Stmp.y0 = interp1(1:opts.dims(1), opts.yax, y0);
     else
         Stmp.best_lag = nan;
         try

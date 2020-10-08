@@ -38,6 +38,7 @@ ip.addParameter('Latency', 0)
 ip.addParameter('EyePos', [])
 ip.addParameter('includeProbe', true)
 ip.addParameter('debug', false)
+ip.addParameter('frameIndex', [])
 ip.parse(varargin{:});
 
 spatialBinSize = ip.Results.spatialBinSize;
@@ -48,7 +49,6 @@ dims = ((rect([4 3]) - rect([2 1]))/spatialBinSize);
 % extract the total number of frames
 framesPerTrial = cellfun(@(x) sum(~isnan(x.eyeData(6:end,6))),Exp.D(validTrials));
 nTotalFrames = sum(framesPerTrial);
-
 
 Stim = zeros(dims(1), dims(2), nTotalFrames, 'single');
 
@@ -108,6 +108,10 @@ for iTrial = 1:nTrials
             hNoise = copy(Exp.D{thisTrial}.PR.hNoise);
             hNoise.rng.reset(); % reset the random seed to the start of the trial
             hNoise.frameUpdate = 0; % reset the frame counter
+            if isprop(hNoise, 'screenRect')
+                hNoise.screenRect = Exp.S.screenRect;
+            end
+            
             useNoiseObject = true;
             
             % get the probe location on each frame
@@ -121,6 +125,9 @@ for iTrial = 1:nTrials
             if ip.Results.includeProbe
                 % setup probes
                 [Probe, Faces] = protocols.PR_ForageProceduralNoise.regenerateProbes(Exp.D{thisTrial}.P,Exp.S);
+                for i = 1:numel(Probe)
+                   Probe{i}.screenRect = Exp.S.screenRect; 
+                end
             end
             
         case 'BackImage'
@@ -176,10 +183,17 @@ for iTrial = 1:nTrials
     end
     
     
+    if isempty(ip.Results.frameIndex)
+        frameIndx = 1:nFrames;
+    else
+        frameIndx = ip.Results.frameIndex(:)';
+    end
+    
     blockStart = frameCounter;
+    
     % --- loop over frames and get noise from that frame
-    for iFrame = 1:nFrames
-
+    for iFrame = frameIndx
+        
         % find the index into eye position that corresponds to this frame
         eyeIx = find(eyeTimes >= frameRefreshesOe(iFrame) + ip.Results.Latency,1);
         

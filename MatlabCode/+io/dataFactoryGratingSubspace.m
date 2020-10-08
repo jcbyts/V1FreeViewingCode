@@ -10,7 +10,7 @@ function varargout = dataFactoryGratingSubspace(sessionId, varargin)
 % Example:
 %   Exp = io.dataFactory(5); % load the 5th session
 ip = inputParser();
-ip.addParameter('spike_sorting', 'kilo')
+ip.addParameter('spike_sorting', 'kilowf')
 ip.addParameter('cleanup_spikes', 0)
 ip.parse(varargin{:});
 
@@ -35,6 +35,7 @@ if isempty(sessionId)
     for i = 1:nSessions
         fprintf('%d) %s\n', i, data.Tag{i})
     end
+    varargout{1} = data.Tag(1:nSessions)';
     return
 end
     

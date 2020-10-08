@@ -17,7 +17,17 @@ function qf = qfsmooth3D(dims, lambda)
         lambda_time = lambda;
     end
         
-    Dt = qfsmooth1D(numt);
-    Dxy = qfsmooth(numx, numy);
-    qf = kron(lambda_space*Dxy,lambda_time*Dt);
+    Dt = lambda_time*qfsmooth1D(numt);
+    Dx = lambda_space*qfsmooth1D(numx);
+    Dy = lambda_space*qfsmooth1D(numy);
+
+    
+    
+    It = speye(numt);
+    Ix = speye(numx);
+    Iy = speye(numy);
+    
+
+%     qf = kron(Dt, kron(Ix, Iy)) + kron(It, kron(Dx, Iy)) + kron(It, kron(Ix, Dy));
+    qf = kron(kron(Ix, Iy), Dt) + kron(kron(Dx, Iy),It) + kron(kron(Ix, Dy),It);
 end
