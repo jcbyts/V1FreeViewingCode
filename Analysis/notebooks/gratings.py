@@ -11,7 +11,7 @@ import seaborn as sns
 from Utils import bin_at_frames, downsample_time
 import NDN3.NDNutils as NDNutils
 
-def list_sessions(metafile="/home/jcbyts/Repos/V1FreeViewingCode/Data/datasets.csv"):
+def list_sessions(metafile="/home/jake/Data/Repos/V1FreeViewingCode/Data/datasets.csv"):
     df = pd.read_csv(metafile)
     goodsess = np.where(df.GratingSubspace>0)[0] # only array sessions that have been imported
     sesslist = df.Tag[goodsess]
@@ -32,7 +32,7 @@ def loadmat(fname):
     
     return matdat
 
-def load_data(sessionid=2,datadir="/home/jcbyts/Data/MitchellV1FreeViewing/grating_subspace/",metafile="/home/jcbyts/Repos/V1FreeViewingCode/Data/datasets.csv", verbose=False):
+def load_data(sessionid=2,datadir="/home/jake/Data/Datasets/MitchellV1FreeViewing/grating_subspace/",metafile="/home/jake/Data/Repos/V1FreeViewingCode/Data/datasets.csv", verbose=False):
     '''
     Load data exported from matlab
 
@@ -65,6 +65,7 @@ def load_data(sessionid=2,datadir="/home/jcbyts/Data/MitchellV1FreeViewing/grati
     out['spikes']['st'] = matdat['spikes']['st'].flatten()
     out['spikes']['clu'] = matdat['spikes']['clu'].flatten()
     out['spikes']['cids'] = matdat['spikes']['cids'].flatten()
+    out['spikes']['cgs'] = matdat['spikes']['cgs'].flatten()
     out['spikes']['isiV'] = matdat['spikes']['isiV'].flatten()
     out['spikes']['isiRate'] = matdat['spikes']['isiRate'].flatten()
     out['spikes']['localityIdx'] = matdat['spikes']['localityIdx'].flatten()
@@ -76,11 +77,11 @@ def load_data(sessionid=2,datadir="/home/jcbyts/Data/MitchellV1FreeViewing/grati
 
     out['dots'] = dict()
     out['dots']['frameTime'] = matdat['dots']['frameTimes'].flatten()
-    out['dots']['xpos'] = matdat['dots']['xPosition'].flatten()
-    out['dots']['ypos'] = matdat['dots']['yPosition'].flatten()
-    out['dots']['eyePosAtFrame'] = matdat['dots']['eyePosAtFrame'].flatten()
+    out['dots']['xpos'] = matdat['dots']['xPosition'].T
+    out['dots']['ypos'] = matdat['dots']['yPosition'].T
+    out['dots']['eyePosAtFrame'] = matdat['dots']['eyePosAtFrame'].T
     out['dots']['validFrames'] = matdat['dots']['validFrames'].flatten()
-    out['dots']['numDots'] = matdat['dots']['numDots'].flatten()
+    out['dots']['numDots'] = matdat['dots']['numDots']
 
     out['rf'] = {'mu': matdat['rf']['mu'],
             'cov': matdat['rf']['cov']}
@@ -364,60 +365,6 @@ def load_and_setup(indexlist, npow=1.8, opts={}):
     # load session
     stim, sacon, sacoff, Robs, DF, basis, opts, sacboxcar, valid, eyepos = load_sessions(sesslist, basis=basis, opts=opts)
     
-    # opts['NX'] = basis['nori']
-    # opts['NY'] = basis['nsf']
-    # NT=Robs.shape[0]
-    
-    # Robs = Robs.astype('float32')
-
-    # # remove indices where bursts of saccades occured
-    # from scipy.ndimage import convolve1d
-    # invalid = convolve1d(sacon.astype('float'), np.ones(10), axis=0) > 2
-
-    # invalid = convolve1d(np.flip(invalid), np.ones(10), axis=0)>0
-    # invalid = convolve1d(np.flip(invalid), np.ones(10), axis=0)>0
-
-    # valid[np.where(invalid)[0]] = 0
-
-    # # restrict indices to eye positions in the center of the screen
-    # ed = np.hypot(eyepos[:,1], eyepos[:,2]) < 20
-
-    # v = np.intersect1d(np.where(valid)[0], np.where(ed)[0])
-
-    # n = 500//8 # exclude 500ms windows when no units spiked
-    # x = convolve1d( (np.sum(Robs,axis=1)==0).astype('float'), np.ones(n), axis=0)
-    # vinds = np.intersect1d(v, np.where(x!=n)[0])
-
-    # NTv = len(vinds)
-    # # build train, validate, test indices (use frozen trials if they exist)
-    # Ui, Xi = NDNutils.generate_xv_folds(NTv, num_blocks=2)
-    # Ui = vinds[Ui] # valid indices
-    # Xi = vinds[Xi] # valid indices
-
-    # valid = np.zeros(NT, dtype='bool')
-    # valid[vinds] = True
-
-    # grating = load_data(sess[0]) # reload data
-
-    # if len(grating['grating']['frozen_repeats']) > 0:
-    #     print("Using frozen repeats as test set")
-    #     opts['has_frozen'] = True
-    #     Ti = np.reshape(grating['grating']['frozen_repeats'], (-1, grating['grating']['frozen_seq_dur'][0]+1)).astype(int)
-    #     opts['num_repeats'] = Ti.shape[0]
-    #     Ti = Ti.flatten()
-    # else:
-    #     # make test indices from the training / validation set
-    #     Ti = np.concatenate((Ui[:Ui.shape[0]//20], Xi[:Xi.shape[0]//10])).astype(int)
-    #     opts['has_frozen'] = False
-
-    # Ui = np.setdiff1d(Ui, Ti).astype(int)
-    # Xi = np.setdiff1d(Xi, Ti).astype(int)
-
-    # opts['Ti'] = Ti
-    # opts['Xi'] = Xi
-    # opts['Ui'] = Ui
-    # opts['exname'] = sess
-
     return stim, sacon, sacoff, Robs, DF, basis, opts, sacboxcar, valid, eyepos
 
 def get_eyepos_at_frames(ep,ft,slist=None,sm=50,minDur=5,velThresh=5,minDurBins=3,maxDurBins=20,maxAmp=10,maxVel=600,validCutoff=60):
@@ -933,7 +880,7 @@ def fit_sac_model_basic(stim, Robs, sacbc, eyepos, opts, Ui, Xi, num_lags=15, nu
 
 def fit_stim_model(stim, Robs, opts, Ui, Xi, num_lags=15, num_tkerns=3, datapath=None, tag='jnk', silent=False):
     '''
-    fit_stim_models(stim, Robs, TrainInds, ValidateInds)
+    fit_stim_model(stim, Robs, TrainInds, ValidateInds)
     '''
     
     import NDN3.NDN as NDN
@@ -2075,7 +2022,7 @@ def fit_polar_rf(wts, basis, plotit=False, initial_guess=[]):
 
 def plot_RF_and_fit(RF):
     rho, th = np.meshgrid(RF['yax'], RF['xax'])
-    fig = plt.figure()
+    fig = plt.figure(figsize=(8,4))
 
     ax = fig.add_subplot(121, polar=True)
     plt.contourf(th/180*np.pi,rho,np.maximum(RF['RF'],0), cmap='coolwarm')
@@ -2083,6 +2030,7 @@ def plot_RF_and_fit(RF):
     ax.set_thetamax(180)
     ax.set_xticks(np.arange(0, np.pi+.1, np.pi/4))
     plt.title('RF')
+    plt.xlabel('SF')
 
     ax = fig.add_subplot(122, polar=True)
 
