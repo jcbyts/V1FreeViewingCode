@@ -1,6 +1,6 @@
 # %% Import libraries
 import sys
-sys.path.insert(0, '/home/jcbyts/Repos/')
+sys.path.insert(0, '/home/jake/Data/Repos/')
 # import deepdish as dd
 import Utils as U
 import gratings as gt
@@ -550,6 +550,7 @@ def run_sac_triggered_analyses(sess, datapath=None):
 
     if fname.exists():
         N = dd.io.load(str(fname.resolve()))
+        
     else:
         print("Running analyses on [%s]" %sess[0])
 
@@ -969,6 +970,17 @@ def run_sac_triggered_analyses(sess, datapath=None):
         print("saving")    
         dd.io.save(str(fname.resolve()), N)
 
+    # add additional info
+
+    # cluster quality rating
+    cids = np.asarray([(N[i]['cid']) for i in range(len(N))])
+
+    matdat = gt.load_data(str(sess[0]))
+    
+    cgs = matdat['spikes']['cgs'][np.where([np.sum(a==cids) for a in matdat['spikes']['cids']])[0]]
+    for cc in range(len(N)):
+        N[cc]['cg'] = cgs[cc]
+
     return N
 
 def plot_low_high_forcorr(N, field='onsetaligned'):
@@ -1007,7 +1019,7 @@ def plot_low_high_forcorr(N, field='onsetaligned'):
 
 #%% read in meta data to get RF locations
 import pandas as pd
-metafile="/home/jcbyts/Repos/V1FreeViewingCode/Data/datasets.csv"
+metafile="/home/jake/Data/Repos/V1FreeViewingCode/Data/datasets.csv"
 df = pd.read_csv(metafile)
 
 # %% list sessions
@@ -1023,7 +1035,7 @@ for i in np.arange(0, len(sesslist), 1): #range(len(sesslist)):
     print("%d %s" %(i, sesslist[i]))
     try:
         sess = [sesslist[i]]
-        N_ = run_sac_triggered_analyses(sess, datapath='/home/jcbyts/Data/MitchellV1FreeViewing/grating_analyses/')
+        N_ = run_sac_triggered_analyses(sess, datapath='/home/jake/Data/Datasets/MitchellV1FreeViewing/grating_analyses/')
         retx = df.retx[df.Tag==sess[0]].to_numpy()[0]
         rety = df.rety[df.Tag==sess[0]].to_numpy()[0]
         for j in range(len(N_)):
@@ -1126,7 +1138,7 @@ oriPref = np.asarray([N[i]['RFfit']['thPref'] for i in range(len(N))])
 oriBw = np.asarray([N[i]['RFfit']['thB'] for i in range(len(N))])
 sess = np.asarray([N[cc]['sess'] for cc in range(len(N))])
 monkey = np.asarray([N[cc]['sess'][0] for cc in range(len(N))])
-
+cgs = np.asarray([N[cc]['cg'] for cc in range(len(N))])
 # convert from von Mises parameter to bandwidth
 val = 1/np.sqrt(2)
 oriHW = np.arccos(np.log(val)*oriBw + 1)/np.pi*180
@@ -1176,7 +1188,7 @@ plt.ylabel('Depth')
 sns.despine(offset=0)
 
 #%%
-i = i+1
+i = 1
 s = sessions[i]
 ix = sess==s
 snum = np.where(s==sessions)[0]
@@ -1188,7 +1200,7 @@ if np.sum(ix)>0:
 plt.xlim([0, 180])
 
 clist = np.where(ix)[0]
-for cc in clist:
+for cc in [clist[0]]:
     gt.plot_RF_and_fit(N[cc]['RFfit'])
     plt.title("%d, %02.2f" %(cc, ori[cc]))
 #%% sanity check colormap
@@ -1200,7 +1212,8 @@ for i in range(numOri-1):
 #%% plot Tau / Alpha
 
 neuronIx = np.where(meanrate > 1)[0]
-neuronIx = np.intersect1d(neuronIx, np.where(locality<.5)[0])
+# neuronIx = np.where(cgs == 2)[0]
+# neuronIx = np.intersect1d(neuronIx, np.where(locality<.5)[0])
 # neuronIx = np.intersect1d(neuronIx, np.where(isi<1)[0])
 # neuronIx = np.intersect1d(neuronIx, np.where(monkey=='l')[0])
 
@@ -1223,6 +1236,7 @@ plt.ylabel('Count')
 plt.axvline(np.median(mu_pre[neuronIx]-1), color='k', linestyle='--')
 sns.despine(offset=0, trim=True)
 #%% Plot Relative Rate
+neuronIx = np.where(cgs == 2)[0]
 ix = np.intersect1d(neuronIx, np.where(monkey=='e')[0])
 mci = np.percentile(relRates[:,ix], np.asarray([16, 50, 84]), axis=1)
 h = plt.fill_between(tax, mci[0,:], mci[-1,:], alpha=.5)
@@ -1577,6 +1591,7 @@ for cc in range(NC):
 
 #%%
 cc += 1
+# cc = 100
 if cc >= len(N):
     cc=0
 
@@ -1586,13 +1601,7 @@ low = N[cc]['onsetaligned']['forwardcorr']['lowLag']
 high = N[cc]['onsetaligned']['forwardcorr']['highLag']
 olag = N[cc]['onsetaligned']['forwardcorr']['orthLag']
 
-plt.figure(figsize=(15,5))
-plt.subplot(131)
-plt.imshow(olag, aspect='auto')
-plt.subplot(132)
-plt.imshow(high, aspect='auto')
-plt.subplot(133)
-plt.imshow(high-olag, aspect='auto')
+peak_lag = np.argmax(N[cc]['onsetaligned']['forwardcorr']['low']**2 + N[cc]['onsetaligned']['forwardcorr']['high']**2)
 
 
 plt.figure(figsize=(15,5))
@@ -1601,7 +1610,191 @@ plt.imshow(low, aspect='auto')
 plt.subplot(132)
 plt.imshow(high, aspect='auto')
 plt.subplot(133)
+plt.imshow(olag, aspect='auto')
+
+
+plt.figure(figsize=(15,5))
+plt.subplot(131)
+plt.imshow(low-olag, aspect='auto')
+plt.subplot(132)
+plt.imshow(high-olag, aspect='auto')
+plt.subplot(133)
 plt.imshow(high-low, aspect='auto')
+
+plt.figure(figsize=(10,5))
+plt.plot(low[:,peak_lag])
+plt.plot(high[:,peak_lag])
+plt.plot(olag[:,peak_lag], color='k')
+
+# %% Plot sliding window modulation (what Units are these in)
+frate = 120
+
+NC = len(N)
+nlags = len(N[cc]['onsetaligned']['forwardcorr']['low'])
+saclags = N[cc]['onsetaligned']['forwardcorr']['saclags']/frate*1000
+nsaclags = len(saclags)
+
+lmod = np.zeros(NC)
+hmod = np.zeros(NC)
+
+lowAv = np.zeros((nlags, NC))
+highAv = np.zeros((nlags, NC))
+orthAv = np.zeros((nlags, NC))
+
+lowLags = np.zeros((nsaclags, NC))
+highLags = np.zeros((nsaclags, NC))
+orthLags = np.zeros((nsaclags, NC))
+
+mNorm = np.zeros(NC)
+for cc in range(NC):
+    peak_lag = np.argmax(N[cc]['onsetaligned']['forwardcorr']['low']**2 + N[cc]['onsetaligned']['forwardcorr']['high']**2)
+
+    lowAv[:,cc] = N[cc]['onsetaligned']['forwardcorr']['low']*frate
+    highAv[:,cc] = N[cc]['onsetaligned']['forwardcorr']['high']*frate
+    orthAv[:,cc] = N[cc]['onsetaligned']['forwardcorr']['orth']*frate
+
+    # normalization by max of orthogonal trace
+    morth = np.max(np.abs(orthAv[:,cc]))
+
+    lowLags[:,cc] = N[cc]['onsetaligned']['forwardcorr']['lowLag'][:,peak_lag]*frate/lowAv[peak_lag,cc]
+    highLags[:,cc] = N[cc]['onsetaligned']['forwardcorr']['highLag'][:,peak_lag]*frate/highAv[peak_lag,cc]
+    orthLags[:,cc] = N[cc]['onsetaligned']['forwardcorr']['orthLag'][:,peak_lag]*frate/orthAv[peak_lag,cc]
+
+    mNorm[cc] = morth
+    lmod[cc] = lowAv[peak_lag,cc]/morth
+    hmod[cc] = highAv[peak_lag,cc]/morth
+
+
+#%%
+hlidx = (lmod - hmod)/(abs(lmod) + abs(hmod))
+
+tune_thresh = 1.5
+
+plt.plot(lmod, hmod, '.')
+plt.axhline(1, color='k')
+plt.axvline(1, color='k')
+plt.xscale('log')
+plt.yscale('log')
+plt.xlabel('Low SF modulation')
+plt.ylabel('High SF modulation')
+plt.text(.001, 30, 'High Tuned')
+plt.text(2, 30, 'Both Tuned')
+plt.text(2, .005, 'Low Tuned')
+
+ixlow = np.logical_and(lmod > tune_thresh, lmod > tune_thresh*hmod)
+ixboth = np.logical_and(lmod > tune_thresh, hmod > tune_thresh)
+ixhigh = np.logical_and(hmod > tune_thresh, hmod > tune_thresh*lmod)
+
+plt.plot(lmod[ixlow], hmod[ixlow], '.')
+plt.plot(lmod[ixboth], hmod[ixboth], '.')
+plt.plot(lmod[ixhigh], hmod[ixhigh], '.')
+
+cmap = plt.cm.tab10(np.linspace(0, 1, 10))
+cilim = [16.5, 68.5]
+
+plt.figure(figsize=(10,5))
+plt.subplot(1,3,1)
+
+plt.plot(np.median(lowAv[:,ixlow], axis=1), color=cmap[0])
+lci = np.percentile(lowAv[:,ixlow], cilim, axis=1)
+plt.fill_between(xlags, lci[0,:], lci[1,:], color=cmap[0], alpha=.5)
+
+plt.plot(np.median(highAv[:,ixlow], axis=1), color=cmap[1])
+hci = np.percentile(highAv[:,ixlow], cilim, axis=1)
+plt.fill_between(xlags, hci[0,:], hci[1,:], color=cmap[1], alpha=.5)
+
+plt.plot(np.median(orthAv[:,ixlow], axis=1), color='k')
+oci = np.percentile(orthAv[:,ixlow], cilim, axis=1)
+plt.fill_between(xlags, oci[0,:], oci[1,:], color='k', alpha=.5)
+
+plt.title('Low Tuned')
+plt.ylabel('Delta Firing Rate')
+
+plt.subplot(1,3,2)
+plt.plot(np.median(lowAv[:,ixhigh], axis=1), color=cmap[0])
+lci = np.percentile(lowAv[:,ixhigh], cilim, axis=1)
+plt.fill_between(xlags, lci[0,:], lci[1,:], color=cmap[0], alpha=.5)
+
+plt.plot(np.median(highAv[:,ixhigh], axis=1), color=cmap[1])
+hci = np.percentile(highAv[:,ixhigh], cilim, axis=1)
+plt.fill_between(xlags, hci[0,:], hci[1,:], color=cmap[1], alpha=.5)
+
+plt.plot(np.median(orthAv[:,ixhigh], axis=1), color='k')
+oci = np.percentile(orthAv[:,ixhigh], cilim, axis=1)
+plt.fill_between(xlags, oci[0,:], oci[1,:], color='k', alpha=.5)
+
+plt.title('High Tuned')
+plt.xlabel('Lags (frame)')
+
+plt.subplot(1,3,3)
+plt.plot(np.median(lowAv[:,ixboth], axis=1), color=cmap[0])
+lci = np.percentile(lowAv[:,ixboth], cilim, axis=1)
+plt.fill_between(xlags, lci[0,:], lci[1,:], color=cmap[0], alpha=.5)
+
+plt.plot(np.median(highAv[:,ixboth], axis=1), color=cmap[1])
+hci = np.percentile(highAv[:,ixboth], cilim, axis=1)
+plt.fill_between(xlags, hci[0,:], hci[1,:], color=cmap[1], alpha=.5)
+
+plt.plot(np.median(orthAv[:,ixboth], axis=1), color='k')
+oci = np.percentile(orthAv[:,ixboth], cilim, axis=1)
+plt.fill_between(xlags, oci[0,:], oci[1,:], color='k', alpha=.5)
+
+plt.title('Both Tuned')
+plt.suptitle('Average Modulation')
+
+# plotting saccadic modulation
+plt.figure(figsize=(5,10))
+
+plt.subplot(3,1,1)
+X = deepcopy(lowLags[:,ixlow])
+ci = np.percentile(X, cilim, axis=1)
+plt.plot(saclags, np.median(X, axis=1), color=cmap[0])
+plt.fill_between(saclags, ci[0,:], ci[1,:], color=cmap[0], alpha=.5)
+
+plt.subplot(3,1,2)
+X = deepcopy(highLags[:,ixhigh])
+ci = np.percentile(X, cilim, axis=1)
+plt.plot(saclags, np.median(X, axis=1), color=cmap[1])
+plt.fill_between(saclags, ci[0,:], ci[1,:], color=cmap[1], alpha=.5)
+
+
+plt.subplot(3,1,3)
+X = deepcopy(lowLags[:,ixboth]/np.mean(lowLags[:,ixboth]))
+ci = np.percentile(X, cilim, axis=1)
+plt.plot(saclags, np.mean(X, axis=1), color=cmap[0])
+plt.fill_between(saclags, ci[0,:], ci[1,:], color=cmap[0], alpha=.5)
+
+X = deepcopy(highLags[:,ixboth])
+ci = np.percentile(X, cilim, axis=1)
+plt.plot(saclags, np.mean(X, axis=1), color=cmap[1])
+plt.fill_between(saclags, ci[0,:], ci[1,:], color=cmap[1], alpha=.5)
+
+
+# plt.xlim((0, 2))
+# plt.ylim((0, 2))
+#%%
+xlags = np.arange(0, len(lowAv))
+
+lowE = N[cc]['onsetaligned']['forwardcorr']['lowE']*frate
+highE = N[cc]['onsetaligned']['forwardcorr']['highE']*frate
+orthE = N[cc]['onsetaligned']['forwardcorr']['orthE']*frate
+
+plt.figure()
+plt.fill_between(xlags, orthE[0,:], orthE[1,:])
+plt.plot(lowAv)
+
+
+low = N[cc]['onsetaligned']['forwardcorr']['lowLag'][:,peak_lag]*frate
+high = N[cc]['onsetaligned']['forwardcorr']['highLag'][:,peak_lag]*frate
+olag = N[cc]['onsetaligned']['forwardcorr']['orthLag'][:,peak_lag]*frate
+
+
+
+plt.figure(figsize=(10,5))
+plt.plot(low[:,peak_lag])
+plt.plot(high[:,peak_lag])
+plt.plot(olag[:,peak_lag], color='k')
+
 # %%
 
 operation = 'norm'
