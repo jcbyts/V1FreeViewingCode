@@ -1,16 +1,11 @@
 
 import sys,os
-sys.path.insert(0, '/home/jcbyts/Repos/')
+sys.path.insert(0, '/home/jake/Data/Repos/')
 
 import Utils as U
 import gratings as gt
 
 import warnings; warnings.simplefilter('ignore')
-
-# 
-
-# sys.path.insert(0, '/home/jcbyts/Repos/')
-import NDN3.NDNutils as NDNutils
 
 # which_gpu = NDNutils.assign_gpu()
 
@@ -21,13 +16,10 @@ import NDN3.NDNutils as NDNutils
 
 from scipy.ndimage import gaussian_filter
 from copy import deepcopy
-
 import numpy as np
-# import tensorflow as tf
-
 import matplotlib.pyplot as plt  # plotting
-# import seaborn as sns
 
+import NDN3.NDNutils as NDNutils
 import NDN3.NDN as NDN
 import NDN3.Utils.DanUtils as DU
 
@@ -341,7 +333,8 @@ def LLinterpolate(LLspace1):
 
 def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
             XTreg=0.05,L1reg=5e-3,MIreg=0.1,MSCreg=10.0,Greg=0.1,Mreg=1e-4,
-            num_subs=36,num_hid=24,num_tkern=None,Cindx=None, base_mod=None, cids=None):
+            num_subs=36,num_hid=24,num_tkern=None,Cindx=None, base_mod=None, cids=None,
+            autoencoder=False):
 
     NX = dims[0]
     NY = dims[1]
@@ -476,6 +469,11 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
         side2b.set_regularization('l1', L1reg, layer_target=0)
         side2b.set_regularization('max', MIreg, ffnet_target=0, layer_target=1)
         side2b.set_regularization('max', MSCreg, ffnet_target=1, layer_target=0)
+
+        if len(side2b.networks):
+            input_data = [Xstim, Rvalid]
+        else:
+            input_data = Xstim
     
     else:
         # Best regularization arrived at
@@ -508,10 +506,38 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
 
         side_par['pos_constraints']=True
 
-        side2 = NDN.NDN( [ndn_par, side_par], ffnet_out=1, noise_dist='poisson' )
+        if autoencoder:
+            auto_par = NDNutils.ffnetwork_params(input_dims=[1, NC, 1],
+                xstim_n=[1],
+                layer_sizes=[2, 1, NC],
+                time_expand=[0, 15, 0],
+                layer_types=['normal', 'temporal', 'normal'],
+                conv_filter_widths=[None, 1, None],
+                act_funcs=['relu', 'lin', 'lin'],
+                normalization=[1, 1, 0],
+                reg_list={'d2t':[None, 1e-5, None]}
+                )
 
-        _ = side2.train(input_data=Xstim, output_data=Rvalid, train_indxs=Ui, test_indxs=Xi, silent=False, 
-                       learning_alg='adam', opt_params=adam_params)
+            add_par = NDNutils.ffnetwork_params(
+                xstim_n=None, ffnet_n=[1,2], layer_sizes=[NC],
+                layer_types=['add'], act_funcs=['softplus']
+                )
+
+            side2 = NDN.NDN( [ndn_par, side_par, auto_par, add_par], ffnet_out=1, noise_dist='poisson' )
+
+            # set output regularization on the latent
+            side2.batch_size = adam_params['batch_size']
+            side2.initialize_output_reg(network_target=2,layer_target=1, reg_vals={'d2t': 1e-1})
+
+            input_data = [Xstim, Rvalid]
+
+        else:
+            side2 = NDN.NDN( [ndn_par, side_par], ffnet_out=1, noise_dist='poisson' )
+            
+            input_data = Xstim
+
+        _ = side2.train(input_data=input_data, output_data=Rvalid, train_indxs=Ui, test_indxs=Xi, silent=False, 
+                   learning_alg='adam', opt_params=adam_params)
 
         side2.set_regularization('glocal', Greg, layer_target=0)
         side2.set_regularization('l1', L1reg, layer_target=0)
@@ -522,10 +548,10 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
 
     
 
-    _ = side2b.train(input_data=Xstim, output_data=Rvalid, train_indxs=Ui, test_indxs=Xi, silent=False, 
+    _ = side2b.train(input_data=input_data, output_data=Rvalid, train_indxs=Ui, test_indxs=Xi, silent=False, 
                    learning_alg='adam', opt_params=adam_params)
 
-    LLs2n = side2b.eval_models(input_data=Xstim, output_data=Rvalid, data_indxs=Xi, nulladjusted=True)
+    LLs2n = side2b.eval_models(input_data=input_data, output_data=Rvalid, data_indxs=Xi, nulladjusted=True)
     print(np.mean(LLs2n))
     if plot:
         plt.hist(LLs2n)
@@ -536,7 +562,7 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
 
 
 def get_corr_grid(base_mod, Stim, Robs, dims, cids, eyeAtFrame, valid, valid_eye_rad=5.2, Erad=0.75, Npos=25,
-        crop_edge=3, plot=True, interpolation_steps=1, softmax=10):
+        crop_edge=3, plot=True, interpolation_steps=1, softmax=10, autoencoder=False):
     '''
         get correction grid
     '''
@@ -574,19 +600,56 @@ def get_corr_grid(base_mod, Stim, Robs, dims, cids, eyeAtFrame, valid, valid_eye
     scaff_par['conv_filter_widths'] = [netlist_old['input_dims'][1], 1] # base_mod 
 
     side_par = deepcopy(base_mod.network_list[1])
-    side_par['layer_types'] = ['conv']
-    side_par['conv_filter_widths'] = [1]
+    
+    if len(base_mod.networks) > 2: # it has an autoencoder
+        print('found extra FFNetworks. Assuming they are an autoencoder')
+        
+        # side_par['layer_sizes'][-1] = [NC,NX,NY]
+        side_par['layer_types'] = ['conv']
+        side_par['conv_filter_widths'] = [1]
+        auto_par = deepcopy(base_mod.network_list[2])
+        auto_par['layer_sizes'][-1] = [NC,NX,NY]
+        add_par = deepcopy(base_mod.network_list[3])
+        add_par['input_dims'] = None
+        add_par['layer_sizes'][-1] = NC*NX*NY
 
-    cell_shift_mod = NDN.NDN( [scaff_par, side_par], ffnet_out=1, noise_dist='poisson' )
-    # copy first network verbatim (only thing diff is output is a convolution)
-    cell_shift_mod.networks[0].layers[0].weights = deepcopy(base_mod.networks[0].layers[0].weights)
-    cell_shift_mod.networks[0].layers[0].biases = deepcopy(base_mod.networks[0].layers[0].biases)
-    cell_shift_mod.networks[0].layers[1].weights = deepcopy(base_mod.networks[0].layers[1].weights)
-    cell_shift_mod.networks[0].layers[1].biases = deepcopy(base_mod.networks[0].layers[1].biases)
-    cell_shift_mod.networks[1].layers[0].weights = deepcopy(base_mod.networks[1].layers[0].weights)
-    cell_shift_mod.networks[1].layers[0].biases = deepcopy(base_mod.networks[1].layers[0].biases)
+        if autoencoder:
+            cell_shift_mod = NDN.NDN( [scaff_par, side_par, auto_par, add_par], ffnet_out=3, noise_dist='poisson')
+        else:
+            cell_shift_mod = NDN.NDN( [scaff_par, side_par], ffnet_out=1, noise_dist='poisson' )
+    else:
+        side_par['layer_types'] = ['conv']
+        side_par['conv_filter_widths'] = [1]
+        autoencoder = False
+        cell_shift_mod = NDN.NDN( [scaff_par, side_par], ffnet_out=1, noise_dist='poisson' )
 
     num_space = np.prod(cell_shift_mod.input_sizes[0][:-1])
+
+    # copy first network verbatim (only thing diff is output is a convolution)
+    for nl in range(len(cell_shift_mod.networks[0].layers)):
+        cell_shift_mod.networks[0].layers[nl].weights = deepcopy(base_mod.networks[0].layers[nl].weights)
+        cell_shift_mod.networks[0].layers[nl].biases = deepcopy(base_mod.networks[0].layers[nl].biases)
+
+    if autoencoder:
+        
+        
+        # side par
+        cell_shift_mod.networks[1].layers[0].weights = deepcopy(base_mod.networks[1].layers[0].weights)
+        cell_shift_mod.networks[1].layers[0].biases = deepcopy(base_mod.networks[1].layers[0].biases)
+        # autoencoder
+        for nl in range(len(cell_shift_mod.networks[1].layers)-1):
+            cell_shift_mod.networks[2].layers[nl].weights = deepcopy(base_mod.networks[2].layers[nl].weights)
+            cell_shift_mod.networks[2].layers[nl].biases = deepcopy(base_mod.networks[2].layers[nl].biases)
+        # expand output
+        cell_shift_mod.networks[2].layers[-1].weights = conv_expand(deepcopy(base_mod.networks[2].layers[-1].weights), num_space)
+        cell_shift_mod.networks[2].layers[-1].biases = conv_expand(deepcopy(base_mod.networks[2].layers[-1].biases), num_space)
+
+        # add_par --> do I need to do anything?
+
+    else: # expansion is handled with a conv layer so just copy        
+        cell_shift_mod.networks[1].layers[0].weights = deepcopy(base_mod.networks[1].layers[0].weights)
+        cell_shift_mod.networks[1].layers[0].biases = deepcopy(base_mod.networks[1].layers[0].biases)
+
 
     # locations in the grid
     locs = np.linspace(-valid_eye_rad, valid_eye_rad, Npos)
@@ -601,7 +664,12 @@ def get_corr_grid(base_mod, Stim, Robs, dims, cids, eyeAtFrame, valid, valid_eye
 
             # get index for when the eye position was withing the boundaries
             rs = np.hypot(eyeX-locs[xx], eyeY-locs[yy])
-            valE = np.where(rs < Erad)[0]
+            
+            # eccentricity dependent 
+            ecc = np.hypot(locs[xx],locs[yy])
+            Ethresh = Erad + .2*ecc # eccentricity dependent threshold
+            # valE = np.where(rs < (Erad + ecc*.5)[0]
+            valE = np.where(rs < Ethresh)[0]
             valtot = valE
             # valtot = np.intersect1d(valdata, valE)
 
@@ -610,7 +678,10 @@ def get_corr_grid(base_mod, Stim, Robs, dims, cids, eyeAtFrame, valid, valid_eye
                 Rcc = conv_expand( Rvalid[valtot,:], num_space )
 
                 # get negative log-likelihood at all spatial shifts
-                LLs = cell_shift_mod.eval_models(input_data=[Xstim[valtot,:]], output_data=Rcc, nulladjusted=False)
+                if autoencoder:
+                    LLs = cell_shift_mod.eval_models(input_data=[Xstim[valtot,:], Rvalid[valtot,:]], output_data=Rcc, nulladjusted=False)
+                else:
+                    LLs = cell_shift_mod.eval_models(input_data=[Xstim[valtot,:]], output_data=Rcc, nulladjusted=False)
 
                 # reshape into spatial map
                 LLcc = np.reshape(LLs, [NY,NX,NC])
@@ -735,3 +806,190 @@ def shift_stim(Stim, xshift, yshift, dims):
         imshifter = interp2d(xax, yax, I)
         StimC[iFrame,:] = imshifter(xax+xshift[iFrame],yax+yshift[iFrame]).flatten()
     return StimC
+
+def roi_crop(frame,size,translation,theta=0,sxsy=0):
+    # roi_crop implements a crop with bilinear interpolation
+    # Inputs:
+    #   frame [h,w,c] image
+    #   size [1x1] or [1x2] x and y size of output (integer)
+    #   translation [1 x 2]  x and y translation (float)
+    #   theta (optional) angle
+    #   
+    #   M  [sx 0 tx; 0 sy ty] crop matrix (affine transform matrix)
+    # Output:
+    #   out []
+    # written by jly 2019
+
+    if len(frame.shape)==3:
+        H, W, C = frame.shape
+    else:
+        H, W = frame.shape
+        C = 0
+    
+    sx = size[0]
+    if len(size)==2:
+        sy = size[1]
+    else:
+        sy = size[0]
+    
+    # build M
+    if sxsy==0:
+        sxsy = np.array([sx.astype("float32")/W, sy.astype("float32")/H])
+
+    S = np.array([[sxsy[0], 0.], [0., sxsy[1]]])
+    th = theta/180*np.pi
+    R = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]])
+#     tx = (translation[0] - (W-1)/2.) / ((W-1)/2.)
+#     ty = (translation[1] - (H-1)/2.) / ((H-1)/2.)
+    
+    tx = (translation[0] - (W)/2.) / ((W)/2.)
+    ty = (translation[1] - (H)/2.) / ((H)/2.)
+    
+    # M = RSH; where R = rotation, S = shearing, H = scaling; Matrix multiplcation does not commute
+    M0 = np.matmul(R,S)
+    M = np.array([[M0[0,0], M0[0,1], tx], [M0[1,0], M0[1,1], ty]])
+    
+    # create normalized 2D grid
+    x = np.linspace(-1, 1, sx)
+    y = np.linspace(-1, 1, sy)
+
+    x_t, y_t = np.meshgrid(x, y)
+
+    # reshape to (xt, yt, 1) - augments the dimensions by one for translation
+    ones = np.ones(np.prod(x_t.shape))
+    sampling_grid = np.vstack([x_t.flatten(), y_t.flatten(), ones])
+
+    # transform the sampling grid i.e. batch multiply
+    grids = np.matmul(M, sampling_grid)
+    grids = grids.reshape(2, sy, sx)
+    grids = np.moveaxis(grids, 0, -1)
+
+    x_s = grids[:, :, 0].squeeze()
+    y_s = grids[:, :, 1].squeeze()
+
+    # rescale x and y to [0, W/H]
+    x = ((x_s + 1.) * W) * 0.5
+    y = ((y_s + 1.) * H) * 0.5
+
+    # grab 4 nearest corner points for each (x_i, y_i)
+    x0 = np.floor(x).astype(np.int64)
+    x1 = x0 + 1
+    y0 = np.floor(y).astype(np.int64)
+    y1 = y0 + 1
+
+    # make sure it's inside img range [0, H] or [0, W]
+    x0 = np.clip(x0, 0, W-1)
+    x1 = np.clip(x1, 0, W-1)
+    y0 = np.clip(y0, 0, H-1)
+    y1 = np.clip(y1, 0, H-1)
+    
+    # calculate deltas
+    wa = (x1-x) * (y1-y)
+    wb = (x1-x) * (y-y0)
+    wc = (x-x0) * (y1-y)
+    wd = (x-x0) * (y-y0)
+    
+    # look up pixel values at corner coords
+    if C==0:
+        Ia = frame[y0, x0]
+        Ib = frame[y1, x0]
+        Ic = frame[y0, x1]
+        Id = frame[y1, x1]
+        
+        out = wa*Ia + wb*Ib + wc*Ic + wd*Id
+    else:
+        Ia = frame[y0, x0, :]
+        Ib = frame[y1, x0, :]
+        Ic = frame[y0, x1, :]
+        Id = frame[y1, x1, :]
+        out = Ia
+        for i in range(C):
+            out[:,:,i] = wa*Ia[:,:,i] + wb*Ib[:,:,i] + wc*Ic[:,:,i] + wd*Id[:,:,i]
+            
+    
+    return out
+
+def get_crop_indices(dims, outsize=None, translation=np.array((0,0)), theta=0, scale=1.0):
+    ''' get_crop_indices
+        Returns indices for sampling with an affine transform
+        Inputs:
+            dims <array> input dimensions
+            outsize <array> output dimensions (optional)
+            translation <array> x,y translation (0,0) is no shift
+            theta <float> rotation angle (in degrees)
+            scale <float> dicates upsampling or downsampling (default: 1.0)
+        Returns:
+            indices <list> len=4 indices for interpolation
+            wts <list> len=4 interpolation weights
+
+        Example:
+
+    '''
+    sx = outsize[0]
+    if len(outsize)==2:
+        sy = outsize[1]
+    else:
+        sy = outsize[0]
+
+    W = dims[0]
+    H = dims[1]
+
+    sxsy = np.array([scale*sx.astype("float32")/W, scale*sy.astype("float32")/H])
+    S = np.array([[sxsy[0], 0.], [0., sxsy[1]]])
+    th = theta/180*np.pi
+    R = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]])
+
+    tx = (translation[0]) / ((W)/2.)
+    ty = (translation[1]) / ((H)/2.)
+
+    # M = RSH; where R = rotation, S = shearing, H = scaling; Matrix multiplcation does not commute
+    M0 = R @ S
+    M = np.array([[M0[0,0], M0[0,1], tx], [M0[1,0], M0[1,1], ty]])
+
+    # create normalized 2D grid
+    x = np.linspace(-1, 1, sx)
+    y = np.linspace(-1, 1, sy)
+    x_t, y_t = np.meshgrid(x, y)
+
+    # reshape to (xt, yt, 1) - augments the dimensions by one for translation
+    ones = np.ones(np.prod(x_t.shape))
+    sampling_grid = np.vstack([x_t.flatten(), y_t.flatten(), ones])
+
+    # transform the sampling grid i.e. batch multiply
+    grids = M @ sampling_grid
+    grids = grids.reshape(2, sy, sx)
+    grids = np.moveaxis(grids, 0, -1)
+    x_s = grids[:, :, 0].squeeze()
+    y_s = grids[:, :, 1].squeeze()
+
+    # rescale x and y to [0, W/H]
+    x = ((x_s + 1.) * W) * 0.5
+    y = ((y_s + 1.) * H) * 0.5
+
+    # grab 4 nearest corner points for each (x_i, y_i)
+    x0 = np.floor(x).astype(np.int64)
+    x1 = x0 + 1
+    y0 = np.floor(y).astype(np.int64)
+    y1 = y0 + 1
+
+    # make sure it's inside img range [0, H] or [0, W]
+    x0 = np.clip(x0, 0, W-1)
+    x1 = np.clip(x1, 0, W-1)
+    y0 = np.clip(y0, 0, H-1)
+    y1 = np.clip(y1, 0, H-1)
+
+    # calculate weights for combining indices to interpolate
+    w = []
+    w.append( ((x1-x) * (y1-y)).flatten())
+    w.append(((x1-x) * (y-y0)).flatten())
+    w.append(((x-x0) * (y1-y)).flatten())
+    w.append(((x-x0) * (y-y0)).flatten())
+
+    # indices into 4 directions
+    ix = []
+    ix.append(y0.flatten()*W + x0.flatten())
+    ix.append(y1.flatten()*W + x0.flatten())
+    ix.append(y0.flatten()*W + x1.flatten())
+    ix.append(y1.flatten()*W + x1.flatten())
+
+    return ix, w
