@@ -6,7 +6,7 @@ function S = spatial_RF_single_session(Exp, varargin)
 ip = inputParser();
 ip.addParameter('ROI', [-10 -10 10 10])
 ip.addParameter('binSize', 1.5)
-ip.addParameter('numlags', 10)
+ip.addParameter('numlags', 15)
 ip.addParameter('numspace', 20)
 ip.addParameter('plot', true)
 ip.parse(varargin{:})
@@ -18,7 +18,7 @@ ROI = ip.Results.ROI; % initial ROI
 binSize = ip.Results.binSize; % initial binSize
 
 % step 1: get visually driven units, get  find ROI
-spkS = io.get_visual_units(Exp, 'plotit', false, 'ROI', ROI*ppd, 'binSize', binSize*ppd);
+evalc("spkS = io.get_visual_units(Exp, 'plotit', false, 'ROI', ROI*ppd, 'binSize', binSize*ppd);");
 
 figure(1); clf
 NC = numel(spkS);
@@ -106,12 +106,13 @@ for cc = vis(:)'
     Xstim = makeStimRows(Stim, nlags);
 
     % find valid fixations
-    eyeTimes = Exp.vpx2ephys(Exp.vpx.smo(:,1));
-
-    cnt = find(histcounts(opts.frameTimes(opts.validFrames>0), eyeTimes)); % map frame times to eye samples
-
-    % find if samples are fixations and map backwards to find valid frames
-    valid = find(histcounts(eyeTimes(cnt(Exp.vpx.Labels(cnt)==1)), opts.frameTimes(opts.validFrames>0)));
+    valid = find(opts.eyeLabel==1);
+%     eyeTimes = Exp.vpx2ephys(Exp.vpx.smo(:,1));
+% 
+%     cnt = find(histcounts(opts.frameTimes(opts.validFrames>0), eyeTimes)); % map frame times to eye samples
+% 
+%     % find if samples are fixations and map backwards to find valid frames
+%     valid = find(histcounts(eyeTimes(cnt(Exp.vpx.Labels(cnt)==1)), opts.frameTimes(opts.validFrames>0)));
 
     nValid = numel(valid);
     fprintf('%d valid (fixation) samples\n', nValid)
@@ -136,7 +137,7 @@ for cc = vis(:)'
     
     Rtest = imgaussfilt(Rvalid(test), 2);
     
-    CpriorInv = qfsmooth3D([nlags, fliplr(opts.dims)], .5);
+    CpriorInv = qfsmooth3D([nlags, fliplr(opts.dims)], [.25 .5]);
     CpriorInv = CpriorInv + eye(size(CpriorInv,2));
     
     % if you want to check that you're in the right range   

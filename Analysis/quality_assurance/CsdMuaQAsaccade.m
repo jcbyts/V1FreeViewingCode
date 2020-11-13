@@ -1,14 +1,17 @@
 
-iEx = 49;
+iEx = 5;
 [Exp, ~, lfp, mua] = io.dataFactoryGratingSubspace(iEx);
 
 %% CSD test cell
 et = csd.getCSDEventTimes(Exp);
+st = Exp.vpx2ephys(Exp.slist(:,1));
 
 % --- get CSD
-cstruct1 = csd.getCSD(lfp, et, 'spatsmooth', 2.5, 'method', 'standard', 'plot', false, 'debug', true);
-
+cstruct1 = csd.getCSD(lfp, et, 'spatsmooth', 2.5, 'method', 'standard', 'plot', false, 'debug', false);
+cstruct2 = csd.getCSD(lfp, st, 'spatsmooth', 2.5, 'method', 'standard', 'plot', false, 'debug', false);
+%%
 csd.plotCSD(cstruct1)
+csd.plotCSD(cstruct2)
 
 %%
 % loop over sessions and make plots of MUA and CSD
