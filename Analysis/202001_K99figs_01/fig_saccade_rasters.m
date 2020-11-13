@@ -15,6 +15,7 @@ switch user
         addpath ~/Dropbox/MatlabCode/Repos/sNIMclass/
         addpath(genpath('~/Dropbox/MatlabCode/Repos/L1General/'))    
         addpath(genpath('~/Dropbox/MatlabCode/Repos/minFunc_2012/'))  
+        addpath Analysis/202001_K99figs_01    
 end
 
 %% load data
@@ -268,7 +269,7 @@ saveas(gcf, fullfile('Figures', 'K99', 'fixduration.pdf'))
 %% plot response variability early, late
 iix = fixdurNI > thresh;
 
-lagix = lagsrast > 0 & lagsrast < 0.1;
+lagix = lagsrast > 0.04 & lagsrast < 0.1;
 w = hanning(sum(lagix));
 % w = w./sum(w);
 spE = squeeze(spksNI(iix,cc,lagix))*w;

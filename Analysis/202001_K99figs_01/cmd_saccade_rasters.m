@@ -21,12 +21,14 @@ end
 sessId = 57;
 [Exp, S] = io.dataFactoryGratingSubspace(sessId);
 %%
+
+
 figure,
 plot.raster(Exp.osp.st, Exp.osp.clu)
 
 %% get valid trials
 
-stimulusSet = 'Grating';
+stimulusSet = 'BackImage';
 validTrials = io.getValidTrials(Exp, stimulusSet);
 
 %%
