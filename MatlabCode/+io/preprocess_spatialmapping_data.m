@@ -35,6 +35,7 @@ ip.addParameter('eyePosExclusion', 400)
 ip.addParameter('verbose', true)
 ip.addParameter('eyePos', [])
 ip.addParameter('cids', [])
+ip.addParameter('frate', 120)
 ip.addParameter('validTrials', [])
 ip.parse(varargin{:});
 
@@ -103,12 +104,7 @@ end
 Robs = Robs(:,cids);
 NX = size(xpos,2);
 
-% convert to d.v.a.
 eyeDat = Exp.vpx.smo(:,1:3);
-% eyeDat = unique(Exp.vpx.raw(:,1:3), 'rows');
-% eyeDat(:,2) = (eyeDat(:,2) - cx)/(dx * Exp.S.pixPerDeg);
-% % eyeDat(:,3) = 1 - eyeDat(:,3);
-% eyeDat(:,3) = (eyeDat(:,3) - cy)/(dy * Exp.S.pixPerDeg);
 
 % convert to pixels
 if isempty(ip.Results.eyePos)
@@ -123,6 +119,7 @@ eyeDat(:,1) = Exp.vpx2ephys(eyeDat(:,1));
 % find index into frames
 [~, ~,id] = histcounts(frameTimes, eyeDat(:,1));
 eyeAtFrame = eyeDat(id,2:3);
+eyeLabels = Exp.vpx.Labels(id);
     
 if debug
     figure(1); clf
@@ -162,7 +159,27 @@ end
 
 Robs = Robs(valid,:);
 
+t_downsample = ceil(Exp.S.frameRate / ip.Results.frate);
+if t_downsample > 1
+	stimX = downsample_time(stimX, t_downsample) / t_downsample;
+	Robs = downsample_time(Robs, t_downsample);
+    frameTimes = downsample_time(frameTimes(valid), t_downsample) / t_downsample;
+    xpos =  downsample_time(xpos(valid), t_downsample) / t_downsample;
+    ypos =  downsample_time(ypos(valid), t_downsample) / t_downsample;
+    eyeAtFrame = downsample_time(eyeAtFrame(valid,:), t_downsample) / t_downsample;
+    eyeLabels = downsample_time(eyeLabels(valid), t_downsample) / t_downsample;
+    valid =  downsample_time(valid(valid), t_downsample) / t_downsample;
+else % apply valid
+    frameTimes = frameTimes(valid);
+    xpos =  xpos(valid);
+    ypos =  ypos(valid);
+    eyeAtFrame = eyeAtFrame(valid,:);
+    eyeLabels = eyeLabels(valid);
+    valid = valid(valid);
+end
+    
 opts.frameTimes = frameTimes;
+opts.eyeLabel = eyeLabels;
 opts.xax = xax;
 opts.yax = yax;
 opts.dims = dims;

@@ -43,6 +43,7 @@ for kChild = 1:length(figureChildren)
     if isfield(currentChildProperties, 'ActivePositionProperty')
         set(gcf,'currentaxes',figureChildren(kChild))
         set(gca, 'YColor', [0 0 0], 'XColor', [0 0 0], 'ZColor', [0 0 0], 'Layer', 'top')
+        set(gca, 'TickLength', [0.025 0.05])
         axisChildren = get(gca,'children');
         currentAxisProperties = get(gca);
         for ii = 1:numel(axisOptions)

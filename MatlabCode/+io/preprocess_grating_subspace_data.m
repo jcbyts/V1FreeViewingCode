@@ -34,6 +34,8 @@ ip.addParameter('num_lags_sac_post', 50)  % number of time lags to capture sacca
 ip.addParameter('num_lags_sac_pre', 50)  % number of time lags to capture saccade effect
 ip.addParameter('stim_field', 'Grating')
 ip.addParameter('trial_inds', [])
+ip.addParameter('eye_pos',[])
+ip.addParameter('force_hartley', false)
 ip.parse(varargin{:})
 
 stimField = ip.Results.stim_field;
@@ -47,6 +49,18 @@ opts.fs_spikes = opts.fs_stim;
 opts.up_samp_fac = 1;
 
 validTrials = io.getValidTrials(Exp, stimField);
+
+eyeDat = Exp.vpx.smo(:,1:3); % eye position
+% convert time to ephys units
+eyeDat(:,1) = Exp.vpx2ephys(eyeDat(:,1));
+
+% edge-case: sometimes high-res eye data wasn't collected for all trials
+% exclude trials without high-res eye data
+tstarts = Exp.ptb2Ephys(cellfun(@(x) x.STARTCLOCKTIME, Exp.D(validTrials)));
+goodix = tstarts > eyeDat(1,1) & tstarts < eyeDat(end,1);
+
+validTrials = validTrials(goodix);
+
 if numel(validTrials) < 2
     stim = [];
     spks = [];
@@ -82,6 +96,12 @@ frameTime = cell2mat(frameTime);
 ori = cell2mat(ori);
 cpd = cell2mat(cpd);
 
+if ip.Results.force_hartley
+    [ori,cpd] = pol2cart(ori/180*pi, cpd);
+    ori = round(ori, 1);
+    cpd = round(cpd, 1);
+end
+    
 NT = numel(frameTime);
 
 % --- concatenate different sessions
@@ -135,15 +155,34 @@ ind = sub2ind([nori ncpd], oriid(~blank), cpdid(~blank));
 
 binsize = 1./Exp.S.frameRate;
 
-
 ft = (1:NT)';
 stim{1} = full(sparse(ft(~blank), ind, ones(numel(ind),1), NT, nori*ncpd));
 spks = binNeuronSpikeTimesFast(Exp.osp, frameTime, binsize);
+
 
 % saccade times
 sacoffset = ip.Results.num_lags_sac_pre/opts.fs_stim;
 stim{2} = full(binTimesFast(Exp.slist(:,1)-sacoffset, frameTime, binsize));
 stim{3} = full(binTimesFast(Exp.slist(:,2), frameTime, binsize));
+
+
+% store eye position at frame
+
+
+% convert to pixels
+if isempty(ip.Results.eye_pos)
+    eyeDat(:,2:3) = eyeDat(:,2:3)*Exp.S.pixPerDeg;
+else
+    eyeDat(:,2:3) = ip.Results.eye_pos*Exp.S.pixPerDeg;
+end
+
+
+
+
+% find index into frames
+[~, ~,id] = histcounts(frameTime, eyeDat(:,1));
+eyeAtFrame = eyeDat(id,2:3);
+eyeLabels = Exp.vpx.Labels(id);
 
 
 t_downsample = ceil(Exp.S.frameRate / opts.fs_stim);
@@ -154,6 +193,8 @@ if t_downsample > 1
     frameTime = downsample(frameTime, t_downsample);
     ori = downsample(ori, t_downsample);
     cpd = downsample(cpd, t_downsample);
+    eyeAtFrame = downsample_time(eyeAtFrame(valid,:), t_downsample) / t_downsample;
+    eyeLabels = downsample_time(eyeLabels(valid), t_downsample) / t_downsample;
     spks = downsample_time(spks, t_downsample);
     frameTime = frameTime(1:size(spks,1));
     ori = ori(1:size(spks,1));
@@ -163,3 +204,5 @@ end
 opts.ori = ori;
 opts.cpd = cpd;
 opts.frameTime = frameTime;
+opts.eyeAtFrame = eyeAtFrame;
+opts.eyeLabel = eyeLabels;
