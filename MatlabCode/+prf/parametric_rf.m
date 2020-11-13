@@ -20,11 +20,16 @@ function lambda = parametric_rf(params, kxy)
 orientation = kxy(:,1);
 orientation(isnan(orientation)) = 0;
 
-orientationTuning = -params(1) * cos(orientation - params(2)).^2;
+% orientationTuning = params(1) * (cos(orientation - params(2)).^2 - 1);
 
-% spatialFrequency = sqrt(sum(kxy.^2,2));
+orientationTuning = (exp(params(1)*cos(orientation - params(2)).^2) - 1) / (exp(params(1)) - 1);
+
 spatialFrequency = kxy(:,2);
 
-spatialFrequencyTuning = (log(1 + spatialFrequency) - log(1 + params(3))).^2/2/params(4)^2;
+spatialFrequencyTuning = exp( - ( (log(1 + spatialFrequency) - log(1 + params(3))).^2/2/params(4)^2));
 
-lambda = params(5)*exp(orientationTuning - spatialFrequencyTuning) + params(6);
+lambda = params(6) + (params(5) - params(6)) * (orientationTuning .* spatialFrequencyTuning);
+% lambda = params(5)*exp(orientationTuning - spatialFrequencyTuning) + params(6);
+
+
+% y = minval + (maxval - minval) * (exp(k*(cos(x - pref)+1)) - 1) / (exp(2*k) - 1);
