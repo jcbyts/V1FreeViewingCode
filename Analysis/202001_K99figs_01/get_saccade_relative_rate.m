@@ -1,5 +1,10 @@
 function [mFR, mRR, mRRsd, lags, spks, fixdur, valid_saccades] = get_saccade_relative_rate(Exp, S,validTrials, varargin)
-% [RR, mRR, mRRsd] = get_saccade_relative_rate(Exp, validTrials)
+% [mFR, mRR, mRRsd, lags, spks, fixdur, valid_saccades] = get_saccade_relative_rate(Exp, S,validTrials, varargin)
+% optional arguments:
+% 'binsize'
+% 'smoothing'
+% 'win'
+% 'sacexclusion'
 
 ip = inputParser();
 ip.addOptional('binsize', 5e-3)
@@ -8,8 +13,14 @@ ip.addOptional('win', [-.1 .5])
 ip.addOptional('sacexclusion', 0.25)
 ip.parse(varargin{:})
 
-tstart = Exp.ptb2Ephys(cellfun(@(x) x.STARTCLOCKTIME, Exp.D(validTrials)));
-tstop = Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, Exp.D(validTrials)));
+
+if size(validTrials,2)==2 % is a list of starts and stops
+    tstart = validTrials(:,1);
+    tstop = validTrials(:,2);
+else
+    tstart = Exp.ptb2Ephys(cellfun(@(x) x.STARTCLOCKTIME, Exp.D(validTrials)));
+    tstop = Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, Exp.D(validTrials)));
+end
 
 thresh = ip.Results.sacexclusion;
 
@@ -45,16 +56,10 @@ end
 
 mFR = squeeze(mean(spks(fixdur > thresh,:,:)))'/binsize;
 mFR = filter(ones(5,1)/5, 1, mFR);
-% mTot = full(mean(Y(:,S.cids)))/binsize;
+
 mTot = mean(mFR(lags < .250 & lags > .1,:));
 mTot(mTot < 1) = nan;
-% plot(lags, mFR./mTot); hold on
-% plot(thresh*[1 1], ylim, 'k--')
-% plot(xlim, [1 1], 'k--')
-% xlabel('Time from fixation onset')
-% ylabel('Relative Rate')
-% clf
+
 RR = mFR./mTot;
 mRR = nanmean(RR,2);
 mRRsd = nanstd(mFR./mTot,[],2)/sqrt(NC);
-% plot.errorbarFill(lags, mRR, mRRsd)

@@ -12,7 +12,6 @@ switch user
         addpath(genpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\L1General'))
         addpath(genpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\minFunc_2012'))
         addpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\lowrankrgc')
-        setpaths_lowrankRGC
     case 'jakelaptop'
         addpath ~/Dropbox/MatlabCode/Repos/NIMclass/
         addpath ~/Dropbox/MatlabCode/Repos/sNIMclass/
@@ -50,8 +49,6 @@ Stim = abs(Stim);
 StimGC = abs(StimGC);
 
 %% output
-
-
 
 for i = 1:size(Stim,3)
     figure(1); clf
@@ -178,9 +175,28 @@ saveas(gcf, fullfile(figDir, 'fig04_binned_course_ensemble.png'))
 
 %% Loop over examples, get Srf
 
+D = struct();
+% details for example sessions
+
+D.('ellie_20190107').flipx = 1;
+D.('ellie_20170731').flipx = 0;
+D.('logan_20200304').flipx = 0;
+
+D.('ellie_20190107').spike_sorting = 'kilowf';
+D.('ellie_20170731').spike_sorting = 'jrclustwf';
+D.('logan_20200304').spike_sorting = 'jrclustwf';
+
+D.('ellie_20190107').example_unit = 11; %1;
+D.('ellie_20170731').example_unit = 29;
+D.('logan_20200304').example_unit = 9; %9;
+
+
+BIGROI = [-14 -10 14 10];
+
 % exnames = fieldnames(D);
 clear Srf
 sesslist = io.dataFactoryGratingSubspace;
+sesslist = sesslist(1:57); % exclude monash sessions
 
 if exist('Srf.mat', 'file')==2
     disp('Loading')
@@ -190,67 +206,237 @@ else
     for iEx = 1:numel(sesslist)
         
         try
-            Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', 'kilowf');
+            try % use JRCLUST sorts if they exist
+                sorter = 'jrclustwf';
+                Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
+            catch % otherwise, use Kilosort
+                sorter = 'kilowf';
+                Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
+            end
             
-            Srf(iEx) = spatial_RF_single_session(Exp, 'plot', true, 'ROI', [-14 -10 14 10], 'numspace', 20);
+            Srf(iEx) = spatial_RF_single_session(Exp, 'plot', true, 'ROI', BIGROI, 'numspace', 20);
+            Srf(iEx).sorter = sorter;
         catch
             disp('ERROR ERROR')
         end
         
     end
+    save('Srf.mat', '-v7.3', 'Srf')
+end
+
+%% 
+Sgt = [];
+if exist('Sgt.mat', 'file')==2
+    disp('Loading')
+    load Sgt.mat
+else
+    
+    for iEx = 1:numel(sesslist)
+%         try
+            
+            try % use JRCLUST sorts if they exist
+                sorter = 'jrclustwf';
+                Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
+            catch % otherwise, use Kilosort
+                sorter = 'kilowf';
+                Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
+            end
+            
+            evalc('rfdeets = grating_RF_single_session(Exp, ''plot'', false);');
+            for cc = 1:numel(rfdeets)
+                rfdeets(cc).sorter = sorter;
+            end
+            Sgt(iEx).rfs = rfdeets;
+            
+%         catch
+%             disp('ERROR ERROR')
+%         end
+    end
+    
+    save('Sgt.mat', '-v7.3', 'Sgt')
 end
 
 %% Example units
 
-D = struct();
-% details for example sessions
-D.('ellie_20190107').ROI = [-14.0, -3.5, -6.5, 3.5]; % peripheral
-D.('ellie_20170731').ROI = [-1.0, -3, 3, .5]; % perifoveal
-D.('logan_20200304').ROI = [-.5, -1.5, 1.5, 0.5];
-
-D.('ellie_20190107').binSize = .5;
-D.('ellie_20170731').binSize = .25;
-D.('logan_20200304').binSize = .1;
-
-D.('ellie_20190107').spike_sorting = 'kilowf';
-D.('ellie_20170731').spike_sorting = 'jrclustwf';
-D.('logan_20200304').spike_sorting = 'jrclustwf';
-
-D.('ellie_20190107').example_unit = 1;
-D.('ellie_20170731').example_unit = 29;
-D.('logan_20200304').example_unit = 9;
-
-
 exnames = fieldnames(D);
 
+% single units
+D.('ellie_20190107').example_unit = 1;% 8, 10
+D.('ellie_20170731').example_unit = D.('ellie_20170731').example_unit + 1; % 2, 11, 30
+D.('logan_20200304').example_unit = 9; % 3, 16, 25
+
+ex = 2;
+
+iEx = find(strcmp(sesslist, exnames{ex}));
+
+cc = D.(sesslist{iEx}).example_unit;
+if cc > numel(Srf(iEx).fine)
+    cc = 1;
+end
+cc
+
+ppd = Srf(iEx).coarse.details(cc).xax(end)/BIGROI(3);
+figure(ex); clf
+subplot(311, 'align')
+Imap = Srf(iEx).coarse.details(cc).srf;
+Imap = Imap / max(Imap(:));
+
+xax = Srf(iEx).coarse.details(cc).xax/ppd;
+yax = Srf(iEx).coarse.details(cc).yax/ppd;
+
+if D.(sesslist{iEx}).flipx
+    xax = -xax;
+end
+
+imagesc(xax, yax, Imap)
+colormap(plot.viridis)
+axis xy
+hold on
+
+if ~isnan(Srf(iEx).fine(cc).ROI)
+    ROI = Srf(iEx).fine(cc).ROI;
+    if D.(sesslist{iEx}).flipx
+        ROI([1 3]) = sort(-ROI([1 3]));
+    end
+    
+    plot(ROI([1 3]), ROI([2 2]), 'r', 'Linewidth', 1)
+    plot(ROI([1 3]), ROI([4 4]), 'r', 'Linewidth', 1)
+    plot(ROI([1 1]), ROI([2 4]), 'r', 'Linewidth', 1)
+    plot(ROI([3 3]), ROI([2 4]), 'r', 'Linewidth', 1)
+    xlabel('Azimuth (d.v.a)')
+    ylabel('Elevation (d.v.a)')
+    
+    subplot(312, 'align')
+    Imap = Srf(iEx).fine(cc).srf;
+    Imap = Imap / max(Imap(:));
+    xax = Srf(iEx).fine(cc).xax;
+    yax = Srf(iEx).fine(cc).yax;
+    mu = Srf(iEx).fine(cc).gfit.mu;
+    C = Srf(iEx).fine(cc).gfit.cov;
+    if D.(sesslist{iEx}).flipx
+        xax = -xax;
+        mu(1) = -mu(1);
+        C([2 3]) = -C([2 3]);
+    end
+    
+    imagesc(xax, yax, Imap)
+    
+    hold on
+    
+    plot.plotellipse(mu, C, 2, 'r', 'Linewidth', 2);
+    axis xy
+    xlabel('Azimuth (d.v.a)')
+    ylabel('Elevation (d.v.a)')
+    
+    subplot(313, 'align')
+    
+    [~, peak_id] = max(Srf(iEx).fine(cc).srf(:));
+    [~, min_id] = min(Srf(iEx).fine(cc).srf(:));
+    sta = Srf(iEx).fine(cc).sta / max(Srf(iEx).fine(cc).sta(:));
+    tk = sta(:,peak_id);
+    tmin = sta(:,min_id);
+    
+%     [u,s,v] = svd(Srf(iEx).fine(cc).sta);
+%     tk = u(:,1);
+%     tk = tk*sign(sum(tk));
+%     
+    tk = flipud(tk);
+    tmin = flipud(tmin);
+    plot((1:numel(tk))*(1e3/120), tk, '-ok', 'MarkerFaceColor', 'k', 'MarkerSize', 2); hold on
+    plot((1:numel(tk))*(1e3/120), tmin, '-o', 'Color', .5*[1 1 1], 'MarkerFaceColor', .5*[1 1 1], 'MarkerSize', 2);
+    xlabel('Lags (ms)')
+    
+    plot.fixfigure(gcf, 7, [1 3], 'OffsetAxes', false, 'FontName', 'Arial');
+    
+    colormap(plot.viridis)
+    exname = sesslist{iEx};
+    saveas(gcf, fullfile(figDir, sprintf('fig04_SRF_%s_%d.pdf', exname, cc)));
+end
+
+
+%% grating RF
+
 iEx = 1;
-ex = find(strcmp(sesslist, exnames{iEx}));
-
-ex = 25;
 cc = 1;
+I = Sgt(iEx).rfs(cc).srf;
+
+subplot(1,2,1)
+imagesc(I)
+
+subplot(1,2,2)
+imagesc([I; rot90(I, 2)])
+
+% I = zeros(size(I));
+
+% I = [rot90(I, 2) I]; % mirror symmetric
+I = [I; rot90(I, 2)];
+yax = [-flipud(Sgt(iEx).rfs(cc).cpds); Sgt(iEx).rfs(cc).cpds];
+xax = Sgt(iEx).rfs(cc).oris;
+
 figure(1); clf
-imagesc(Srf(ex).fine(cc).xax, Srf(ex).fine(cc).yax, Srf(ex).fine(cc).srf); hold on
-mu = Srf(ex).fine(cc).gfit.mu;
-C = Srf(ex).fine(cc).gfit.cov;
+[xx,yy] = meshgrid(xax, yax);
+[ori, cpd] = cart2pol(xx,yy);
 
-plot.plotellipse(mu, C, 1, 'r');
+iix = ori==0 | (ori-pi).^2 < .001;
+iix = iix & (cpd - 4.0).^2 < 0.001;
+% I(iix) = 1;
 
-[U,S,~] = svd(Srf(ex).fine(cc).gfit.cov);
-r = mean(abs(U*(S)*[1; 0]));
 
+% contourf(cos(ori - pi/2)); colormap gray
+subplot(121)
+imagesc(xax, yax, I, [-1 1]);
+%%
+contourf(xx, yy, I, 'Linestyle', 'none')
+
+params = [Sgt(iEx).rfs(cc).rffit.oriBandwidth/180*pi, ...
+    Sgt(iEx).rfs(cc).rffit.oriPref/180*pi, ...
+    Sgt(iEx).rfs(cc).rffit.sfPref,...
+    Sgt(iEx).rfs(cc).rffit.sfBandwidth,...
+    Sgt(iEx).rfs(cc).rffit.amp, ...
+    Sgt(iEx).rfs(cc).rffit.base];
+Ifit = prf.parametric_rf(params, [ori(:), cpd(:)]);
+
+% hold on
+subplot(122)
+contourf(xx,yy,reshape(Ifit, size(I)), 'r', 'Linestyle', 'none')
+% scatteredInterpolant(xx(:), yy(:), 100*ones(size(xx(:))), I(:) + min(I(:)))
+
+
+
+%%
+N = 150;
+maxr = 20;
+theta = linspace(0, 2*pi+.1, N+1);
+r = linspace(0, maxr, N+1);
+theta = theta(1:end-1);  %throw away 2*pi since it duplicates 0
+r = r(2:end);            %throw away 0 since that's at the center
+[THETA, R] = ndgrid(theta, r);
+Z = sin(THETA*10).*R;
+[X, Y] = pol2cart(THETA,R);
+surf(X, Y, Z, 'Linestyle', 'none');
+view(0,90)
 %% Loop over SRF struct and get relevant statistics
 w = []; % crude area computation
 r2 = []; % r-squared from gaussian fit to RF
 ar = []; % sqrt area (computed from gaussian fit)
 ar2 = []; % double check
 ecc = []; % eccentricity
+amp = []; % gaussian fit amplitude
+sfPref = []; % spatial frequency preference
+gtr2 = []; % r-squared of parametric fit to frequecy RF
+rfMad = [];
 
 for ex = 1:numel(Srf)
+    if numel(Sgt(ex).rfs) ~= numel(Srf(ex).fine)
+        continue
+    end
+    
     for cc = 1:numel(Srf(ex).fine)
         
         if isfield(Srf(ex).fine(cc).gfit, 'r2') % fit was successful
             
             r2 = [r2; Srf(ex).fine(cc).gfit.r2]; % store r-squared
+            amp = [amp; Srf(ex).fine(cc).gfit.amp]; % store amplitude
             
             mu = Srf(ex).fine(cc).gfit.mu;
             C = Srf(ex).fine(cc).gfit.cov; % covariance matrix
@@ -271,11 +457,27 @@ for ex = 1:numel(Srf)
             ar2 = [ar2; sqrt(prod(2*abs(diag(U*(S)))))];
             ecc = [ecc; hypot(mu(1), mu(2))];
             
+            try
+                sfPref = [sfPref; Sgt(ex).rfs(cc).rffit.sfPref];
+                gtr2 = [gtr2; Sgt(ex).rfs(cc).rffit.r2];
+                
+                I = Sgt(ex).rfs(cc).sta;
+                d = abs(I - median(I(:))); % deviations
+                mad = median(d(:)); % median absolute deviation
+                rfMad = [rfMad; mean(d(:) > thresh*mad)];
+            catch
+                sfPref = [sfPref; nan];
+                gtr2 = [gtr2; nan];
+                rfMad = [rfMad; nan];
+            end
         else
             r2 = [r2; nan];
             ar = [ar; nan];
             ar2 = [ar2; nan];
             ecc = [ecc; nan];
+            amp = [amp; nan];
+            sfPref = [sfPref; nan];
+            gtr2 = [gtr2; nan];
         end
 
     I = (Srf(ex).fine(cc).srf - Srf(ex).fine(cc).gfit.base) / (Srf(ex).fine(cc).gfit.amp - Srf(ex).fine(cc).gfit.base);
@@ -286,22 +488,60 @@ for ex = 1:numel(Srf)
     else
         width = sqrt(sz(2))*Srf(ex).fine(cc).binSize;
         
-%         figure(1); clf
-%         subplot(1,2,1)
-%         imagesc(Srf(ex).fine(cc).xax, Srf(ex).fine(cc).yax,I>.5);
-%         hold on
-%         mu = Srf(ex).fine(cc).gfit.mu;
-%         C = Srf(ex).fine(cc).gfit.cov;
-%         plot.plotellipse(mu, C, 1, 'r');
-%         title(r)
-%         subplot(1,2,2)
-%         [xx,yy] = meshgrid(Srf(ex).fine(cc).xax, Srf(ex).fine(cc).yax);
-%         I2 = mvnpdf([xx(:) yy(:)], mu, C);
-%         I2 = (I2 - min(I2(:))) / (max(I2(:))-min(I2(:)));
-%         plot(I(:)); hold on
-%         plot(I2(:)); 
-%         title(Srf(ex).fine(cc).gfit.r2)
-%         pause
+        figure(1); clf 
+        subplot(2,2,1) 
+        imagesc(Srf(ex).fine(cc).xax, Srf(ex).fine(cc).yax,I>.5);
+        hold on
+        mu = Srf(ex).fine(cc).gfit.mu;
+        C = Srf(ex).fine(cc).gfit.cov;
+        plot.plotellipse(mu, C, 1, 'r');
+
+        subplot(2,2,2)
+        [xx,yy] = meshgrid(Srf(ex).fine(cc).xax, Srf(ex).fine(cc).yax);
+        I2 = mvnpdf([xx(:) yy(:)], mu, C);
+        I2 = (I2 - min(I2(:))) / (max(I2(:))-min(I2(:)));
+        plot(I(:)); hold on
+        plot(I2(:)); 
+        title(Srf(ex).fine(cc).gfit.r2)
+        
+        subplot(2,2,3)
+        I = Sgt(ex).rfs(cc).srf;
+        if any(Sgt(ex).rfs(cc).oris>45) % it's orientation / sf, not hartley
+            xax = Sgt(ex).rfs(cc).cpds;
+            isHartley = false;
+        else
+            isHartley = true;
+            xax = [flipud(-Sgt(ex).rfs(cc).cpds); Sgt(ex).rfs(cc).cpds];
+        end
+        
+        if isHartley
+            imagesc(Sgt(ex).rfs(cc).oris, xax, [rot90(I,2); I]); axis xy
+        else
+            imagesc(Sgt(ex).rfs(cc).oris, Sgt(ex).rfs(cc).cpds, I); axis xy
+        end
+        
+
+        hold on
+        
+        [ori,cpd] = meshgrid(Sgt(ex).rfs(cc).oris, xax);
+        if isHartley
+            [ori, cpd] = cart2pol(ori,cpd);
+        end
+
+        params = [Sgt(ex).rfs(cc).rffit.oriBandwidth/180*pi, ...
+            Sgt(ex).rfs(cc).rffit.oriPref/180*pi, ...
+            Sgt(ex).rfs(cc).rffit.sfPref,...
+            Sgt(ex).rfs(cc).rffit.sfBandwidth,...
+            Sgt(ex).rfs(cc).rffit.amp, ...
+            Sgt(ex).rfs(cc).rffit.base];
+        Ifit = prf.parametric_rf(params, [ori(:), cpd(:)]);
+        
+        subplot(2,2,4)
+        imagesc(Sgt(ex).rfs(cc).oris, xax, reshape(Ifit, size(ori))); axis xy
+
+        %         [kx, ky] = pol2cart(Sgt(ex).rfs(cc).rffit.oriPref/180*pi);
+        
+        pause
     end
     w = [w; width];
     end
@@ -311,16 +551,30 @@ figure(1); clf
 plot(ar, ar2, '.'); hold on
 plot(xlim, xlim, 'k')
 
+
+%% 
+figure(1); clf
+ix = (r2 > .5 & gtr2>.5);
+plot(ecc(ix), sfPref(ix), '.')
+% set(gca, 'xscale', 'log', 'yscale', 'log')
+xlabel('Eccentricity (d.v.a)')
+ylabel('Spatial Frequency Preference ')
+ylim([0.1 10])
+xlim([0 15])
+
+% clf
+% plot(sfPref(ix), ar(ix), '.')
 %%
 eccx = .1:.1:20;
 rosa_fit = exp( -0.764 + 0.495 * log(eccx) + 0.050 * log(eccx) .^2);
 
 % gaussian must have amplitude that isn't absurd and rsquared above .5 to interpret the parameters
 thresh = .5; % only include reasonable fits
-ix = amp > .5 & amp < 1.5 & r2 > thresh; 
+ix = amp > .85 & amp < 1.25 & r2 > thresh & gtr2 > thresh; 
 
 figure(1); clf
-plot(ecc(ix), ar(ix), '.')
+cmap = lines;
+plot(ecc(ix), ar(ix), 'wo', 'MarkerFaceColor', cmap(1,:), 'MarkerSize', 2)
 
 x = ecc(ix);
 y = ar(ix);
@@ -341,15 +595,21 @@ xlabel('Eccentricity (d.v.a)')
 ylabel('RF size (d.v.a)')
 set(gcf, 'Color', 'w')
 legend({'Data', 'Fit', 'Rosa 1997'}, 'Box', 'off')
+set(gca, 'XTick', [.1 1 10], 'YTick', [.1 1 10])
 xt = get(gca, 'XTick');
 set(gca, 'XTickLabel', xt)
 yt = get(gca, 'YTick');
 set(gca, 'YTickLabel', yt)
 
-plot.fixfigure(gcf, 7, [2 2], 'FontName', 'Arial', ...
+plot.fixfigure(gcf, 7, [1.75 2.5], 'FontName', 'Arial', ...
     'LineWidth',1, 'OffsetAxes', false);
 
 saveas(gcf, fullfile(figDir, 'fig04_ecc_vs_RFsize.pdf'))
+
+%%
+
+
+
 
 %% plot individual unit
 
@@ -363,7 +623,7 @@ if cc > NC
 end
 nframes = size(Srf(iEx).fine(cc).sta, 1);
 
-ppd = Srf(iEx).coarse.details(cc).xax(end)/14;
+ppd = Srf(iEx).coarse.details(cc).xax(end)/BIGROI(3);
 figure(1); clf
 subplot(311, 'align')
 Imap = Srf(iEx).coarse.details(cc).srf;
