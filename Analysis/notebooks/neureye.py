@@ -2,8 +2,10 @@
 import sys,os
 sys.path.insert(0, '/home/jake/Data/Repos/')
 
-import Utils as U
-import gratings as gt
+# import Utils as U
+# import gratings as gt
+import V1FreeViewingCode.Analysis.notebooks.Utils as U
+import V1FreeViewingCode.Analysis.notebooks.gratings as gt
 
 import warnings; warnings.simplefilter('ignore')
 
@@ -25,7 +27,7 @@ import NDN3.Utils.DanUtils as DU
 
 from scipy.signal import convolve2d
 from tqdm import tqdm # progress bar
-from scipy.interpolate import LinearNDInterpolator,interp2d
+from scipy.interpolate import LinearNDInterpolator,interp2d,NearestNDInterpolator
 
 
 def loadmat(fname):
@@ -330,11 +332,139 @@ def LLinterpolate(LLspace1):
                 LLspace3[xx,yy,:,:] += wsp*LLsmoother(LLspace1[xx,yy+1,:,:],2)
     return LLspace3
 
+def prep_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
+    Cindx=None,cids=None):
+    
+    NX = dims[0]
+    NY = dims[1]
+    
+    NT,NC = Robs.shape
+    
+    if valid is None:
+        valid = np.arange(0, NT, 1)
+    
+    # create time-embedded stimulus
+    Xstim, rinds = create_time_embedding_valid(Stim, [num_lags, NX, NY], valid)
+    Rvalid = deepcopy(Robs[rinds,:])
+    
+    NTv = Rvalid.shape[0]
+    print('%d valid samples of %d possible' %(NTv, NT))
+    
+    stas = Xstim.T@(Rvalid - np.average(Rvalid, axis=0))
+    stas = np.reshape(stas, [NX*NY,num_lags, NC])/NTv
+    
+    if plot:
+        plt.figure(figsize=(10,15))
+        sx,sy = U.get_subplot_dims(NC)
+    
+    mu = np.zeros(NC)
+    for cc in range(NC):
+        if plot:
+            plt.subplot(sx, sy, cc+1)
+            plt.plot(np.abs(stas[:,:,cc]).T, color=[.5,.5,.5])
+        tlevel = np.median(np.abs(stas[:,:,cc]-np.average(stas[:,:,cc])))*4
+        mu[cc] = np.average(np.abs(stas[:,:,cc])>tlevel)
+        
+        if plot:
+            plt.axhline(tlevel, color='k')
+            plt.title(cc)
+    
+    # threshold good STAS
+    thresh = 0.01
+    if plot:
+        plt.figure()
+        plt.plot(mu, '-o')
+        plt.axhline(thresh, color='k')
+        plt.show()
+
+    if cids is None:       
+        cids = np.where(mu > thresh)[0] # units to analyze
+        print("found %d good STAs" %len(cids))
+    
+    if plot:
+        plt.figure(figsize=(10,15))
+        for cc in cids:
+            plt.subplot(sx,sy,cc+1)
+            bestlag = np.argmax(np.max(abs(stas[:,:,cc]),axis=0))
+            plt.imshow(np.reshape(stas[:,bestlag,cc], (NY,NX)))
+            plt.title(cc)
+    
+    # index into "good" units
+    Rvalid = Rvalid[:,cids]
+    NC = Rvalid.shape[1]
+    stas = stas[:,:,cids]
+
+    if Cindx is None:
+        print("Getting Crop Index")
+        # Crop stimulus to center around RFs
+        sumdensity = np.zeros([NX*NY])
+        for cc in range(NC):
+            bestlag = np.argmax(np.max(abs(stas[:,:,cc]),axis=0))
+            sumdensity += stas[:,bestlag,cc]**2
+    
+        if plot:
+            plt.figure()
+            plt.imshow(np.reshape(sumdensity, [NY,NX]))
+            plt.title("Sum Density STA")
+
+        # get Crop indices (TODO: debug)
+        sumdensity = (sumdensity - np.min(sumdensity)) / (np.max(sumdensity) - np.min(sumdensity))
+        I = np.reshape(sumdensity, [NY,NX])>.3
+        xinds = np.where(np.sum(I, axis=0)>0)[0]
+        yinds = np.where(np.sum(I, axis=1)>0)[0]
+
+        NX2 = np.maximum(len(xinds), len(yinds))
+        x0 = np.min(xinds)
+        y0 = np.min(yinds)
+    
+        xinds = range(x0, x0+NX2)
+        yinds = range(y0,y0+NX2)
+    
+        Cindx = crop_indx(NX, xinds,yinds)
+        
+        if plot:
+            plt.figure()
+            plt.imshow(np.reshape(sumdensity[Cindx],[NX2,NX2]))
+            plt.title('Cropped')
+            plt.show()
+    
+    NX2 = np.sqrt(len(Cindx)).astype(int)
+    
+    # make new cropped stimulus
+    Xstim, rinds = create_time_embedding_valid(Stim[:,Cindx], [num_lags, NX2, NX2], valid)
+
+    # index into Robs
+    Rvalid = deepcopy(Robs[rinds,:])
+    Rvalid = Rvalid[:,cids]
+    Rvalid = NDNutils.shift_mat_zpad(Rvalid,-1,dim=0) # get rid of first lag
+
+    NC = Rvalid.shape[1] # new number of units
+    NT = Rvalid.shape[0]
+    print('%d valid samples of %d possible' %(NT, Stim.shape[0]))
+    print('%d good units' %NC)
+    
+    # double-check STAS work with cropped stimulus
+    stas = Xstim.T@Rvalid
+    stas = np.reshape(stas, [NX2*NX2, num_lags, NC])/NT
+    
+    if plot:
+        plt.figure(figsize=(10,15))
+        for cc in range(NC):
+            plt.subplot(sx,sy,cc+1)
+            bestlag = np.argmax(np.max(abs(stas[:,:,cc]),axis=0))
+            plt.imshow(np.reshape(stas[:,bestlag,cc], (NX2,NX2)))
+            plt.title(cc)
+        plt.show()
+    
+
+    dims = (num_lags, NX2, NX2)
+    return Xstim, Rvalid, dims, Cindx, cids
+
 
 def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
             XTreg=0.05,L1reg=5e-3,MIreg=0.1,MSCreg=10.0,Greg=0.1,Mreg=1e-4,
-            num_subs=36,num_hid=24,num_tkern=None,Cindx=None, base_mod=None, cids=None,
-            autoencoder=False):
+            num_subs=36,num_hid=24,num_tkern=None,Cindx=None, base_mod=None,
+            cids=None, autoencoder=False):
 
     NX = dims[0]
     NY = dims[1]
@@ -363,7 +493,7 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
         if plot:
             plt.subplot(sx, sy, cc+1)
             plt.plot(np.abs(stas[:,:,cc]).T, color=[.5,.5,.5])
-        tlevel = np.median(np.abs(stas[:,:,cc]-np.average(stas[:,:,cc])))*6
+        tlevel = np.median(np.abs(stas[:,:,cc]-np.average(stas[:,:,cc])))*4
         mu[cc] = np.average(np.abs(stas[:,:,cc])>tlevel)
         
         if plot:
@@ -371,15 +501,16 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
             plt.title(cc)
     
     # threshold good STAS
-    thresh = 0.001
+    thresh = 0.01
     if plot:
         plt.figure()
         plt.plot(mu, '-o')
         plt.axhline(thresh, color='k')
         plt.show()
 
-    if cids is None:
+    if cids is None:       
         cids = np.where(mu > thresh)[0] # units to analyze
+        print("found %d good STAs" %len(cids))
     
     if plot:
         plt.figure(figsize=(10,15))
@@ -395,6 +526,7 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
     stas = stas[:,:,cids]
 
     if Cindx is None:
+        print("Getting Crop Index")
         # Crop stimulus to center around RFs
         sumdensity = np.zeros([NX*NY])
         for cc in range(NC):
@@ -458,19 +590,30 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
     Ui, Xi = NDNutils.generate_xv_folds(NT)
     
     # fit SCAFFOLD MODEL
-    
+    try:
+        if len(XTreg)==2:
+            d2t = XTreg[0]
+            d2x = XTreg[1]
+        else:
+            d2t = XTreg[0]
+            d2x = deepcopy(d2t)
+    except TypeError:
+        d2t = deepcopy(XTreg)
+        d2x = deepcopy(XTreg)
+
     # optimizer parameters
     adam_params = U.def_adam_params()
     
     if not base_mod is None:
         side2b = base_mod.copy_model()
-        side2b.set_regularization('d2xt', XTreg, layer_target=0)
+        side2b.set_regularization('d2t', d2t, layer_target=0)
+        side2b.set_regularization('d2x', d2x, layer_target=0)
         side2b.set_regularization('glocal', Greg, layer_target=0)
         side2b.set_regularization('l1', L1reg, layer_target=0)
         side2b.set_regularization('max', MIreg, ffnet_target=0, layer_target=1)
         side2b.set_regularization('max', MSCreg, ffnet_target=1, layer_target=0)
 
-        if len(side2b.networks):
+        if len(side2b.networks)==4: # includes autoencoder network
             input_data = [Xstim, Rvalid]
         else:
             input_data = Xstim
@@ -486,17 +629,19 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
             ndn_par = NDNutils.ffnetwork_params( 
                 input_dims=[1,NX2,NX2, num_lags],
                 layer_sizes=[num_tkern, num_subs, num_hid], 
-                layer_types=['conv', 'normal','normal'], ei_layers=[None,num_subs//2, num_hid//2],
+                layer_types=['conv', 'normal','normal'],
+                ei_layers=[None, num_subs//2, num_hid//2],
                 conv_filter_widths=[1],
-                normalization=[1, 1,1], act_funcs=['lin', 'relu', 'relu'], verbose=True,
+                normalization=[1, 1, 1], act_funcs=['lin', 'relu', 'relu'], verbose=True,
                 reg_list={'d2t':[1e-3],'d2x':[None, XTreg], 'l1':[L1reg0, L1reg0], 'glocal':[Greg0, Greg0]})
         else:
             ndn_par = NDNutils.ffnetwork_params( 
                 input_dims=[1,NX2,NX2, num_lags],
                 layer_sizes=[num_subs, num_hid], 
-                layer_types=['normal','normal'], ei_layers=[num_subs//2, num_hid//2],
+                layer_types=['normal','normal'],
+                ei_layers=[num_subs//2, num_hid//2],
                 normalization=[1, 1], act_funcs=['relu', 'relu'], verbose=True,
-                reg_list={'d2xt':[XTreg], 'l1':[L1reg0, L1reg0], 'glocal':[Greg0]})
+                reg_list={'d2t':[d2t], 'd2x':[d2x], 'l1':[L1reg0, L1reg0], 'glocal':[Greg0]})
 
 
         side_par = NDNutils.ffnetwork_params( 
@@ -504,9 +649,9 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
             layer_types=['normal'], normalization=[-1], act_funcs=['softplus'], verbose=True,
             reg_list={'max':[Mreg0]})
 
-        side_par['pos_constraints']=True
+        side_par['pos_constraints']=True # ensures Exc and Inh mean something
 
-        if autoencoder:
+        if autoencoder: # capturea additional variability using autoencoder
             auto_par = NDNutils.ffnetwork_params(input_dims=[1, NC, 1],
                 xstim_n=[1],
                 layer_sizes=[2, 1, NC],
@@ -515,7 +660,7 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
                 conv_filter_widths=[None, 1, None],
                 act_funcs=['relu', 'lin', 'lin'],
                 normalization=[1, 1, 0],
-                reg_list={'d2t':[None, 1e-5, None]}
+                reg_list={'d2t':[None, 1e-1, None]}
                 )
 
             add_par = NDNutils.ffnetwork_params(
@@ -527,7 +672,7 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
 
             # set output regularization on the latent
             side2.batch_size = adam_params['batch_size']
-            side2.initialize_output_reg(network_target=2,layer_target=1, reg_vals={'d2t': 1e-1})
+            side2.initialize_output_reg(network_target=2, layer_target=1, reg_vals={'d2t': 1e-1})
 
             input_data = [Xstim, Rvalid]
 
@@ -545,7 +690,6 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
         side2.set_regularization('max', MSCreg, ffnet_target=1, layer_target=0)
 
         side2b = side2.copy_model()
-
     
 
     _ = side2b.train(input_data=input_data, output_data=Rvalid, train_indxs=Ui, test_indxs=Xi, silent=False, 
@@ -560,6 +704,61 @@ def get_stim_model(Stim, Robs, dims, valid=None, num_lags=10, plot=True,
             
     return side2b, Xstim, Rvalid, rinds, cids, Cindx
 
+def make_model_convolutional(base_mod, dims):
+    
+    NX = dims[0]
+    NY = dims[1]
+    NC = base_mod.output_sizes[0]
+
+    # find networks that process the stimulus
+    stim_nets = [nn for nn in range(len(base_mod.network_list)) if base_mod.network_list[nn]['xstim_n'] is not None]
+
+    par = []
+
+    for ss in stim_nets:
+
+        netlist_old = deepcopy(base_mod.network_list)[ss]
+
+        # convert stimulus network params into a convolutional network
+        conv_par = deepcopy(base_mod.network_list[ss])
+        conv_par['input_dims'] = [1, NX, NY] + [conv_par['input_dims'][-1]]
+        conv_par['layer_types']=['conv']
+        conv_par['conv_filter_widths'] = [netlist_old['input_dims'][1]]
+
+        par.append(deepcopy(conv_par))
+
+    out_net = deepcopy(base_mod.network_list[-1])
+    if out_net['layer_types'][0]=='add':
+        add_par = NDNutils.ffnetwork_params(
+            xstim_n=None, ffnet_n=stim_nets, layer_sizes=[NX*NY*NC],
+            layer_types=['add'], act_funcs=out_net['activation_funcs'])
+        par.append(add_par)    
+
+    elif out_net['layer_types'][0]=='side':
+        out_net['layer_types'] = ['conv']
+        out_net['conv_filter_widths'] = [1]
+        par.append(out_net)
+
+    cell_shift_mod = NDN.NDN(par)
+
+
+    num_space = np.prod(cell_shift_mod.input_sizes[0][:-1])
+
+    # copy stim networks verbatim (only thing diff is output is a convolution)
+    for ff in stim_nets:
+        for nl in range(len(cell_shift_mod.networks[ff].layers)):
+            cell_shift_mod.networks[ff].layers[nl].weights = deepcopy(base_mod.networks[ff].layers[nl].weights)
+            cell_shift_mod.networks[ff].layers[nl].biases = deepcopy(base_mod.networks[ff].layers[nl].biases)
+
+    if base_mod.networks[-1].layers[0].weights.shape[0] == len(stim_nets):
+        cell_shift_mod.networks[-1].layers[0].weights = conv_expand(deepcopy(base_mod.networks[-1].layers[0].weights), num_space )
+        cell_shift_mod.networks[-1].layers[0].biases = conv_expand(deepcopy(base_mod.networks[-1].layers[0].biases), num_space )
+    else: # convolutional output instead of add layer    
+        # copy output weights
+        cell_shift_mod.networks[-1].layers[0].weights = deepcopy(base_mod.networks[1].layers[0].weights)
+        cell_shift_mod.networks[-1].layers[0].biases = deepcopy(base_mod.networks[1].layers[0].biases)
+
+    return cell_shift_mod
 
 def get_corr_grid(base_mod, Stim, Robs, dims, cids, eyeAtFrame, valid, valid_eye_rad=5.2, Erad=0.75, Npos=25,
         crop_edge=3, plot=True, interpolation_steps=1, softmax=10, autoencoder=False):
@@ -590,66 +789,69 @@ def get_corr_grid(base_mod, Stim, Robs, dims, cids, eyeAtFrame, valid, valid_eye
     eyeX = eyeX[rinds]
     eyeY = eyeY[rinds]
 
-    # old network list
-    netlist_old = deepcopy(base_mod.network_list)[0] 
+# KEEP THIS INCASE YOU WANT TO USE AUTOENCODER LATER
+    # # old network list
+    # netlist_old = deepcopy(base_mod.network_list)[0] 
 
-    # convert scaffold network into a convolutional network
-    scaff_par = deepcopy(base_mod.network_list[0])
-    scaff_par['input_dims'] = [1, NX, NY] + [scaff_par['input_dims'][-1]]
-    scaff_par['layer_types']=['conv', 'conv']
-    scaff_par['conv_filter_widths'] = [netlist_old['input_dims'][1], 1] # base_mod 
+    # # convert scaffold network into a convolutional network
+    # scaff_par = deepcopy(base_mod.network_list[0])
+    # scaff_par['input_dims'] = [1, NX, NY] + [scaff_par['input_dims'][-1]]
+    # scaff_par['layer_types']=['conv', 'conv']
+    # scaff_par['conv_filter_widths'] = [netlist_old['input_dims'][1], 1] # base_mod 
 
-    side_par = deepcopy(base_mod.network_list[1])
+    # side_par = deepcopy(base_mod.network_list[1])
     
-    if len(base_mod.networks) > 2: # it has an autoencoder
-        print('found extra FFNetworks. Assuming they are an autoencoder')
+    # if len(base_mod.networks) > 2: # it has an autoencoder
+    #     print('found extra FFNetworks. Assuming they are an autoencoder')
         
-        # side_par['layer_sizes'][-1] = [NC,NX,NY]
-        side_par['layer_types'] = ['conv']
-        side_par['conv_filter_widths'] = [1]
-        auto_par = deepcopy(base_mod.network_list[2])
-        auto_par['layer_sizes'][-1] = [NC,NX,NY]
-        add_par = deepcopy(base_mod.network_list[3])
-        add_par['input_dims'] = None
-        add_par['layer_sizes'][-1] = NC*NX*NY
+    #     # side_par['layer_sizes'][-1] = [NC,NX,NY]
+    #     side_par['layer_types'] = ['conv']
+    #     side_par['conv_filter_widths'] = [1]
+    #     auto_par = deepcopy(base_mod.network_list[2])
+    #     auto_par['layer_sizes'][-1] = [NC,NX,NY]
+    #     add_par = deepcopy(base_mod.network_list[3])
+    #     add_par['input_dims'] = None
+    #     add_par['layer_sizes'][-1] = NC*NX*NY
 
-        if autoencoder:
-            cell_shift_mod = NDN.NDN( [scaff_par, side_par, auto_par, add_par], ffnet_out=3, noise_dist='poisson')
-        else:
-            cell_shift_mod = NDN.NDN( [scaff_par, side_par], ffnet_out=1, noise_dist='poisson' )
-    else:
-        side_par['layer_types'] = ['conv']
-        side_par['conv_filter_widths'] = [1]
-        autoencoder = False
-        cell_shift_mod = NDN.NDN( [scaff_par, side_par], ffnet_out=1, noise_dist='poisson' )
+    #     if autoencoder:
+    #         cell_shift_mod = NDN.NDN( [scaff_par, side_par, auto_par, add_par], ffnet_out=3, noise_dist='poisson')
+    #     else:
+    #         cell_shift_mod = NDN.NDN( [scaff_par, side_par], ffnet_out=1, noise_dist='poisson' )
+    # else:
+    #     side_par['layer_types'] = ['conv']
+    #     side_par['conv_filter_widths'] = [1]
+    #     autoencoder = False
+    #     cell_shift_mod = NDN.NDN( [scaff_par, side_par], ffnet_out=1, noise_dist='poisson' )
 
+    # num_space = np.prod(cell_shift_mod.input_sizes[0][:-1])
+
+    # # copy first network verbatim (only thing diff is output is a convolution)
+    # for nl in range(len(cell_shift_mod.networks[0].layers)):
+    #     cell_shift_mod.networks[0].layers[nl].weights = deepcopy(base_mod.networks[0].layers[nl].weights)
+    #     cell_shift_mod.networks[0].layers[nl].biases = deepcopy(base_mod.networks[0].layers[nl].biases)
+
+    # if autoencoder:
+        
+        
+    #     # side par
+    #     cell_shift_mod.networks[1].layers[0].weights = deepcopy(base_mod.networks[1].layers[0].weights)
+    #     cell_shift_mod.networks[1].layers[0].biases = deepcopy(base_mod.networks[1].layers[0].biases)
+    #     # autoencoder
+    #     for nl in range(len(cell_shift_mod.networks[1].layers)-1):
+    #         cell_shift_mod.networks[2].layers[nl].weights = deepcopy(base_mod.networks[2].layers[nl].weights)
+    #         cell_shift_mod.networks[2].layers[nl].biases = deepcopy(base_mod.networks[2].layers[nl].biases)
+    #     # expand output
+    #     cell_shift_mod.networks[2].layers[-1].weights = conv_expand(deepcopy(base_mod.networks[2].layers[-1].weights), num_space)
+    #     cell_shift_mod.networks[2].layers[-1].biases = conv_expand(deepcopy(base_mod.networks[2].layers[-1].biases), num_space)
+
+    #     # add_par --> do I need to do anything?
+
+    # else: # expansion is handled with a conv layer so just copy        
+    #     cell_shift_mod.networks[1].layers[0].weights = deepcopy(base_mod.networks[1].layers[0].weights)
+    #     cell_shift_mod.networks[1].layers[0].biases = deepcopy(base_mod.networks[1].layers[0].biases)
+
+    cell_shift_mod = make_model_convolutional(base_mod, [NX, NY])
     num_space = np.prod(cell_shift_mod.input_sizes[0][:-1])
-
-    # copy first network verbatim (only thing diff is output is a convolution)
-    for nl in range(len(cell_shift_mod.networks[0].layers)):
-        cell_shift_mod.networks[0].layers[nl].weights = deepcopy(base_mod.networks[0].layers[nl].weights)
-        cell_shift_mod.networks[0].layers[nl].biases = deepcopy(base_mod.networks[0].layers[nl].biases)
-
-    if autoencoder:
-        
-        
-        # side par
-        cell_shift_mod.networks[1].layers[0].weights = deepcopy(base_mod.networks[1].layers[0].weights)
-        cell_shift_mod.networks[1].layers[0].biases = deepcopy(base_mod.networks[1].layers[0].biases)
-        # autoencoder
-        for nl in range(len(cell_shift_mod.networks[1].layers)-1):
-            cell_shift_mod.networks[2].layers[nl].weights = deepcopy(base_mod.networks[2].layers[nl].weights)
-            cell_shift_mod.networks[2].layers[nl].biases = deepcopy(base_mod.networks[2].layers[nl].biases)
-        # expand output
-        cell_shift_mod.networks[2].layers[-1].weights = conv_expand(deepcopy(base_mod.networks[2].layers[-1].weights), num_space)
-        cell_shift_mod.networks[2].layers[-1].biases = conv_expand(deepcopy(base_mod.networks[2].layers[-1].biases), num_space)
-
-        # add_par --> do I need to do anything?
-
-    else: # expansion is handled with a conv layer so just copy        
-        cell_shift_mod.networks[1].layers[0].weights = deepcopy(base_mod.networks[1].layers[0].weights)
-        cell_shift_mod.networks[1].layers[0].biases = deepcopy(base_mod.networks[1].layers[0].biases)
-
 
     # locations in the grid
     locs = np.linspace(-valid_eye_rad, valid_eye_rad, Npos)
@@ -667,7 +869,8 @@ def get_corr_grid(base_mod, Stim, Robs, dims, cids, eyeAtFrame, valid, valid_eye
             
             # eccentricity dependent 
             ecc = np.hypot(locs[xx],locs[yy])
-            Ethresh = Erad + .2*ecc # eccentricity dependent threshold
+            # Ethresh = Erad + .2*ecc # eccentricity dependent threshold
+            Ethresh = Erad
             # valE = np.where(rs < (Erad + ecc*.5)[0]
             valE = np.where(rs < Ethresh)[0]
             valtot = valE
@@ -677,6 +880,8 @@ def get_corr_grid(base_mod, Stim, Robs, dims, cids, eyeAtFrame, valid, valid_eye
 
                 Rcc = conv_expand( Rvalid[valtot,:], num_space )
 
+                # print("RCC shape (%d, %d)" %Rcc.shape)
+                # print("Model Output = %d" %cell_shift_mod.output_sizes[0])
                 # get negative log-likelihood at all spatial shifts
                 if autoencoder:
                     LLs = cell_shift_mod.eval_models(input_data=[Xstim[valtot,:], Rvalid[valtot,:]], output_data=Rcc, nulladjusted=False)
@@ -713,22 +918,32 @@ def get_corr_grid(base_mod, Stim, Robs, dims, cids, eyeAtFrame, valid, valid_eye
     return centers5, locs, LLspace1
 
 def get_centers_from_LLspace(LLspace1, softmax=10, plot=True, interpolation_steps=2, crop_edge=3):
-    softmax = 10
     # interpolate LL surfaces
     LLspace3 = deepcopy(LLspace1)
     Npos = LLspace3.shape[0]
-    NY = LLspace1[0,0].shape[0]
-    NX = LLspace1[0,0].shape[1]
+    NY,NX = LLspace3[0,0,:,:].shape
+
     for istep in range(interpolation_steps):
         LLspace3 = LLinterpolate(LLspace3)
 
-    # compute likelihood map centers
-    if plot:
-        plt.figure(figsize=(15,15))
+    
         
     centers5 = np.zeros([Npos,Npos,2])
-    cx = NX/2-crop_edge # center of image
-    cy = NY/2-crop_edge
+    
+    I = np.mean(np.mean(LLspace1, axis=0), axis=0)
+    I = 1-normalize_range(I) # flip sign and normalize between 0 and 1
+    cx,cy = radialcenter(I)
+    # cx = NX//2
+    # cy = NY//2
+
+    # compute likelihood map centers
+    if plot:
+        plt.figure()
+        plt.imshow(I)
+        plt.plot(cx, cy, 'or')
+        plt.figure(figsize=(Npos,Npos))
+    # cx = NX/2-crop_edge # center of image
+    # cy = NY/2-crop_edge
     for xx in range(Npos):
         for yy in range(Npos):
             if plot:
@@ -740,9 +955,11 @@ def get_centers_from_LLspace(LLspace1, softmax=10, plot=True, interpolation_step
                 plt.imshow(I)
                 ax.set_xticks([])
                 ax.set_yticks([])
-        
+            
             min1,min2 = radialcenter(I**softmax) # softmax center
-            centers5[xx,yy,:] = [min1-cx, min2-cy] # in pixels
+            if not np.isnan(min1):
+                centers5[xx,yy,0] = min1-cx
+                centers5[xx,yy,1] = min2-cy # in pixels
             if plot:
                 plt.plot(min1, min2, '+r')
                 plt.axvline(cx, color='k')
@@ -750,7 +967,7 @@ def get_centers_from_LLspace(LLspace1, softmax=10, plot=True, interpolation_step
     
     return centers5,LLspace3
 
-def get_shifter_from_centers(centers5, locs, maxshift=8, plot=True):
+def get_shifter_from_centers(centers5, locs, maxshift=8, plot=True, nearest=True):
 
     corrgrid = deepcopy(centers5)
     
@@ -785,26 +1002,39 @@ def get_shifter_from_centers(centers5, locs, maxshift=8, plot=True):
         plt.imshow(corrgrid[:,:,0], vmin=-maxshift, vmax=maxshift)
         plt.colorbar()
 
-
-    xcorrec = LinearNDInterpolator(coords[:,0:2], coords[:,2])
-    ycorrec = LinearNDInterpolator(coords[:,0:2], coords[:,3])
+    if nearest:
+        xcorrec = NearestNDInterpolator(coords[:,0:2], coords[:,2])
+        ycorrec = NearestNDInterpolator(coords[:,0:2], coords[:,3])
+    else:
+        xcorrec = LinearNDInterpolator(coords[:,0:2], coords[:,2])
+        ycorrec = LinearNDInterpolator(coords[:,0:2], coords[:,3])
     
     return xcorrec, ycorrec
 
-def shift_stim(Stim, xshift, yshift, dims):
+def shift_stim(Stim, xshift, yshift, dims, nearest=False):
     StimC = deepcopy(Stim)
     NT = StimC.shape[0]
     NX = dims[0]
     NY = dims[1]
 
-    xax = np.arange(0,NX,1) - NX/2
-    yax = np.arange(0,NY,1) - NY/2
+    if nearest:
+        xax = np.arange(0,NX,1)
+        yax = np.arange(0,NY,1)
+        xx,yy = np.meshgrid(xax,yax)
+    else:
+        xax = np.arange(0,NX,1) - NX/2
+        yax = np.arange(0,NY,1) - NY/2
 
     for iFrame in tqdm(range(NT)):
         I = np.reshape(Stim[iFrame,:], (NY, NX))
 
-        imshifter = interp2d(xax, yax, I)
-        StimC[iFrame,:] = imshifter(xax+xshift[iFrame],yax+yshift[iFrame]).flatten()
+        if nearest:
+            xind = np.minimum(np.maximum(xx + int(np.round(xshift[iFrame])), 0), NX-1)
+            yind = np.minimum(np.maximum(yy + int(np.round(yshift[iFrame])), 0), NY-1)
+            StimC[iFrame,:] = I[yind, xind].flatten()
+        else:
+            imshifter = interp2d(xax, yax, I)
+            StimC[iFrame,:] = imshifter(xax+xshift[iFrame],yax+yshift[iFrame]).flatten()
     return StimC
 
 def roi_crop(frame,size,translation,theta=0,sxsy=0):

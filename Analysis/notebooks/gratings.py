@@ -8,7 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from Utils import bin_at_frames, downsample_time
+from .Utils import bin_at_frames, downsample_time
 import NDN3.NDNutils as NDNutils
 
 def list_sessions(metafile="/home/jake/Data/Repos/V1FreeViewingCode/Data/datasets.csv"):
