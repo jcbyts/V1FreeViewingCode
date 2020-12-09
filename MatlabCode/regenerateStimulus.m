@@ -39,6 +39,7 @@ ip.addParameter('EyePos', [])
 ip.addParameter('includeProbe', true)
 ip.addParameter('debug', false)
 ip.addParameter('frameIndex', [])
+ip.addParameter('usePTBdraw', false)
 ip.parse(varargin{:});
 
 spatialBinSize = ip.Results.spatialBinSize;
@@ -168,6 +169,8 @@ for iTrial = 1:nTrials
             
             hObj = stimuli.gaussimages(0, 'bkgd', Exp.S.bgColour, 'gray', false);
             hObj.loadimages('rsvpFixStim.mat');
+            hObj.position = [0,0]*Exp.S.pixPerDeg + Exp.S.centerPix;
+            hObj.radius = round(Exp.D{thisTrial}.P.faceRadius*Exp.S.pixPerDeg);
             
             noiseFrames = Exp.D{thisTrial}.PR.NoiseHistory(:,1);
             
@@ -287,12 +290,16 @@ for iTrial = 1:nTrials
             end
         
         else % fix rsvp stim
-            posx = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2);
-            posy = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,3);
+%             posx = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2);
+%             posy = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,3);
             hObj.imagenum = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,4);
-            hObj.position = [posx posy];
+            hObj.position = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2:3);
             I = hObj.getImage(tmprect, spatialBinSize)-Exp.S.bgColour;
-            
+            if ip.Results.debug
+                figure(1); clf
+                imagesc(I);
+                pause
+            end
             
         end
     
