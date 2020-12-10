@@ -56,7 +56,7 @@ Stim = zeros(dims(1), dims(2), nTotalFrames, 'single');
 frameInfo = struct('dims', dims, 'rect', rect, ...
     'frameTimesPtb', zeros(nTotalFrames, 1), ...
     'frameTimesOe', zeros(nTotalFrames, 1), ...
-    'eyeAtFrame', zeros(nTotalFrames, 4), ... % [eyeTime eyeX eyeY eyeIx]
+    'eyeAtFrame', zeros(nTotalFrames, 6), ... % [eyeTime eyeX eyeY eyeIx eyeXonline eyeYonline]
     'probeDistance', inf(nTotalFrames, 1), ...
     'probeAtFrame', zeros(nTotalFrames, 3), ... % [X Y id]
     'seedGood', true(nTotalFrames, 1));
@@ -73,6 +73,50 @@ else
 end
 
 eyePos(Exp.vpx.Labels==4,:) = nan; % invalid eye samples are NaN will be skipped
+
+%% open PTB window if using PTB
+if ip.Results.usePTBdraw
+    currDir = pwd;
+    cd(fileparts(which('MarmoV5')))% switch to marmoview directory
+    
+    S = Exp.S;
+    S.screenNumber = max(Screen('Screens'));
+    S.screenRect = S.screenRect + [1.2e3 0 1.2e3 0];
+    S.DummyScreen = true;
+    S.DataPixx = false;
+    S.DummyEye = true;
+    
+    featureLevel = 0; % use the 0-255 range in psychtoolbox (1 = 0-1)
+    PsychDefaultSetup(featureLevel);
+
+    % disable ptb welcome screen
+    Screen('Preference','VisualDebuglevel',3);
+    % close any open windows
+    Screen('CloseAll');
+    % setup the image processing pipeline for ptb
+    PsychImaging('PrepareConfiguration');
+
+    PsychImaging('AddTask', 'General', 'UseRetinaResolution');
+    PsychImaging('AddTask','General','FloatingPoint32BitIfPossible', 'disableDithering',1);
+
+    % Applies a simple power-law gamma correction
+    PsychImaging('AddTask','FinalFormatting','DisplayColorCorrection','SimpleGamma');
+
+    % create the ptb window...
+    [A.window, A.screenRect] = PsychImaging('OpenWindow',0,S.bgColour,S.screenRect);
+
+
+    A.frameRate = FrameRate(A.window);
+
+% % bump ptb to maximum priority
+% A.priorityLevel = MaxPriority(A.window);
+% 
+    % set alpha blending/antialiasing etc.
+    Screen(A.window,'BlendFunction',GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+% 
+%     [A.window, A.screenRect] = PsychImaging('OpenWindow',0,S.bgColour,S.screenRect);
+    
+end
 
 %% loop over trials and regenerate stimuli
 nTrials = numel(validTrials);
@@ -113,11 +157,16 @@ for iTrial = 1:nTrials
                 hNoise.screenRect = Exp.S.screenRect;
             end
             
+            if ip.Results.usePTBdraw
+                hNoise.winPtr = A.window;
+                hNoise.updateTextures()
+            end
+            
             useNoiseObject = true;
             
             % get the probe location on each frame
             probeX = Exp.S.centerPix(1) + round(Exp.D{thisTrial}.PR.ProbeHistory(:,1)*Exp.S.pixPerDeg);
-            probeY = Exp.S.centerPix(2) + round(Exp.D{thisTrial}.PR.ProbeHistory(:,2)*Exp.S.pixPerDeg);
+            probeY = Exp.S.centerPix(2) - round(Exp.D{thisTrial}.PR.ProbeHistory(:,2)*Exp.S.pixPerDeg);
             probeId = Exp.D{thisTrial}.PR.ProbeHistory(:,3);
             
             probeX = repnan(probeX, 'previous');
@@ -125,7 +174,12 @@ for iTrial = 1:nTrials
             
             if ip.Results.includeProbe
                 % setup probes
-                [Probe, Faces] = protocols.PR_ForageProceduralNoise.regenerateProbes(Exp.D{thisTrial}.P,Exp.S);
+                if ip.Results.usePTBdraw
+                    [Probe, Faces] = protocols.PR_ForageProceduralNoise.regenerateProbes(Exp.D{thisTrial}.P,Exp.S,A.window);
+                else
+                    [Probe, Faces] = protocols.PR_ForageProceduralNoise.regenerateProbes(Exp.D{thisTrial}.P,Exp.S);
+                end
+                
                 for i = 1:numel(Probe)
                    Probe{i}.screenRect = Exp.S.screenRect; 
                 end
@@ -144,6 +198,12 @@ for iTrial = 1:nTrials
             % zero mean
             Im = mean(Im,3)-127;
             Im = imresize(Im, fliplr(Exp.S.screenRect(3:4)));
+            
+            if ip.Results.usePTBdraw
+                
+                Im = uint8(Im + 127); % conver to integers
+                ImScreen = Screen('MakeTexture',A.window,Im);
+            end
             
             % no probe
             probeX = nan(nFrames,1);
@@ -166,8 +226,12 @@ for iTrial = 1:nTrials
         case 'FixRsvpStim'
             useNoiseObject = false;
             useBackImage = false;
+            if ip.Results.usePTBdraw
+                hObj = stimuli.gaussimages(A.window, 'bkgd', Exp.S.bgColour, 'gray', false);
+            else
+                hObj = stimuli.gaussimages(0, 'bkgd', Exp.S.bgColour, 'gray', false);
+            end
             
-            hObj = stimuli.gaussimages(0, 'bkgd', Exp.S.bgColour, 'gray', false);
             hObj.loadimages('rsvpFixStim.mat');
             hObj.position = [0,0]*Exp.S.pixPerDeg + Exp.S.centerPix;
             hObj.radius = round(Exp.D{thisTrial}.P.faceRadius*Exp.S.pixPerDeg);
@@ -211,6 +275,15 @@ for iTrial = 1:nTrials
         eyeX = eyePos(eyeIx,1) * Exp.S.pixPerDeg;
         eyeY = eyePos(eyeIx,2) * Exp.S.pixPerDeg;
         
+        % online eye position
+        eyepos = Exp.D{thisTrial}.eyeData(iFrame,2:3);
+   
+        eyeXon = (eyepos(1) - Exp.D{thisTrial}.c(1)) / (Exp.D{thisTrial}.dx);
+        eyeYon = (eyepos(2) - Exp.D{thisTrial}.c(2)) / (Exp.D{thisTrial}.dy);
+        eyeXon = Exp.S.centerPix(1) + eyeXon;
+        eyeYon = Exp.S.centerPix(2) - eyeYon;
+
+        
         % exclude eye positions that are off the screen
         if hypot(eyeX, eyeY) > ip.Results.ExclusionRadius
             blocks = [blocks; frameCounter];
@@ -234,6 +307,8 @@ for iTrial = 1:nTrials
             % center on screen
             tmprect = rect + Exp.S.centerPix([1 2 1 2]);
         end
+        
+        %% reload random seeds and draw
         
         if useNoiseObject
             
@@ -265,48 +340,65 @@ for iTrial = 1:nTrials
                 ctr = ctr + 1;
             end
             
-            % get image from noise object
-            I = hNoise.getImage(tmprect, spatialBinSize);
+            if ip.Results.usePTBdraw
+%                 hNoise.winPtr = A.window;
+                hNoise.beforeFrame()
+            else
+                % get image directly from noise object
+                I = hNoise.getImage(tmprect, spatialBinSize);
+                
 %             figure(1); clf
 %             imagesc(I);
 %             drawnow
 %             keyboard
+            end
             
         elseif useBackImage
-            imrect = [tmprect(1:2) (tmprect(3)-tmprect(1))-1 (tmprect(4)-tmprect(2))-1];
-            I = imcrop(Im, imrect); % requires the imaging processing toolbox
-            I = I(1:spatialBinSize:end,1:spatialBinSize:end);
             
-            if ip.Results.debug
-                set(gcf, 'currentaxes', ax)
-                plot(eyeX, eyeY, 'or')
-                plot([imrect(1) imrect(1) + imrect(3)], imrect([2 2]), 'r')
-                plot([imrect(1) imrect(1) + imrect(3)], imrect(2)+imrect([4 4]), 'r')
-                plot(imrect([1 1]),[imrect(2), imrect(2) + imrect(4)], 'r')
-                plot(imrect(1)+imrect([3 3]), [imrect(2), imrect(2) + imrect(4)], 'r')
-                subplot(5,5,5)
-                imagesc(I)
-                drawnow
+            
+            if ip.Results.usePTBdraw
+                ImRect = [0 0 size(Im,2) size(Im,1)];
+                Screen('DrawTextures',A.window,ImScreen,ImRect,Exp.S.screenRect)
+                
+            else
+                imrect = [tmprect(1:2) (tmprect(3)-tmprect(1))-1 (tmprect(4)-tmprect(2))-1];
+                I = imcrop(Im, imrect); % requires the imaging processing toolbox
+                I = I(1:spatialBinSize:end,1:spatialBinSize:end);
+                
+                if ip.Results.debug
+                    set(gcf, 'currentaxes', ax)
+                    plot(eyeX, eyeY, 'or')
+                    plot([imrect(1) imrect(1) + imrect(3)], imrect([2 2]), 'r')
+                    plot([imrect(1) imrect(1) + imrect(3)], imrect(2)+imrect([4 4]), 'r')
+                    plot(imrect([1 1]),[imrect(2), imrect(2) + imrect(4)], 'r')
+                    plot(imrect(1)+imrect([3 3]), [imrect(2), imrect(2) + imrect(4)], 'r')
+                    subplot(5,5,5)
+                    imagesc(I)
+                    drawnow
+                end
             end
         
         else % fix rsvp stim
-%             posx = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2);
-%             posy = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,3);
             hObj.imagenum = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,4);
             hObj.position = Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2:3);
-            I = hObj.getImage(tmprect, spatialBinSize)-Exp.S.bgColour;
-            if ip.Results.debug
-                figure(1); clf
-                imagesc(I);
-                pause
+            if ip.Results.usePTBdraw
+                hObj.beforeFrame()
+            else
+                I = hObj.getImage(tmprect, spatialBinSize)-Exp.S.bgColour;
+                if ip.Results.debug
+                    figure(1); clf
+                    imagesc(I);
+                    pause
+                end
             end
             
         end
+        
     
         % save info
         frameInfo.frameTimesPtb(frameCounter) = frameRefreshes(iFrame) + ip.Results.Latency;
         frameInfo.frameTimesOe(frameCounter)  = frameRefreshesOe(iFrame) + ip.Results.Latency;
-        frameInfo.eyeAtFrame(frameCounter,:)    = [eyeTimes(eyeIx) eyeX eyeY eyeIx];
+        frameInfo.eyeAtFrame(frameCounter,:)    = [eyeTimes(eyeIx) eyeX eyeY eyeIx, eyeXon, eyeYon];
         
         % probe distance from center of window
         frameInfo.probeDistance(frameCounter) = hypot(probeX(iFrame)-mean(tmprect([1 3])), probeY(iFrame)-mean(tmprect([2 4])));
@@ -321,27 +413,53 @@ for iTrial = 1:nTrials
         
             if ~isnan(probeId(iFrame)) && probeInWin
             
-                
-                if probeId(iFrame) > 0 % grating
-                    Probe{probeId(iFrame)}.position = [probeX(iFrame) probeY(iFrame)];
-                    [pIm, pAlph] = Probe{probeId(iFrame)}.getImage(tmprect, spatialBinSize);
-                elseif probeId(iFrame) < 0
-                    Faces.imagenum = abs(probeId(iFrame));
-                    Faces.position = [probeX(iFrame) probeY(iFrame)];
-                    [pIm, pAlph] = Faces.getImage(tmprect, spatialBinSize);
-                    pIm = pIm - 127;
-                end
-                
-                % blend I
-                try
-                    I = pIm + (1-pAlph).*I;
-                catch
-                    disp('probe not combined')
+                if ip.Results.usePTBdraw
+                    
+                    if probeId(iFrame) > 0 % grating
+                        Probe{probeId(iFrame)}.position = [probeX(iFrame) probeY(iFrame)];
+                        Probe{probeId(iFrame)}.beforeFrame();
+                    elseif probeId(iFrame) < 0
+                        Faces.imagenum = abs(probeId(iFrame));
+                        Faces.position = [probeX(iFrame) probeY(iFrame)];
+                        Faces.beforeFrame();
+                    end
+                    
+                else
+                    if probeId(iFrame) > 0 % grating
+                        Probe{probeId(iFrame)}.position = [probeX(iFrame) probeY(iFrame)];
+                        [pIm, pAlph] = Probe{probeId(iFrame)}.getImage(tmprect, spatialBinSize);
+                    elseif probeId(iFrame) < 0
+                        Faces.imagenum = abs(probeId(iFrame));
+                        Faces.position = [probeX(iFrame) probeY(iFrame)];
+                        [pIm, pAlph] = Faces.getImage(tmprect, spatialBinSize);
+                        pIm = pIm - 127;
+                    end
+                    
+                    % blend I
+                    try
+                        I = pIm + (1-pAlph).*I;
+                    catch
+                        disp('probe not combined')
+                    end
                 end
             end
             
             
         end
+        
+         %% if usePTBdraw
+        if ip.Results.usePTBdraw 
+             Screen('Flip', A.window, 0);
+
+             I = Screen('GetImage', A.window, tmprect, 'backBuffer');
+             I = mean(I,3) - 127;
+             
+        end
+        
+             
+        
+        
+        %%
         
         
         % check that the seed worked
@@ -372,7 +490,6 @@ for iTrial = 1:nTrials
 end
 
 % clean up blocks
-% blocks(diff(blocks, [], 2)<50,:) = [];
 bd = blocks(diff(blocks)>1);
 blocks = [bd(1:end-1)+1 bd(2:end)];
 blocks(1) = 1;
@@ -386,6 +503,9 @@ frameInfo.seedGood(frameCounter:end) = [];
 frameInfo.probeAtFrame(frameCounter:end,:) = [];
 frameInfo.blocks = blocks;
 
+if ip.Results.usePTBdraw
+    
+    sca
+    cd(currDir)
 
-
-
+end

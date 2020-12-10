@@ -1,8 +1,8 @@
 %%
 RoiS = struct();
-RoiS.('logan_20200304') = [-20 -60 40 10];
-RoiS.('logan_20200306') = [-20 -60 40 10];
-RoiS.('logan_20191231') = [-20 -60 40 10];
+RoiS.('logan_20200304') = [-20 -60 50 10];
+RoiS.('logan_20200306') = [-20 -60 50 10];
+RoiS.('logan_20191231') = [-20 -60 50 10];
 %% add paths
 
 user = 'jakelaptop';
@@ -12,7 +12,7 @@ addFreeViewingPaths(user);
 %% load data
 
 close all
-sessId = 57;
+sessId = 56;
 [Exp, S] = io.dataFactoryGratingSubspace(sessId, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
 
 eyePosOrig = Exp.vpx.smo(:,2:3);
@@ -28,10 +28,6 @@ Exp.vpx.smo(:,2:3) = lam*eyePos + (1-lam)*Exp.vpx.smo(:,2:3);
 %% get visually driven units
 
 spkS = io.get_visual_units(Exp, 'plotit', true);
-
-%%
-
-
 
 %% plot spatial RFs to try to select a ROI
 unit_mask = 0;
@@ -83,13 +79,14 @@ S.rect = RoiS.(strrep(Exp.FileTag, '.mat', ''));
 S.rect([2 4]) = sort(-S.rect([2 4]));
 fname = {};
 
-eyesmoothing = 9;
+eyesmoothing = 19;
 t_downsample = 2;
 s_downsample = 2;
 
 % Gabor reverse correlation
 stimset = 'Gabor';
 options = {'stimulus', stimset, ...
+    'debug', false, ...
     'testmode', false, ...
     'eyesmooth', eyesmoothing, ... % bins
     't_downsample', t_downsample, ...
@@ -97,9 +94,16 @@ options = {'stimulus', stimset, ...
     'includeProbe', true, ...
     'correctEyePos', false, ...
     'nonlinearEyeCorrection', false, ...
+    'usePTBdraw', false, ...
     'overwrite', true};
 
+%%
+options{find(strcmp(options, 'usePTBdraw')) + 1} = true;
 fname{1} = io.dataGenerate(Exp, S, options{:});
+
+% options{find(strcmp(options, 'usePTBdraw')) + 1} = false;
+% options{find(strcmp(options, 'overwrite')) + 1} = true;
+% fname{2} = io.dataGenerate(Exp, S, options{:});
 
 %% grating reverse correlation
 stimset = 'Grating';
@@ -115,7 +119,7 @@ options{find(strcmp(options, 'stimulus')) + 1} = stimset; % change the stimulus 
 
 fname{3} = io.dataGenerate(Exp, S, options{:});
 
-% Static Natural images
+%% Static Natural images
 stimset = 'BackImage';
 options{find(strcmp(options, 'stimulus')) + 1} = stimset; % change the stimulus set
 
@@ -123,8 +127,8 @@ fname{4} = io.dataGenerate(Exp, S, options{:});
 
 
 %% test that it worked
-
-load(fullfile('Data', fname{1}))
+id = 4;
+load(fullfile('Data', fname{id}))
 iFrame = 1;
 
 %% show sample frame
@@ -132,9 +136,9 @@ NY = size(stim,2)/NX;
 
 iFrame = iFrame + 1;
 I = reshape(stim(iFrame,:), [NX,NY]);
-figure(1); clf
-imagesc(I)
-
+figure(id); clf
+imagesc(I);% axis xy
+colorbar
 
 %% get STAs to check that you have the right rect
 
@@ -184,6 +188,7 @@ for ilag = 1:nlags
    subplot(1,nlags, ilag, 'align')
    imagesc(x, y, reshape(sta(ilag,:), [NX NY])', [0 1])
 end
+colormap gray
 title(cc)
 
 %% copy to server

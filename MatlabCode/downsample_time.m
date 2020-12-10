@@ -3,12 +3,12 @@ function y = downsample_time( x, ds )
 % only works with max of 2-dimensions for x. Assumes time is first axis
 
 [NTold,dims] = size(x);
-flipped = 0;
-if dims > NTold
-	% then assume flipped
-	flipped = 1;
-	x = x';
-end
+% flipped = 0;
+% if dims > NTold
+% 	% then assume flipped
+% 	flipped = 1;
+% 	x = x';
+% end
 
 NTnew = floor(NTold/ds);
 

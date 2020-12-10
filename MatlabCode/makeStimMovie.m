@@ -17,7 +17,7 @@ end
 
 
 eyeAtFrame = frameInfo.eyeAtFrame(:,2:3);
-eyeAtFrame(:,2) = -eyeAtFrame(:,2);
+% eyeAtFrame(:,2) = -eyeAtFrame(:,2);
 
 iFrame = 6;
 xax = frameInfo.rect(1):frameInfo.rect(3);

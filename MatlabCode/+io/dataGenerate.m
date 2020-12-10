@@ -36,6 +36,8 @@ ip.addParameter('includeProbe', true)
 ip.addParameter('correctEyePos', false)
 ip.addParameter('nonlinearEyeCorrection', true)
 ip.addParameter('overwrite', false)
+ip.addParameter('usePTBdraw', false)
+ip.addParameter('debug', false)
 ip.parse(varargin{:})
 
 %% manual adjustment to rect
@@ -56,7 +58,7 @@ end
 spikeBinSize = 1/Exp.S.frameRate; % bin at the frame rate (4 ms bins)
 
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-fname = sprintf('%s_%s_%s_%d_%d_%d_%d_%d.mat',...
+fname = sprintf('%s_%s_%s_%d_%d_%d_%d_%d_%d.mat',...
     strrep(Exp.FileTag, '.mat', ''),...
     ip.Results.stimulus, ...
     strrep(strrep(num2str(S.rect), ' ', '_'), '__', '_'), ... % rect
@@ -64,7 +66,8 @@ fname = sprintf('%s_%s_%s_%d_%d_%d_%d_%d.mat',...
     ip.Results.s_downsample, ...
     ip.Results.correctEyePos, ...
     ip.Results.eyesmooth, ...
-    ip.Results.nonlinearEyeCorrection);
+    ip.Results.nonlinearEyeCorrection, ...
+    ip.Results.usePTBdraw);
 
 if exist(fullfile(dataDir, fname), 'file') && ~ip.Results.overwrite
     fprintf('Stimulus already exported\n')
@@ -124,7 +127,10 @@ end
 
 binSize = ip.Results.binsize; % pixel
 fprintf('Regenerating stimuli...\n')
-[Stim, frameInfo] = regenerateStimulus(Exp, validTrials, rect, 'spatialBinSize', binSize, 'Latency', Latency, 'eyePos', eyePos, 'includeProbe', ip.Results.includeProbe);
+[Stim, frameInfo] = regenerateStimulus(Exp, validTrials, rect, ...
+    'spatialBinSize', binSize, 'Latency', Latency, 'eyePos', eyePos, ...
+    'includeProbe', ip.Results.includeProbe, 'debug', ip.Results.debug, ...
+    'usePTBdraw', ip.Results.usePTBdraw);
 
 if ip.Results.fft
     win = hanning(size(Stim,1))*hanning(size(Stim,2))';
