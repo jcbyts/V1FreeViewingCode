@@ -7,7 +7,6 @@ import V1FreeViewingCode.Analysis.notebooks.Utils as U
 import V1FreeViewingCode.Analysis.notebooks.gratings as gt
 
 import numpy as np
-
 import torch
 
 import matplotlib.pyplot as plt  # plotting
@@ -20,16 +19,14 @@ from torch.utils.data import Dataset, DataLoader, random_split
 
 #%% load data
 
-
-
-sessid = '20200304'
-# from pathlib import Path
-# save_dir = Path('./checkpoints')
+sessid = '20200304b'
 
 #%% get STAs
-gd = PixelDataset(sessid, num_lags=10, augment=None)
+gd = PixelDataset(sessid, num_lags=10, augment=None, include_eyepos=True)
 
-x,y = gd[:]
+y = gd[:]['robs']
+x = gd[:]['stim']
+# z = gd['']
 y -= y.mean(axis=0)
 stas = (x.reshape(len(gd), -1).T @ y).numpy()
 
@@ -48,6 +45,7 @@ plt.plot(cids, excursions[cids], 'o')
 plt.xlabel("Unit Id")
 plt.ylabel("Fraction significant excursions (MAD)")
 
+cids = np.arange(0, gd.NC)
 #%% plot stas
 NC = gd.NC
 sx,sy = U.get_subplot_dims(NC)
@@ -89,8 +87,8 @@ def crop_indx( Loriginal, xrange, yrange):
     return indxs.astype('int')
 
 NX2 = 20
-x0 = 5
-y0 = 5
+x0 = 7
+y0 = 7
 
 xinds = range(x0, x0+NX2)
 yinds = range(y0, y0+NX2)
@@ -141,6 +139,227 @@ for cc in range(NC):
         plt.plot(wtmp[:,np.argmax(wspace)], '-o', color=(.5, .5, .5))
         plt.plot(wtmp[:,np.argmin(wspace)], '-o', color=(.5, .5, .5))
 
+
+#%% divisive normalization
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.parameter import Parameter
+from V1FreeViewingCode.models.basic import sGQM, Poisson
+from pytorch_lightning import LightningModule
+
+class GroupNorm(nn.Module):
+    def __init__(self, num_features, num_groups=6, eps=1e-5):
+        super(GroupNorm, self).__init__()
+        self.weight = nn.Parameter(torch.ones(1, num_features, 1, 1))
+        self.bias = nn.Parameter(torch.zeros(1, num_features, 1, 1))
+        self.num_groups = num_groups
+        self.eps = eps
+
+    def forward(self, x):
+        N, C, H, W = x.size()
+        G = self.num_groups
+        assert C % G == 0
+
+        x = x.view(N, G, -1)
+        mean = x.mean(-1, keepdim=True)
+        var = x.var(-1, keepdim=True)
+
+        x = (x - mean) / (var + self.eps).sqrt()
+        x = x.view(N, C, H, W)
+        return x * self.weight + self.bias
+
+class weightConstraint(object):
+    def __init__(self,minval=0.0):
+        self.minval = minval
+        # pass
+    
+    def __call__(self,module):
+        if hasattr(module,'weight'):
+            # print("Entered")
+            module.weight.data.clamp_(self.minval)
+        # if hasattr(module,'bias'):
+        #     # print("Entered")
+        #     module.bias.data.clamp_(self.minval)
+
+# class powNL(nn.Module):
+#     '''
+#     raise to a power that is a learned parameter
+
+#     '''
+#     def __init__(self, in_features, defpow=2):
+#         super(powNL, self).__init__()
+#         self.weight = Parameter(defpow*torch.ones(in_features)) # raise to the power beta
+
+#     def forward(self, x):
+#         x.pow_(self.weight)
+#         return x
+
+class posLinear(nn.Module):
+    '''
+    Linear layer with positive weights
+    weights can take any value, but will only impact the model they are greater than a minimum value
+
+    '''
+    def __init__(self, in_features, out_features, minval=0.0, hard_constraint=False):
+        super(posLinear, self).__init__()
+        self.hard_constraint=hard_constraint
+        self.weight = Parameter(torch.ones(in_features, out_features)) # raise to the power beta
+        self.bias = Parameter(torch.zeros(out_features))
+        if self.hard_constraint:
+            self.posConstraint = weightConstraint(minval)
+        else:
+            self.register_buffer("minval", torch.tensor(minval))
+
+    def forward(self, x):
+        if self.hard_constraint:
+            self.apply(self.posConstraint)
+            x = x@self.weight + self.bias
+        else:
+            x = x@(self.weight.max(self.minval)) + self.bias
+
+        return x
+# TODO: F.linear instead of @?? might be cleaner
+class powNL(nn.Module):
+    '''
+    raise to a power that is a learned parameter
+
+    '''
+    def __init__(self, in_features, defpow=1.5, minpow=1.0, maxpow=2.0):
+        super(powNL, self).__init__()
+        # self.weight = Parameter(defpow*torch.ones(in_features)) # raise to the power beta
+        self.relu = F.relu
+        # self.register_buffer("minpow", torch.tensor(minpow))
+        # self.register_buffer("maxpow", torch.tensor(minpow))
+
+        self.register_buffer("weight", defpow*torch.ones(in_features))
+
+    def forward(self, x):
+        # x = self.relu(x).pow_(self.weight.max(self.minpow).min(self.maxpow))
+        x = self.relu(x).pow_(self.weight)
+        return x
+
+class divNorm(nn.Module):
+    def __init__(self, in_features):
+        super(divNorm, self).__init__()
+        self.linear = nn.Linear(in_features=in_features, out_features=in_features, bias=True)
+        # TODO: come up with way to zero the diagonal?
+        # mask out diagonals?
+        # mask = (1-eye) ... register buffer
+        # always mask before forward
+
+        self.relu = F.relu
+        self.posConstraint = weightConstraint(0.0)
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        print("initialize weights custom")
+        nn.init.uniform(self.linear.weight, 0.0, 1.0)
+        nn.init.uniform(self.linear.bias, 0.5, 1.0)
+
+    def forward(self, x):
+        sz = list(x.shape) # get dimensions of input
+        pdims = np.append( np.setdiff1d(np.arange(0,len(sz)), 1),1) # permute dims (move C to edge)
+        snew = [sz[i] for i in pdims] # reshape size after permute
+
+        x = x.permute(list(pdims)) #[N, C, Y, X] --> [N, Y, X, C]; or [N,C] -> [N,C]
+        x = x.reshape((-1, sz[1])) # [N, Y, X, C] --> [N*X*Y, C]; or [N,C] -> [N,C]
+        
+        x = self.relu(x) # rectify
+
+        # apply constraints
+        # self.linear.apply(self.posConstraint) # > 0.0
+
+        xdiv = self.relu(self.linear(x)) # [N*X*Y, C] --> [N*X*Y, C] # in and out are same dimension
+        x = x / xdiv.clamp_(0.001)
+
+        x = x.reshape(snew) # [N*X*Y, K] --> [N, Y, X, K]
+        x = x.permute(list(np.argsort(pdims))) # [N, Y, X, K] --> [N, K, Y, X]
+        return x
+
+class divNormPow(nn.Module):
+    def __init__(self, in_features, hard_constraint=False):
+        super(divNormPow, self).__init__()
+        self.hardconstraint = hard_constraint
+
+        self.linear = posLinear(in_features=in_features, out_features=in_features, hard_constraint=hard_constraint)
+        self.pow = powNL(1, defpow=1.5, minpow=1.0, maxpow=2.0) # one nonlinearity for all 
+        self.relu = F.relu
+        
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        print("initialize weights custom")
+        # nn.init.uniform(self.pow.weight, 1.0, 2.0)
+        nn.init.uniform(self.linear.weight, 0.0, 1.0)
+        nn.init.uniform(self.linear.bias, 0.5, 1.0)
+
+    def forward(self, x):
+        sz = list(x.shape) # get dimensions of input
+        pdims = np.append( np.setdiff1d(np.arange(0,len(sz)), 1),1) # permute dims (move C to edge)
+        snew = [sz[i] for i in pdims] # reshape size after permute
+
+        x = x.permute(list(pdims)) #[N, C, Y, X] --> [N, Y, X, C]; or [N,C] -> [N,C]
+        x = x.reshape((-1, sz[1])) # [N, Y, X, C] --> [N*X*Y, C]; or [N,C] -> [N,C]
+        
+        # x = self.relu(x) # rectify
+
+        # apply constraints (no hard constraints)
+        # self.pow.apply(self.oneConstraint) # > 1.0
+        # self.linear.apply(self.posConstraint) # > 0.0
+
+        x = self.pow(x)
+        xdiv = self.relu(self.linear(x)) # [N*X*Y, C] --> [N*X*Y, C] # in and out are same dimension
+        x = x / xdiv.clamp_(0.001)
+
+        # x = self.relu(x)
+
+        x = x.reshape(snew) # [N*X*Y, K] --> [N, Y, X, K]
+        x = x.permute(list(np.argsort(pdims))) # [N, Y, X, K] --> [N, K, Y, X]
+        return x
+
+class sDN(sGQM):
+    def __init__(self, divnorm=True, **kwargs):
+        super(sDN,self).__init__(**kwargs)
+        print("adding divnorm to sGQM")
+        self.divnorm = divNormPow(self.hparams["n_hidden"])
+        self.save_hyperparameters()
+
+    def forward(self, x):
+        x = self.flatten(x)
+        x = self.linear1(x)
+        x = self.divnorm(x)
+        x = self.spikeNL(self.readout(x))
+
+        return x
+
+class sQDN(sGQM):
+    def __init__(self, divnorm=True, **kwargs):
+        super(sQDN,self).__init__(**kwargs)
+        print("adding divnorm to sGQM")
+        self.norm = divNorm(self.hparams["n_hidden"])
+        self.save_hyperparameters()
+
+
+    # def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_idx, second_order_closure=None, on_tpu=False, using_native_amp=False, using_lbfgs=False):
+    # #     # update params
+    #     optimizer.step()
+    #     self.divnorm.beta.data.clamp_(1.0)
+    #     self.divnorm.linear.weight.data.clamp_(0.0)
+    #     self.divnorm.linear.bias.data.clamp_(0.0)
+    #     self.zero_grad()
+    #         # self.beta.data.clamp
+    #         # self.l2.apply(self.posconstraint)
+        
+
+D_in = gd.NX*gd.NY*gd.num_lags
+gqm0 = sQDN(input_dim=D_in, n_hidden=gd.NC*2, output_dim=gd.NC,
+        learning_rate=.001,betas=[.9,.999],
+        weight_decay=1e-0,
+        optimizer='AdamW')
+
+
+
 #%% Main eyetracking functionss
 
 def find_best_epoch(ckpt_folder):
@@ -159,7 +378,7 @@ def find_best_epoch(ckpt_folder):
     return out
 
 
-def get_model(gd, save_dir='./checkpoints', version=1, continue_training=False, use_divnorm=False):
+def get_model(gd, save_dir='./checkpoints', version=1, continue_training=False, use_divnorm=0):
     '''
     get a shared generalized quadratic model given a PixelDataset (see Datasets.py)
     
@@ -190,7 +409,17 @@ def get_model(gd, save_dir='./checkpoints', version=1, continue_training=False, 
 
     D_in = gd.NX*gd.NY*gd.num_lags
 
-    if use_divnorm:
+    if use_divnorm==2:
+        gqm0 = sQDN(input_dim=D_in, n_hidden=gd.NC*2, output_dim=gd.NC,
+            learning_rate=.001,betas=[.9,.999],
+            weight_decay=1e-0,
+            normalization=2,
+            relu = True,
+            filternorm = 0,
+            optimizer='AdamW',
+            ei_split=gd.NC)
+
+    elif use_divnorm==1:
         gqm0 = sDN(input_dim=D_in, n_hidden=gd.NC*2, output_dim=gd.NC,
         learning_rate=.001,betas=[.9,.999],
         weight_decay=1e-0,
@@ -201,7 +430,7 @@ def get_model(gd, save_dir='./checkpoints', version=1, continue_training=False, 
             weight_decay=1e-0,
             normalization=2,
             relu = True,
-            filternorm = 0,
+            filternorm = 1,
             optimizer='AdamW',
             ei_split=gd.NC)
 
@@ -227,15 +456,17 @@ def get_model(gd, save_dir='./checkpoints', version=1, continue_training=False, 
             deterministic=False,
             progress_bar_refresh_rate=20,
             max_epochs=1000,
-            auto_lr_find=True)
+            auto_lr_find=False)
 
         seed_everything(42)
 
-        trainer.tune(gqm0, train_dl, valid_dl) # find learning rate
+        # trainer.tune(gqm0, train_dl, valid_dl) # find learning rate
         trainer.fit(gqm0, train_dl, valid_dl)
 
     else:
-        if use_divnorm:
+        if use_divnorm==2:
+            gqm0 = sQDN.load_from_checkpoint(str(ckpt_folder / 'epoch={}.ckpt'.format(best_epoch)))
+        elif use_divnorm==1:
             gqm0 = sDN.load_from_checkpoint(str(ckpt_folder / 'epoch={}.ckpt'.format(best_epoch)))
         else:
             gqm0 = sGQM.load_from_checkpoint(str(ckpt_folder / 'epoch={}.ckpt'.format(best_epoch)))
@@ -338,6 +569,57 @@ class convGQM(Poisson):
         # x = x.permute((0, 3, 1, 2))
         return x
 
+class convSDN(Poisson):
+    '''
+    This model class converts a shared GQM model into a convolutional model (with convolutional output)
+
+    '''
+    def __init__(self, input_dim=(15, 8, 6),
+        gqm=None,
+        ksize=None,
+        **kwargs):
+        
+        super().__init__()
+        self.save_hyperparameters()
+        
+        
+        # ksize = (input_dim[1], input_dim[2])
+        padding = (input_dim[1]-ksize[0], input_dim[2]-ksize[1])
+        self.conv1 = nn.Conv2d(in_channels=input_dim[0],
+            out_channels=gqm.hparams.n_hidden, stride=1,
+            kernel_size=ksize,
+            padding=padding)
+
+        self.relu = gqm.relu
+        
+        self.spikeNL = gqm.spikeNL
+
+        self.hparams.relu = gqm.hparams.relu
+        self.nl = gqm.divnorm
+        # self.readout = nn.Linear(gqm.hparams.n_hidden, gqm.hparams.output_dim)
+        self.readout = gqm.readout
+        self.hparams.output_dim = gqm.hparams.output_dim
+
+        for i in range(gqm.hparams.n_hidden):
+            self.conv1.weight.data[i,:,:,:] = gqm.linear1.weight.data[i,:].reshape( (input_dims[0], ksize[0], ksize[1]))
+
+        self.conv1.bias = gqm.linear1.bias
+
+
+    def forward(self,x):
+        x = self.conv1(x)
+        sz = list(x.size())
+        x = x.permute((0,2,3,1))
+        x = x.reshape((sz[0]*sz[2]*sz[3], sz[1]))
+        # apply nonlinearity
+        x = self.nl(x)
+
+        x = self.spikeNL(self.readout(x))
+
+        x = x.reshape(sz[0], sz[2], sz[3], self.hparams.output_dim)
+        # x = x.permute((0, 3, 1, 2))
+        return x
+
 def get_likelihood_surface(gd, cmod, Npos=20, radius=1, valid_eye_range=5.2):
     '''
     main eye-tracking loop
@@ -414,33 +696,155 @@ def plot_example_LLsurfs(LLspace, idxs=np.arange(2,5), icol=5, softmax=10):
 #  time __getitem__ is called, it corrupts the design matrix with additive gaussian noise
 aug = [
     {'type': 'gaussian',
-    'scale': 1,
-    'proportion': 1}
+    'scale': .2,
+    'proportion': .5}
     ]
 
 num_lags = 10 # keep at 10 if you want to match existing models
+
+# stimlist defaults to grating/gabor
 gd = PixelDataset(sessid, num_lags=num_lags,
     train=True, augment=aug, cids=cids)
 
 gdcrop = PixelDataset(sessid, num_lags=num_lags,
     train=True, augment=aug, cids=cids, cropidx=[xinds, yinds])    
 
+#%% train using natural images
+natimg = PixelDataset(sessid, stims='GaborNatImg', num_lags=num_lags,
+cids=cids, augment=aug, full_dataset=False) #, cropidx=[xinds,yinds])
+
+gqm0 = get_model(natimg, version=52, continue_training=False, use_divnorm=1)
+print("Done getting shared-GQM")
+# gqm0 = get_model(gd, version=1, continue_training=False, use_divnorm=0)
+# print("Done getting shared-GQM")
+
+gqm0.plot_filters(gd, sort=True)
 #%% train stimulus model
 # version 1: full stimulus 30,35
 # version 2: cropped [5,25], [5,25]
-gqm0 = get_model(gdcrop, version=7, continue_training=False, use_divnorm=True)
+# version 30: div norm = 1
+gqm0 = get_model(gd, version=1, continue_training=False, use_divnorm=1)
 print("Done getting shared-GQM")
+# gqm0 = get_model(gd, version=1, continue_training=False, use_divnorm=0)
+# print("Done getting shared-GQM")
 
+gqm0.plot_filters(gd, sort=True)
 #%%
+# version 27: divnorm=1, cropped
+gqm0 = get_model(gdcrop, version=10, continue_training=False, use_divnorm=1)
 gqm0.plot_filters(gdcrop, sort=True)
 #%% see that the model cross-validates better than the null
+
+rsvp = PixelDataset(sessid, stims='FixRsvp', num_lags=num_lags, cids=cids, full_dataset=True)#, cropidx=[xinds,yinds])
+rsvpc = PixelDataset(sessid, stims='FixRsvp', num_lags=num_lags, cids=cids, full_dataset=True, cropidx=[xinds,yinds])
+iframer = 1
+
+#%% test on a small amount of data (to unpack how it works)
+iframer += 1000
+print(iframer)
+idx = range(1+iframer,500+iframer)
+x,y = rsvpc[idx] # preload some data to get dimensions
+NC = rsvp.NC
+xh = gqm0(x) # predict rates
+sz = list(xh.size())
+
+n = np.asarray([gqm0.linear1.weight[i,:].abs().max().detach().numpy() for i in range(gqm0.linear1.weight.shape[0])])
+cinds = np.argsort(n)[::-1][-len(n):]
+cc = cinds[0]
+
+xn = x.numpy()
+w = gqm0.linear1.weight.detach().cpu().numpy()
+loss = nn.PoissonNLLLoss(log_input=False, reduction='none')
+wtmp = w[cc,:].reshape((rsvp.num_lags, rsvpc.NY, rsvpc.NX))
+wtmp = (wtmp - np.min(wtmp)) / (np.max(wtmp) - np.min(wtmp))
+tpower = np.std(wtmp.reshape(w.shape[1], -1), axis=1)
+bestlag = np.argmax(tpower)
+
+plt.figure(figsize=(10,3))
+for iframe in range(num_lags):
+    plt.subplot(2,num_lags,iframe+1)
+    plt.imshow(xn[0,iframe,:,:],cmap='gray', interpolation='none')
+    plt.axis("off")
+    plt.subplot(2,num_lags,iframe+num_lags+1)
+    plt.imshow(wtmp[iframe,:,:],cmap='gray',vmin=0, vmax=1, interpolation='none')
+    plt.axis("off")
+
+#%%
+# predict from the whole dataset
+x,y = rsvpc[:] # preload some data to get dimensions
+NC = rsvp.NC
+xh = gqm0(x) # predict rates
+
+eyeX = rsvp.eyeX[rsvp.valid]
+eyeY = rsvp.eyeY[rsvp.valid]
+deltaEye = np.hypot(eyeX, eyeY)
+
+frameTimes = rsvp.frameTime[rsvp.valid]
+trStarts = np.append(0, np.where(np.diff(frameTimes, axis=0)>1)[0]+1)
+trStops = np.append(np.where(np.diff(frameTimes, axis=0)>1)[0], len(frameTimes))
+nTrials = len(trStarts)
+fixstart = np.zeros(nTrials)
+fixstop = np.zeros(nTrials)
+for iTrial in range(nTrials):
+    tix = np.arange(trStarts[iTrial], trStops[iTrial])
+    fixinds = np.where(deltaEye[tix]<1)[0]
+    if len(fixinds) > 10:
+        fixstart[iTrial] = int(fixinds[0] + trStarts[iTrial])
+        fixstop[iTrial] = int(fixinds[-1] + trStarts[iTrial])
+
+good = fixstart!=0
+fixstart = fixstart[good]
+fixstop = fixstop[good]
+fixdur = fixstop-fixstart
+ntime = int(np.max(fixdur))
+
+nfix = len(fixstart)
+
+yhat = np.zeros( (nfix, ntime, NC))
+ytrue = np.zeros( (nfix, ntime, NC))
+
+for ifix in range(nfix-1):
+    iix = np.arange(fixstart[ifix], fixstart[ifix]+ntime)
+    yhat[ifix,:,:]=xh[iix,:].detach().numpy()
+    ytrue[ifix,:,:]=y[iix,:].detach().numpy()
+
+    ii2 = np.arange(int(fixdur[ifix]), ntime)
+    ytrue[ifix,ii2,:] = np.nan
+    yhat[ifix,ii2,:] = np.nan
+    
+
+ind = np.argsort(fixdur)
+
+#%%
+cc += 1
+if cc >= NC:
+    cc = 0
+# cc = 6
+plt.figure(figsize=(20,10))
+plt.subplot(1,2,1)
+f = plt.imshow(ytrue[ind,:,cc], aspect='auto')
+plt.subplot(1,2,2)
+f = plt.imshow(yhat[ind,:,cc], aspect='auto')
+
+plt.figure(figsize=(10,2))
+plt.plot(np.nanmean(ytrue[:,:,cc], axis=0), color='k')
+plt.plot(np.nanmean(yhat[:,:,cc], axis=0), color='r')
+plt.plot(yhat[ind[-1],:,cc])
+plt.xlim([0,150])
+plt.axis("tight")
+plt.title(cc)
+#%%
 
 # test set
 gd_test = PixelDataset(sessid, num_lags=num_lags,
     train=False, cids=cids, augment=None, cropidx=gdcrop.cropidx)
 
+# gd_test = PixelDataset(sessid, num_lags=num_lags,
+#     train=False, cids=cids, augment=None)
+
 # # get test set
 xt,yt=gd_test[:]
+# xt,yt=rsvp[:]
 
 l2 = get_null_adjusted_ll(gqm0, xt, yt,bits=False)
 
@@ -450,79 +854,13 @@ plt.ylabel("test LL (null-adjusted)")
 plt.xlabel("Unit Id")
 
 #%% test divisive normalization layer
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.parameter import Parameter
-from V1FreeViewingCode.models.basic import weightConstraint, sGQM, Poisson
-from pytorch_lightning import LightningModule
 
-class divNorm(nn.Module):
-    def __init__(self, in_features):
-        super(divNorm, self).__init__()
-        self.linear = nn.Linear(in_features=in_features, out_features=in_features, bias=True)
-        self.linear.weight.data[:] = 1
-        self.linear.bias.data[:]=1
-        self.beta = Parameter(2*torch.ones(in_features)) # raise to the power beta
-        self.relu = F.relu
+plt.imshow(gqm0.divnorm.linear.weight.detach())
+plt.figure()
+plt.plot(gqm0.divnorm.linear.bias.detach())
 
-    # def _reset_parameters(self):
-    #     self.beta = 
-    def reset_parameters(self) -> None:
-        # if self.beta is not None:
-        print("initialize beta")
-        nn.init.uniform_(self.beta, 1.0, 2.0)
-        nn.init.unitorm_(self.linear.weight, 0.0, 1.0)
-        nn.init.unitorm_(self.linear.bias, 0.5, 1.0)
-
-    def forward(self, x):
-        sz = list(x.shape) # get dimensions of input
-        pdims = np.append( np.setdiff1d(np.arange(0,len(sz)), 1),1) # permute dims (move C to edge)
-        
-        snew = [sz[i] for i in pdims] # reshape size after permute
-
-        x = x.permute(list(pdims)) #[N, C, Y, X] --> [N, Y, X, C]; or [N,C] -> [N,C]
-        x = x.reshape((-1, sz[1])) # [N, Y, X, C] --> [N*X*Y, C]; or [N,C] -> [N,C]
-        x = self.relu(x) # rectify
-        # self.beta.apply(self.posConstraint) # positive 
-        # self.beta.clamp_(1.0)
-        x = torch.pow(x, self.beta)
-        self.linear.weight.data.clamp_(0.0) 
-        xdiv = self.linear(x) # [N*X*Y, C] --> [N*X*Y, C] # in and out are same dimension
-        x /= xdiv # divisive normalization
-
-        x = self.relu(x)
-
-        x = x.reshape(snew) # [N*X*Y, K] --> [N, Y, X, K]
-        x = x.permute(list(np.argsort(pdims))) # [N, Y, X, K] --> [N, K, Y, X]
-        return x
-
-class sDN(sGQM):
-    def __init__(self, divnorm=True, **kwargs):
-        super(sDN,self).__init__(**kwargs)
-        # sGQM.__init__(self,**kwargs)
-        print("adding divnorm to sGQM")
-        self.divnorm = divNorm(self.hparams["n_hidden"])
-        self.save_hyperparameters()
-        # if divnorm:
-        #     
-            
-
-    def forward(self, x):
-        x = self.flatten(x)
-        x = self.linear1(x)
-        x = self.divnorm(x)
-        x = self.spikeNL(self.readout(x))
-
-        return x
-
-D_in = gd.NX*gd.NY*gd.num_lags
-gqm0 = sDN(input_dim=D_in, n_hidden=gd.NC*2, output_dim=gd.NC,
-        learning_rate=.001,betas=[.9,.999],
-        weight_decay=1e-0,
-        optimizer='AdamW')
-
-# gqm0.divnorm
+plt.figure()
+plt.plot(gqm0.divnorm.pow.weight.detach())
       
 #%%
 
@@ -541,23 +879,24 @@ f = plt.plot(dv(x1).detach().numpy())
 #%% make model convolutional
 
 input_dims = (gd.num_lags, gd.NY, gd.NX)
-cmod = convGQM(input_dim=input_dims, gqm=gqm0, ksize=(gdcrop.NY, gdcrop.NX))
+# cmod = convGQM(input_dim=input_dims, gqm=gqm0, ksize=(gdcrop.NY, gdcrop.NX))
+cmod = convSDN(input_dim=input_dims, gqm=gqm0, ksize=(gdcrop.NY, gdcrop.NX))
 
 
 #%% reload data
 # reload data with no augmentation and wider valid eye-position range
 gd = PixelDataset(sessid, num_lags=num_lags,
-    train=True, augment=None, cids=cids, valid_eye_rad=8)
+    train=False, augment=None, cids=cids, valid_eye_rad=8)
 
 gdcrop = PixelDataset(sessid, num_lags=num_lags,
-    train=True, augment=None, cids=cids, valid_eye_rad=8, cropidx=gdcrop.cropidx)    
+    train=False, augment=None, cids=cids, valid_eye_rad=8, cropidx=gdcrop.cropidx)    
 
 iframer = 1
 #%% test on a small amount of data (to unpack how it works)
-iframer += 1000
+iframer += 10
 print(iframer)
-idx = range(1+iframer,500+iframer)
-x,y = gd[idx] # preload some data to get dimensions
+idx = range(1+iframer,5000+iframer)
+x,y = rsvp[idx] # preload some data to get dimensions
 NC = gd.NC
 xh = cmod(x) # predict rates
 sz = list(xh.size())
@@ -621,7 +960,65 @@ l0 = loss(gqm0(xcrop),ycrop).sum().detach().cpu().numpy()
 l1 = np.min(L)
 print("%02.2f, %02.2f" %(l0,l1))
 
+#%%
+iframer =0 #+= 200
+print(iframer)
+idx = range(1+iframer,5000+iframer)
+x,y = gd[idx] # preload some data to get dimensions
 
+xh = cmod(x)
+# reshape and get loss across neurons over space
+sz = list(xh.size())
+
+L = 0
+for cc in range(NC):
+    yc = y[:,cc][:,None].repeat((1, sz[1]*sz[2])).reshape(sz[0:3])
+    L += loss(xh[:,:,:,cc], yc).sum(axis=0)
+L = L.detach().cpu().numpy()
+
+
+plt.figure()
+plt.imshow(-L)
+plt.colorbar()
+plt.xlabel("azimuth")
+plt.ylabel('elevation')
+plt.title("likelihood surface")
+
+
+xcrop,ycrop = gd[idx] # preload some data to get dimensions
+l0 = loss(gqm0(xcrop),ycrop).sum().detach().cpu().numpy()
+l1 = np.min(L)
+print("%02.2f, %02.2f" %(l0,l1))
+
+cy,cx = L.shape
+plt.plot(cx//2-3, cy//2, '+r')
+ny,nx = np.where(L==l1)
+plt.plot(nx,ny, '.r')
+ny,nx = np.where(L==l0)
+plt.plot(nx,ny, '.b')
+#%%
+ny,nx = np.where(L==l0)
+
+#%%
+iframer = 0 #+= 10
+print(iframer)
+idx = range(1+iframer,8000+iframer)
+xcrop,ycrop = rsvpc[idx] # preload some data to get dimensions
+f = plt.imshow(gqm0(xcrop).detach().T)
+plt.figure()
+f = plt.imshow(ycrop.T)
+
+y0 = gqm0(xcrop).detach().T
+y1 = ycrop.T
+
+#%%
+plt.figure()
+cc += 1
+if cc >= gd.NC:
+    cc = 0
+a=plt.xcorr(y1[cc,:], y0[cc,:], usevlines=False, maxlags=100)
+# plt.figure()
+# plt.plot(a,b)
 # %% debug convolutional layer
 
 xc = (cmod.conv1(x)).detach().numpy()
@@ -648,9 +1045,9 @@ LLspace, locs = get_likelihood_surface(gd, cmod, Npos=20, radius=1.0, valid_eye_
 
 #%% plot a few LL surfaces
 
-idxs = np.arange(2, 10)
+idxs = np.arange(2, 10, 3)
 
-plot_example_LLsurfs(LLspace, idxs=idxs, icol=3, softmax=100)
+plot_example_LLsurfs(LLspace, idxs=idxs, icol=4, softmax=100)
 #%% get correction grid
 sz = LLspace.shape
 Npos = sz[0]
@@ -667,7 +1064,7 @@ plt.imshow(-I)
 plt.plot(cx, cy, 'or')
 
 from neureye import normalize_range,radialcenter
-
+from copy import deepcopy
 plt.figure(figsize=(40,40))
 for xx in range(Npos):
         for yy in range(Npos):
@@ -696,7 +1093,7 @@ for xx in range(Npos):
 #%%
 from importlib import reload
 reload(ne)
-centers5,LLspace3 = ne.get_centers_from_LLspace(LLspace, softmax=200, plot=True, interpolation_steps=2, crop_edge=0)
+centers5,LLspace3 = ne.get_centers_from_LLspace(LLspace, softmax=100, plot=True, interpolation_steps=2, crop_edge=0)
 
 
 #%% plot
@@ -731,14 +1128,14 @@ fname = fpath / (sessid + "_CorrGrid.mat")
 sio.savemat(str(fname.resolve()), {'centers': centers6, 'locs': locs, 'LLspace': LLspace})
 
 #%% check that correction did anything
-gqm1 = get_model(gd_test, version=2) # no cropping
+# gqm1 = get_model(gd_test, version=16) # no cropping
 gd_test = PixelDataset(sessid, num_lags=num_lags,
     train=True, cids=cids, corrected=False, valid_eye_rad=3.5, cropidx=gdcrop.cropidx)
 
 # # get test set
 xt0,yt0=gd_test[:]
 
-l0 = get_null_adjusted_ll(gqm1, xt0, yt0, bits=False)
+l0 = get_null_adjusted_ll(gqm0, xt0, yt0, bits=False)
 
 # #%%
 from importlib import reload
@@ -756,7 +1153,7 @@ xt,yt=gd_testC[:]
 
 # (xt-xt0).mean()
 
-l1 = get_null_adjusted_ll(gqm1, xt, yt, bits=False)
+l1 = get_null_adjusted_ll(gqm0, xt, yt, bits=False)
 
 plt.figure()
 plt.plot(l0, l1, '.')
