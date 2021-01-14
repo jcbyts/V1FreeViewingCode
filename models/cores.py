@@ -26,6 +26,52 @@ class Core(LightningModule):
         for attr in filter(lambda x: "gamma" in x or "skip" in x, dir(self)):
             ret.append("{} = {}".format(attr, getattr(self, attr)))
         return s + "|".join(ret) + "]\n"
+        
+    def plot_filters(model, sort=False):
+        import numpy as np
+        import matplotlib.pyplot as plt  # plotting
+        # ei_mask = model.features.layer0.eimask.ei_mask.detach().cpu().numpy()
+        
+        w = model.features.layer0.conv.weight.detach().cpu().numpy()
+        ei_mask = np.ones(w.shape[0])
+        sz = w.shape
+        # w = model.features.weight.detach().cpu().numpy()
+        w = w.reshape(sz[0], sz[1], sz[2]*sz[3])
+        nfilt = w.shape[0]
+        if sort:
+            n = np.asarray([w[i,:].abs().max().detach().numpy() for i in range(nfilt)])
+            cinds = np.argsort(n)[::-1][-len(n):]
+        else:
+            cinds = np.arange(0, nfilt)
+
+        sx = np.ceil(np.sqrt(nfilt*2))
+        sy = np.round(np.sqrt(nfilt*2))
+        # sx,sy = U.get_subplot_dims(nfilt*2)
+        mod2 = sy % 2
+        sy += mod2
+        sx -= mod2
+
+        plt.figure(figsize=(10,10))
+        for cc,jj in zip(cinds, range(nfilt)):
+            plt.subplot(sx,sy,jj*2+1)
+            wtmp = np.squeeze(w[cc,:])
+            bestlag = np.argmax(np.std(wtmp, axis=1))
+            plt.imshow(np.reshape(wtmp[bestlag,:], (sz[2], sz[3])), interpolation=None, )
+            wmax = np.argmax(wtmp[bestlag,:])
+            wmin = np.argmin(wtmp[bestlag,:])
+            plt.axis("off")
+
+            plt.subplot(sx,sy,jj*2+2)
+            if ei_mask[cc]>0:
+                plt.plot(wtmp[:,wmax], 'b-')
+                plt.plot(wtmp[:,wmin], 'b--')
+            else:
+                plt.plot(wtmp[:,wmax], 'r-')
+                plt.plot(wtmp[:,wmin], 'r--')
+
+            plt.axhline(0, color='k')
+            plt.axvline(bestlag, color=(.5, .5, .5))
+            plt.axis("off")
 
 
 class Core2d(Core):
@@ -51,16 +97,76 @@ class Core2d(Core):
 ============================================================================
 Specific Cores
 ============================================================================
-1. Shared NIM
-2. Shared GQM
-3. Shared DivNorm
+1. GLM (use identity readout)
+2. GQM (uses identity readout)
+3. Shared NIM
 4. Stacked 2D convolutional core
 5. Stacked 2D NIM EI
+6. Stacked 2D Divisive Normalization model
 """
 
 """
 Shared NIM core
 """
+
+class GLM(Core):
+    def __init__(
+        self,
+        input_size,
+        output_channels,
+        weight_norm=True,
+        bias=True,
+        activation="softplus",
+        input_regularizer="RegMats",
+        input_reg_types=["d2x", "d2t"],
+        input_reg_amt=[.005,.001]
+    ):
+
+        super().__init__()
+
+        self.save_hyperparameters()
+        
+        self.input_channels = input_size[0]
+
+        regularizer_config = {'dims': input_size,
+                            'type': input_reg_types, 'amount': input_reg_amt}
+        self._input_weights_regularizer = regularizers.__dict__["RegMats"](**regularizer_config)
+
+        self.features = nn.Sequential()
+
+        # --- first layer
+        layer = OrderedDict()
+        if weight_norm:
+            layer["conv"] = nn.utils.weight_norm( # call Shape linear looks like conv for regularization
+                    ShapeLinear(input_size, output_channels,
+                    bias=bias),
+                    dim=0,
+                    name='weight')
+        else:
+            layer["conv"] = ShapeLinear(input_size,
+                output_channels,
+                bias=bias)
+
+        if activation=="softplus":
+            layer["nonlin"] = nn.Softplus()
+        elif activation=="relu":
+            layer["nonlin"] = nn.ReLU()
+
+        self.features.add_module("layer0", nn.Sequential(layer))
+
+    def forward(self, input_):
+        ret = self.features(input_)
+
+        return ret
+    
+    def input_reg(self):
+        return self._input_weights_regularizer(self.features[0].conv.weight)
+
+    def regularizer(self):
+        return self.input_reg()
+
+
+
 class NimCore(Core):
     def __init__(
         self,
@@ -71,7 +177,7 @@ class NimCore(Core):
         weight_norm=True,
         weight_norm_dim=0,
         gamma_hidden=0,
-        gamma_input=0.0,
+        gamma_input=1,
         elu_xshift=0.0,
         elu_yshift=0.0,
         group_norm=False,
@@ -79,7 +185,9 @@ class NimCore(Core):
         skip=0,
         final_nonlinearity=True,
         bias=True,
-        input_regularizer="LaplaceL2norm",
+        input_regularizer="RegMats",
+        input_reg_types=["d2xt", "local","center"],
+        input_reg_amt=[.25,.25,.5],
         stack=None,
         laplace_padding=0,
         use_avg_reg=True,
@@ -117,12 +225,19 @@ class NimCore(Core):
         super().__init__()
 
         input_kern = input_size[-2:]
-        regularizer_config = (
-            dict(padding=laplace_padding, kernel=input_kern)
-            if input_regularizer == "GaussianLaplaceL2"
-            else dict(padding=laplace_padding)
-        )
-        self._input_weights_regularizer = regularizers.__dict__[input_regularizer](**regularizer_config)
+
+        
+        regularizer_config = {'dims': [input_size[0], input_kern,input_kern],
+                            'type': input_reg_types, 'amount': input_reg_amt}
+        self._input_weights_regularizer = regularizers.__dict__["RegMats"](**regularizer_config)
+
+
+        # regularizer_config = (
+        #     dict(padding=laplace_padding, kernel=input_kern)
+        #     if input_regularizer == "GaussianLaplaceL2"
+        #     else dict(padding=laplace_padding)
+        # )
+        # self._input_weights_regularizer = regularizers.__dict__[input_regularizer](**regularizer_config)
         
         self.save_hyperparameters()
         self.input_channels = np.prod(input_size)
@@ -228,7 +343,7 @@ class NimCore(Core):
 
         return torch.cat([ret[ind] for ind in self.stack], dim=1)
 
-    def laplace(self):
+    def input_reg(self):
         return self._input_weights_regularizer(self.features[0].conv.weight, avg=self.use_avg_reg)
 
     def group_sparsity(self):
@@ -239,7 +354,7 @@ class NimCore(Core):
         return ret / ((self.hparams.layers - 1) if self.hparams.layers > 1 else 1)
 
     def regularizer(self):
-        return self.group_sparsity() * self.hparams.gamma_hidden + self.hparams.gamma_input * self.laplace()
+        return self.group_sparsity() * self.hparams.gamma_hidden + self.hparams.gamma_input * self.input_reg()
 
     @property
     def outchannels(self):
@@ -306,8 +421,12 @@ class Stacked2dCore(Core2d):
         gamma_input=0.0,
         gamma_center=.1, # regularize the first conv layer to be centered
         skip=0,
-        laplace_padding=0,
-        input_regularizer="LaplaceL2norm",
+        input_regularizer="RegMats",
+        hidden_regularizer="RegMats",
+        input_reg_types=["d2xt", "local","center"],
+        input_reg_amt=[.25,.25,.5],
+        hidden_reg_types=["d2x", "local", "center"],
+        hidden_reg_amt=[.33,.33,.33],
         stack=None,
         use_avg_reg=True,
     ):
@@ -333,12 +452,19 @@ class Stacked2dCore(Core2d):
 
         super().__init__()
 
-        regularizer_config = (
-            dict(padding=laplace_padding, kernel=input_kern)
-            if input_regularizer == "GaussianLaplaceL2"
-            else dict(padding=laplace_padding)
-        )
-        self._input_weights_regularizer = regularizers.__dict__[input_regularizer](**regularizer_config)
+        # regularizer_config = (
+        #     dict(padding=laplace_padding, kernel=input_kern)
+        #     if input_regularizer == "GaussianLaplaceL2"
+        #     else dict(padding=laplace_padding)
+        # )
+        # self._input_weights_regularizer = regularizers.__dict__[input_regularizer](**regularizer_config)
+        regularizer_config = {'dims': [input_channels, input_kern,input_kern],
+                            'type': input_reg_types, 'amount': input_reg_amt}
+        self._input_weights_regularizer = regularizers.__dict__["RegMats"](**regularizer_config)
+
+        regularizer_config = {'dims': [hidden_channels, hidden_kern,hidden_kern],
+                            'type': hidden_reg_types, 'amount': hidden_reg_amt}
+        self._hidden_weights_regularizer = regularizers.__dict__["RegMats"](**regularizer_config)
 
         self.layers = layers
         self.gamma_input = gamma_input
@@ -357,9 +483,9 @@ class Stacked2dCore(Core2d):
         else:
             self.stack = [*range(self.layers)[stack:]] if isinstance(stack, int) else stack
 
-        # center regularization
-        regw = 1 - regularizers.gaussian2d(input_kern,sigma=input_kern//2)
-        self.register_buffer("center_reg_weights", torch.tensor(regw))
+        # # center regularization
+        # regw = 1 - regularizers.gaussian2d(input_kern,sigma=input_kern//2)
+        # self.register_buffer("center_reg_weights", torch.tensor(regw))
 
     def forward(self, input_):
         ret = []
@@ -370,12 +496,17 @@ class Stacked2dCore(Core2d):
 
         return torch.cat([ret[ind] for ind in self.stack], dim=1)
 
-    def laplace(self):
-        return self._input_weights_regularizer(self.features[0].conv.weight, avg=self.use_avg_reg)
+    def input_reg(self):
+        return self._input_weights_regularizer(self.features[0].conv.weight)
 
-    def center_reg(self):
-        ret = torch.einsum('ijxy,xy->ij', self.features[0].conv.weight, self.center_reg_weights).pow(2).mean()
-        return ret
+    def hidden_reg(self):
+        ret = 0
+        for l in range(1, self.layers):
+            ret = ret + self._hidden_weights_regularizer(self.features[l].conv.weight)
+        return self.gamma_hidden * self.group_sparsity() + ret
+    # def center_reg(self):
+    #     ret = torch.einsum('ijxy,xy->ij', self.features[0].conv.weight, self.center_reg_weights).pow(2).mean()
+    #     return ret
 
     def group_sparsity(self):
         ret = 0
@@ -384,7 +515,7 @@ class Stacked2dCore(Core2d):
         return ret / ((self.layers - 1) if self.layers > 1 else 1)
 
     def regularizer(self):
-        return self.group_sparsity() * self.gamma_hidden + self.gamma_input * self.laplace() + self.gamma_center * self.center_reg()
+        return self.hidden_reg() + self.gamma_input * self.input_reg()
 
     @property
     def outchannels(self):
@@ -552,6 +683,104 @@ class Stacked2dEICore(Stacked2dCore):
 
         self.apply(self.init_conv)
 
+class Stacked2dDivNorm(Stacked2dCore):
+    def __init__(
+        self,
+        input_channels=10,
+        hidden_channels=10,
+        input_kern=9,
+        hidden_kern=9,
+        activation="elu",
+        final_nonlinearity=True,
+        bias=False,
+        pad_input=True,
+        hidden_padding=None,
+        group_norm=True,
+        num_groups=2,
+        weight_norm=True,
+        hidden_dilation=1,
+        **kwargs):
+
+        self.save_hyperparameters()
+
+        super().__init__(input_channels,hidden_channels,input_kern,hidden_kern,**kwargs)
+
+        self.features = nn.Sequential()
+
+        if activation=="elu":
+            self.activation = AdaptiveELU(0.0,1.0)
+        elif activation=="relu":
+            self.activation = nn.ReLU()
+        elif activation=="pow":
+            self.activation = powNL(1.5)
+
+        # --- first layer
+        layer = OrderedDict()
+        if weight_norm:
+            layer["conv"] = nn.utils.weight_norm(nn.Conv2d(
+                input_channels,
+                hidden_channels,
+                input_kern,
+                padding=input_kern // 2 if pad_input else 0,
+                bias=bias and not group_norm),
+                dim=0, name='weight')
+        else:
+            layer["conv"] = nn.Conv2d(
+                input_channels,
+                hidden_channels,
+                input_kern,
+                padding=input_kern // 2 if pad_input else 0,
+                bias=bias and not group_norm,
+            )
+
+        if self.layers > 1 or final_nonlinearity:
+            layer["nonlin"] = self.activation
+            layer["norm"] = divNorm(hidden_channels)
+
+        self.features.add_module("layer0", nn.Sequential(layer))
+
+        # --- other layers
+        if not isinstance(hidden_kern, Iterable):
+            hidden_kern = [hidden_kern] * (self.layers - 1)
+
+        for l in range(1, self.layers):
+            layer = OrderedDict()
+
+            hidden_padding = ((hidden_kern[l - 1] - 1) * hidden_dilation + 1) // 2
+            if weight_norm:
+                layer["conv"] = nn.utils.weight_norm(nn.Conv2d(
+                    hidden_channels if not self.skip > 1 else min(self.skip, l) * hidden_channels,
+                    hidden_channels,
+                    hidden_kern[l - 1],
+                    padding=hidden_padding,
+                    bias=bias,
+                    dilation=hidden_dilation),
+                    dim=0)
+
+            else:
+                layer["conv"] = nn.Conv2d(
+                    hidden_channels if not self.skip > 1 else min(self.skip, l) * hidden_channels,
+                    hidden_channels,
+                    hidden_kern[l - 1],
+                    padding=hidden_padding,
+                    bias=bias,
+                    dilation=hidden_dilation,
+                )
+
+            if final_nonlinearity or l < self.layers - 1:
+                layer["nonlin"] = self.activation #AdaptiveELU(elu_xshift, elu_yshift)
+
+            if group_norm:
+                layer["norm"] = nn.GroupNorm(num_groups, hidden_channels)
+
+            self.features.add_module("layer{}".format(l), nn.Sequential(layer))
+
+        # center regularization
+        regw = 1 - regularizers.gaussian2d(input_kern,sigma=input_kern//4)
+        self.register_buffer("center_reg_weights", torch.tensor(regw))
+
+        self.apply(self.init_conv)
+
 """
 Stacked 2D convGQM
 """
@@ -579,7 +808,7 @@ class Stacked2dGqmCore(Stacked2dCore):
 
         self.features = nn.Sequential()
 
-        # specify EI split
+        # specify Lin / Quad split
         nlin = int(np.ceil(prop_lin*hidden_channels))
         nquad = hidden_channels - nlin
         self.num_lin = nlin

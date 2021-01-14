@@ -41,6 +41,7 @@ class PixelDataset(Dataset):
         downsample_t: int=2,
         smooth_spikes=False,
         valid_eye_rad=5.2,
+        valid_eye_ctr=(0.0,0.0),
         fixations_only=True,
         dirname='/home/jake/Data/Datasets/MitchellV1FreeViewing/stim_movies/',
         cids=None,
@@ -64,6 +65,7 @@ class PixelDataset(Dataset):
         self.fixations_only = fixations_only
         self.include_eyepos = include_eyepos
         self.valid_eye_rad = valid_eye_rad
+        self.valid_eye_ctr = valid_eye_ctr
         self.shifter=shifter
 
         # sanity check stimuli (all requested stimuli must be keys in the file)
@@ -218,7 +220,12 @@ class PixelDataset(Dataset):
             xy = self.fhandle[stim][self.stimset]['eyeAtFrame'][1:3,:].T
             xy[:,0] -= self.centerpix[0]
             xy[:,1] = self.centerpix[1] - xy[:,1] # y pixels run down (flip when converting to degrees)
-            eyeCentered = np.hypot(xy[:,0],xy[:,1])/self.ppd < self.valid_eye_rad
+            # convert to degrees
+            xy = xy/self.ppd
+            # subtract offset
+            xy[:,0] -= self.valid_eye_ctr[0]
+            xy[:,1] -= self.valid_eye_ctr[1]
+            eyeCentered = np.hypot(xy[:,0],xy[:,1]) < self.valid_eye_rad
             valid = np.intersect1d(valid, np.where(eyeCentered)[0])
 
         return valid

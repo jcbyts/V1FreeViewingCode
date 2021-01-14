@@ -28,9 +28,34 @@ class Readout(LightningModule):
 ============================================================================
 Specific Readouts
 ============================================================================
-1. Full - channel x width x height
-2. Gaussian 2D
+1. Identity - this readout does nothing (depends on the core to the output dimensions)
+2. Full - channel x width x height
+3. Gaussian 2D
 """
+
+class IdentityReadout(Readout):
+    """
+    This readout does nothing. It has no parameters. It is not trained. No output nonlinearity. It assumes the Core does everything.
+    """
+    def __init__(self, input_size, bias=True):
+        super().__init__()
+        self.save_hyperparameters()
+
+        self.input_size = input_size
+        self.register_buffer("regvalplaceholder", torch.zeros(1))
+
+        if bias:
+            bias = Parameter(torch.Tensor(input_size))
+            self.register_parameter("bias", bias)
+        else:
+            self.register_parameter("bias", None)
+    
+    def forward(self,x):
+        return x + self.bias.clamp(min=0.0)
+    
+    def regularizer(self):
+        return self.regvalplaceholder.sum()
+
 class FullReadout(Readout):
     """
     This readout connects to all 
@@ -188,7 +213,16 @@ class Point2DGaussian(Readout):
                     layer["activation"] = nn.Tanh()
             else:
                 layer["linear"] = nn.Linear(2, shifter["hidden_features"], bias=False)
-                layer["activation"] = nn.ReLU()
+                if "activation" in shifter.keys():
+                    if shifter["activation"]=="relu":
+                        layer["activation"] = nn.ReLU()
+                    elif shifter["activation"]=="softplus":
+                        if "lengthscale" in shifter.keys():
+                            layer["activation"] = nn.Softplus(beta=shifter["lengthscale"])
+                        else:
+                            layer["activation"] = nn.Softplus()
+                else:
+                        layer["activation"] = nn.ReLU()
             
             self.shifter.add_module("layer0", nn.Sequential(layer))
 
@@ -200,7 +234,16 @@ class Point2DGaussian(Readout):
                         layer["activation"] = nn.Tanh()
                 else:
                     layer["linear"] = nn.Linear(shifter["hidden_features"],shifter["hidden_features"],bias=True)
-                    layer["activation"] = nn.ReLU()
+                    if "activation" in shifter.keys():
+                        if shifter["activation"]=="relu":
+                            layer["activation"] = nn.ReLU()
+                        elif shifter["activation"]=="softplus":
+                            if "lengthscale" in shifter.keys():
+                                layer["activation"] = nn.Softplus(beta=shifter["lengthscale"])
+                            else:
+                                layer["activation"] = nn.Softplus()
+                    else:
+                        layer["activation"] = nn.ReLU()
 
                 self.shifter.add_module("layer{}".format(l), nn.Sequential(layer))
         else:
@@ -212,7 +255,7 @@ class Point2DGaussian(Readout):
         else:
             self.register_parameter("bias", None)
 
-        self.register_buffer("regvalplaceholder", torch.zeros(1))
+        self.register_buffer("regvalplaceholder", torch.zeros((1,2)))
         self.init_mu_range = init_mu_range
         self.align_corners = align_corners
         self.initialize()
@@ -368,7 +411,8 @@ class Point2DGaussian(Readout):
         return y
 
     def regularizer(self):
-        return self.regvalplaceholder
+        # enforce the shifter to have 0 shift at 0,0 in
+        return self.shifter(self.regvalplaceholder).abs().sum()*10
 
     def __repr__(self):
         """

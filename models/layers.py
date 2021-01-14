@@ -77,7 +77,7 @@ class ShapeLinear(nn.Module):
         if bias:
             self.bias = Parameter(torch.Tensor(out_features))
         else:
-            self.register_parameter('bias', None)
+            self.register_buffer('bias', torch.zeros(out_features))
 
         if self.positive_constraint:
             self.register_buffer("minval", torch.tensor(0.0))
@@ -96,9 +96,10 @@ class ShapeLinear(nn.Module):
         if self.positive_constraint:
             w = torch.maximum(w, self.minval)
         x = torch.einsum('ncwh,kcwh->nk', x, w)
-        if self.bias:
-            x = x + self.bias
-        return x
+        return x + self.bias
+        # if self.bias:
+        # x = x + self.bias
+        
 
 
 
@@ -147,7 +148,7 @@ class powNL(nn.Module):
         super(powNL, self).__init__()
         self.relu = F.relu
         self.rectified = rectified
-        self.register_buffer("weight", torch.tensor(power))
+        self.register_buffer("weight", torch.tensor(power.astype('float32')))
 
     def forward(self, x):
         if self.rectified:
@@ -180,13 +181,13 @@ class divNorm(nn.Module):
 
     def forward(self, x):
 
-        posweight = torch.maximum(self.weight, torch.tensor(0.0))
+        posweight = self.relu(self.weight)
         x = self.relu(x)
         xdiv = torch.einsum('nc...,ck->nk...', x, posweight)
         if len(x.shape)==4:
-            xdiv += + self.bias[None,:,None,None] # is convolutional
+            xdiv = xdiv + self.bias[None,:,None,None] # is convolutional
         else:
-            xdiv += + self.bias[None,:]
+            xdiv = xdiv + self.bias[None,:]
 
         x = x / xdiv.clamp_(0.001) # divide
 
