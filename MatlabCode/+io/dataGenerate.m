@@ -37,6 +37,7 @@ ip.addParameter('correctEyePos', false)
 ip.addParameter('nonlinearEyeCorrection', true)
 ip.addParameter('overwrite', false)
 ip.addParameter('usePTBdraw', false)
+ip.addParameter('useHdf5', true)
 ip.addParameter('debug', false)
 ip.parse(varargin{:})
 
@@ -57,8 +58,14 @@ end
 
 spikeBinSize = 1/Exp.S.frameRate; % bin at the frame rate (4 ms bins)
 
+if ip.Results.useHdf5
+    ext = 'hdf5';
+else
+    ext = 'mat';
+end
+
 dataDir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-fname = sprintf('%s_%s_%s_%d_%d_%d_%d_%d_%d.mat',...
+fname = sprintf('%s_%s_%s_%d_%d_%d_%d_%d_%d.%s',...
     strrep(Exp.FileTag, '.mat', ''),...
     ip.Results.stimulus, ...
     strrep(strrep(num2str(S.rect), ' ', '_'), '__', '_'), ... % rect
@@ -67,7 +74,8 @@ fname = sprintf('%s_%s_%s_%d_%d_%d_%d_%d_%d.mat',...
     ip.Results.correctEyePos, ...
     ip.Results.eyesmooth, ...
     ip.Results.nonlinearEyeCorrection, ...
-    ip.Results.usePTBdraw);
+    ip.Results.usePTBdraw,...
+    ext);
 
 if exist(fullfile(dataDir, fname), 'file') && ~ip.Results.overwrite
     fprintf('Stimulus already exported\n')
