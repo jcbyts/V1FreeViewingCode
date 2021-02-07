@@ -1,7 +1,7 @@
 
 
 %% get JRCLUST spikes
-iEx = 45;
+for iEx = 5
 
 [~, S] = io.dataFactoryGratingSubspace(iEx);
 
@@ -13,14 +13,14 @@ sp = io.getSpikesFromJRCLUST(ops);
 
 io.copy_spikes_from_server(iEx, 'JRC');
 
-%% reload Exp
+%% reload Exp and clip waveforms from hp-filtered traces
 [Exp, S] = io.dataFactoryGratingSubspace(iEx, 'spike_sorting', 'JRC', 'cleanup_spikes', 1);
 
 io.clip_waveforms(Exp, S, 'Fs', 30e3);
 
+end
 
-
-%% Do detect-sort for 
+%% Gather all folders that have prm files
 dataPath = 'Z:\Data\ForageMapping';
 
 flist = dir(dataPath);
@@ -52,7 +52,6 @@ for f = 1:nfolders
     end
     
     prmFiles{f} = prmfile;
-%     jrc('detect-sort', prmfile)
         
 end
 
@@ -61,14 +60,22 @@ end
 prmFiles(cellfun(@isempty, prmFiles)) = [];
 
 for i = 1:numel(prmFiles)
-fprintf('%d) %s\n', i, prmFiles{i});
+    fprintf('%d) %s\n', i, prmFiles{i});
 end
 
 %%
 
-iSess = 18;
+iSess = 12;
 prmf = prmFiles{iSess};
 
+%%
+prmf = 'Z:\Data\PLDAPS\Ellie\Ellie_2017-07-31_15-21-11_Shnkd8\_shank01_V1\ephys-jr.prm';
+jrc('preview', prmf)
+
+%%
+jrc('detect-sort', prmf)
+
+%%
 jrc('manual', prmf)
 
 
