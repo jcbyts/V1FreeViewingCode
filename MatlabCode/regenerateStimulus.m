@@ -1,4 +1,4 @@
-function [Stim, frameInfo] = regenerateStimulus(Exp, validTrials, rect, varargin)
+function varargout = regenerateStimulus(Exp, validTrials, rect, varargin)
 % REGENERATE STIMULUS reconstructs the stimulus within a specified window
 % on the screen. Can be gaze contingent or not
 %
@@ -40,6 +40,8 @@ ip.addParameter('includeProbe', true)
 ip.addParameter('debug', false)
 ip.addParameter('frameIndex', [])
 ip.addParameter('usePTBdraw', false)
+ip.addParameter('h5file', [])
+ip.addParameter('h5path', [])
 ip.parse(varargin{:});
 
 spatialBinSize = ip.Results.spatialBinSize;
@@ -51,16 +53,53 @@ dims = ((rect([4 3]) - rect([2 1]))/spatialBinSize);
 framesPerTrial = cellfun(@(x) sum(~isnan(x.eyeData(6:end,6))),Exp.D(validTrials));
 nTotalFrames = sum(framesPerTrial);
 
-Stim = zeros(dims(1), dims(2), nTotalFrames, 'single');
-
-frameInfo = struct('dims', dims, 'rect', rect, ...
-    'frameTimesPtb', zeros(nTotalFrames, 1), ...
-    'frameTimesOe', zeros(nTotalFrames, 1), ...
-    'eyeAtFrame', zeros(nTotalFrames, 6), ... % [eyeTime eyeX eyeY eyeIx eyeXonline eyeYonline]
-    'probeDistance', inf(nTotalFrames, 1), ...
-    'probeAtFrame', zeros(nTotalFrames, 3), ... % [X Y id]
-    'seedGood', true(nTotalFrames, 1));
+if ~isempty(ip.Results.h5file) && ~isempty(ip.Results.h5path)
     
+    h5fname = ip.Results.h5file;
+    h5path = ip.Results.h5path;
+    
+%     if ~exist(h5fname, 'file')
+%         error('regenerateStimulus: hd5 mode requested, but file does not exist. aborting.')
+%     end
+    
+    useh5 = true;
+    
+    sz = [inf dims];
+    
+    % create datasets
+    try
+        h5create(h5fname, [h5path '/Stim'], sz, 'ChunkSize', [20 dims(:)'], 'DataType', 'int8')
+        h5create(h5fname, [h5path '/frameTimesPtb'], [inf, 1],'ChunkSize', [20,1])
+        h5create(h5fname, [h5path '/frameTimesOe'], [inf, 1],'ChunkSize', [20,1])
+        h5create(h5fname, [h5path '/eyeAtFrame'], [inf, 6],'ChunkSize', [20,6]) % [eyeTime eyeX eyeY eyeIx eyeXonline eyeYonline]
+        h5create(h5fname, [h5path '/probeDistance'], [inf, 1],'ChunkSize', [20,1])
+        h5create(h5fname, [h5path '/probeAtFrame'], [inf, 3],'ChunkSize', [20,3])
+        h5create(h5fname, [h5path '/seedGood'], [inf, 1],'ChunkSize', [20,1])
+    end
+
+    % write attributes
+    h5writeatt(h5fname, [h5path '/Stim'], 'width', dims(2))
+    h5writeatt(h5fname, [h5path '/Stim'], 'height', dims(1))
+    h5writeatt(h5fname, [h5path '/Stim'], 'ppd', Exp.S.pixPerDeg)
+    h5writeatt(h5fname, [h5path '/Stim'], 'rect', rect)
+    h5writeatt(h5fname, [h5path '/Stim'], 'frate', Exp.S.frameRate)
+    h5writeatt(h5fname, [h5path '/Stim'], 'center', Exp.S.centerPix)
+    h5writeatt(h5fname, [h5path '/Stim'], 'viewdist', Exp.S.screenDistance)
+    
+else
+    useh5 = false;
+    Stim = zeros(dims(1), dims(2), nTotalFrames, 'single');
+    
+    frameInfo = struct('dims', dims, 'rect', rect, ...
+        'frameTimesPtb', zeros(nTotalFrames, 1), ...
+        'frameTimesOe', zeros(nTotalFrames, 1), ...
+        'eyeAtFrame', zeros(nTotalFrames, 6), ... % [eyeTime eyeX eyeY eyeIx eyeXonline eyeYonline]
+        'probeDistance', inf(nTotalFrames, 1), ...
+        'probeAtFrame', zeros(nTotalFrames, 3), ... % [X Y id]
+        'seedGood', true(nTotalFrames, 1));
+end
+
+
 % convert eye tracker to ephys time
 eyeTimes = Exp.vpx2ephys(Exp.vpx.smo(:,1));
 
@@ -108,13 +147,8 @@ if ip.Results.usePTBdraw
 
     A.frameRate = FrameRate(A.window);
 
-% % bump ptb to maximum priority
-% A.priorityLevel = MaxPriority(A.window);
-% 
     % set alpha blending/antialiasing etc.
     Screen(A.window,'BlendFunction',GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
-% 
-%     [A.window, A.screenRect] = PsychImaging('OpenWindow',0,S.bgColour,S.screenRect);
     
 end
 
@@ -268,6 +302,9 @@ for iTrial = 1:nTrials
         if isempty(eyeIx)
             disp('Skipping because of eyeTime')
             blocks = [blocks; frameCounter];
+%             if useh5
+%                 frameCounter = frameCounter + 1;
+%             end
             continue
         end
         
@@ -287,6 +324,9 @@ for iTrial = 1:nTrials
         % exclude eye positions that are off the screen
         if hypot(eyeX, eyeY) > ip.Results.ExclusionRadius
             blocks = [blocks; frameCounter];
+%             if useh5
+%                 frameCounter = frameCounter + 1;
+%             end
             continue
         end
         
@@ -297,6 +337,9 @@ for iTrial = 1:nTrials
         % skip frame if eye position is invalid
         if isnan(eyeX) || isnan(eyeY)
             blocks = [blocks; frameCounter];
+%             if useh5
+%                 frameCounter = frameCounter + 1;
+%             end
             continue
         end
         
@@ -315,6 +358,10 @@ for iTrial = 1:nTrials
             if (frameRefreshes(iFrame)~=noiseFrames(iFrame)) && (iFrame ~=nFrames)
                 fprintf('regenerateStimulus: noiseHistory doesn''t equal the frame refresh time on frame %d\n', iFrame)
                 blocks = [blocks; frameCounter];
+%                 if useh5
+%                     frameCounter = frameCounter + 1;
+%                 end
+                
                 continue
             end
             
@@ -394,18 +441,7 @@ for iTrial = 1:nTrials
             
         end
         
-    
-        % save info
-        frameInfo.frameTimesPtb(frameCounter) = frameRefreshes(iFrame) + ip.Results.Latency;
-        frameInfo.frameTimesOe(frameCounter)  = frameRefreshesOe(iFrame) + ip.Results.Latency;
-        frameInfo.eyeAtFrame(frameCounter,:)    = [eyeTimes(eyeIx) eyeX eyeY eyeIx, eyeXon, eyeYon];
-        
-        % probe distance from center of window
-        frameInfo.probeDistance(frameCounter) = hypot(probeX(iFrame)-mean(tmprect([1 3])), probeY(iFrame)-mean(tmprect([2 4])));
-        
-        % --- handle the probe object
-        frameInfo.probeAtFrame(frameCounter,:) = [probeX(iFrame) probeY(iFrame) probeId(iFrame)];
-        
+        % --- handle probe objects
         if useNoiseObject && ip.Results.includeProbe % probes can exist on noise objects. for now. Might add them for BackImage soon
             
             probeInWin = (probeX(iFrame) > (tmprect(1)-Probe{1}.radius)) & (probeX(iFrame) < (tmprect(3) + Probe{1}.radius));
@@ -446,62 +482,107 @@ for iTrial = 1:nTrials
             
             
         end
+
         
-         %% if usePTBdraw
+        %% if usePTBdraw
         if ip.Results.usePTBdraw 
              Screen('Flip', A.window, 0);
-
+             if any(tmprect<0) || any(tmprect(3:4) > A.screenRect([3 4])) % rect outside window
+                 continue
+             end
              I = Screen('GetImage', A.window, tmprect, 'backBuffer');
              I = mean(I,3) - 127;
              
         end
         
-             
-        
-        
-        %%
-        
-        
         % check that the seed worked
         if useNoiseObject
             switch Exp.D{thisTrial}.PR.noisetype
                 case 4
-                    frameInfo.seedGood(frameCounter) = all([hNoise.x(1) hNoise.mypars(2)] == Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2:end));
+                    seedGood = all([hNoise.x(1) hNoise.mypars(2)] == Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2:end));
                 case 5
                     noiseNum = Exp.D{thisTrial}.PR.noiseNum;
-                    frameInfo.seedGood(frameCounter) = all([hNoise.x(1:noiseNum) hNoise.y(1:noiseNum)] == Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2:end));
+                    seedGood = all([hNoise.x(1:noiseNum) hNoise.y(1:noiseNum)] == Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2:end));
             end
         else
-            frameInfo.seedGood(frameCounter) = true; % seed doesn't exist. It's an image
+            seedGood = true; % seed doesn't exist. It's an image
         end
+             
+        % -- save info
+        if useh5
+            X = zeros([1 size(I)], 'int8');
+            X(1,:,:) = int8(I);
+            % save stim
+            h5write(h5fname, [h5path '/Stim'], X, [frameCounter, 1,1], size(X))
+            
+            % save frame time
+            h5write(h5fname, [h5path '/frameTimesPtb'], frameRefreshes(iFrame) + ip.Results.Latency, [frameCounter, 1], [1,1]);
+            h5write(h5fname, [h5path '/frameTimesOe'], frameRefreshesOe(iFrame) + ip.Results.Latency, [frameCounter,1], [1,1]);
+            
+            % save eye data
+            eyedat = [eyeTimes(eyeIx) eyeX eyeY eyeIx, eyeXon, eyeYon];
+            h5write(h5fname, [h5path '/eyeAtFrame'], eyedat, [frameCounter,1], [1,6]);
+            
+            % save probe info
+            probedist = hypot(probeX(iFrame)-mean(tmprect([1 3])), probeY(iFrame)-mean(tmprect([2 4])));
+            h5write(h5fname, [h5path '/probeDistance'], probedist, [frameCounter,1], [1,1]);
+            probeinfo = [probeX(iFrame) probeY(iFrame) probeId(iFrame)];
+            h5write(h5fname, [h5path '/probeAtFrame'], probeinfo, [frameCounter,1], [1,3]);
+            
+            % save seed info
+            h5write(h5fname, [h5path '/seedGood'], double(seedGood), [frameCounter,1], [1,1]);
+            
+        else
+            frameInfo.frameTimesPtb(frameCounter) = frameRefreshes(iFrame) + ip.Results.Latency;
+            frameInfo.frameTimesOe(frameCounter)  = frameRefreshesOe(iFrame) + ip.Results.Latency;
+            frameInfo.eyeAtFrame(frameCounter,:)    = [eyeTimes(eyeIx) eyeX eyeY eyeIx, eyeXon, eyeYon];
         
-        try
-            Stim(:,:, frameCounter) = I;
-        catch
-            warning('frame not saved')
-            continue
+            % probe distance from center of window
+            frameInfo.probeDistance(frameCounter) = hypot(probeX(iFrame)-mean(tmprect([1 3])), probeY(iFrame)-mean(tmprect([2 4])));
+        
+            % handle the probe object
+            frameInfo.probeAtFrame(frameCounter,:) = [probeX(iFrame) probeY(iFrame) probeId(iFrame)];
+            
+            % seed good 
+            frameInfo.seedGood(frameCounter) = seedGood;
+            
+            try
+                Stim(:,:, frameCounter) = I;
+            catch
+                warning('frame not saved')
+                continue
+            end
+
         end
         
         frameCounter = frameCounter + 1;
-        
         
     end
     
 end
 
-% clean up blocks
-bd = blocks(diff(blocks)>1);
-blocks = [bd(1:end-1)+1 bd(2:end)];
-blocks(1) = 1;
 
-Stim(:,:,frameCounter:end) = [];
-frameInfo.eyeAtFrame(frameCounter:end,:) = [];
-frameInfo.frameTimesOe(frameCounter:end) = [];
-frameInfo.frameTimesPtb(frameCounter:end) = [];
-frameInfo.probeDistance(frameCounter:end) = [];
-frameInfo.seedGood(frameCounter:end) = [];
-frameInfo.probeAtFrame(frameCounter:end,:) = [];
-frameInfo.blocks = blocks;
+    % clean up blocks
+    bd = blocks(diff(blocks)>1);
+    blocks = [bd(1:end-1)+1 bd(2:end)];
+    blocks(1) = 1;
+if useh5
+    h5writeatt(h5fname, [h5path '/Stim'], 'size', [dims frameCounter-1])
+    h5create(h5fname, [h5path '/blocks'], size(blocks))
+    h5write(h5fname, [h5path '/blocks'], blocks)
+else
+    Stim(:,:,frameCounter:end) = [];
+    frameInfo.eyeAtFrame(frameCounter:end,:) = [];
+    frameInfo.frameTimesOe(frameCounter:end) = [];
+    frameInfo.frameTimesPtb(frameCounter:end) = [];
+    frameInfo.probeDistance(frameCounter:end) = [];
+    frameInfo.seedGood(frameCounter:end) = [];
+    frameInfo.probeAtFrame(frameCounter:end,:) = [];
+    frameInfo.blocks = blocks;
+    
+    varargout{1} = Stim;
+    varargout{2} = frameInfo;
+end
 
 if ip.Results.usePTBdraw
     
