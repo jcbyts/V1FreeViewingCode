@@ -36,6 +36,7 @@ ip.addParameter('stim_field', 'Grating')
 ip.addParameter('trial_inds', [])
 ip.addParameter('eye_pos',[])
 ip.addParameter('force_hartley', false)
+ip.addParameter('validTrials', [])
 ip.parse(varargin{:})
 
 stimField = ip.Results.stim_field;
@@ -48,7 +49,11 @@ end
 opts.fs_spikes = opts.fs_stim;
 opts.up_samp_fac = 1;
 
-validTrials = io.getValidTrials(Exp, stimField);
+if isempty(ip.Results.validTrials)
+    validTrials = io.getValidTrials(Exp, stimField);
+else
+    validTrials = ip.Results.validTrials;
+end
 
 eyeDat = Exp.vpx.smo(:,1:3); % eye position
 % convert time to ephys units
@@ -97,9 +102,9 @@ ori = cell2mat(ori);
 cpd = cell2mat(cpd);
 
 if ip.Results.force_hartley
-    [ori,cpd] = pol2cart(ori/180*pi, cpd);
-    ori = round(ori, 1);
-    cpd = round(cpd, 1);
+    [ky,kx] = pol2cart(ori/180*pi, cpd);
+    ori = round(kx, 1);
+    cpd = round(ky, 1);
 end
     
 NT = numel(frameTime);
@@ -146,7 +151,6 @@ else
     opts.frozen_repeats = [];
 end
 
-
 opts.oris = oris;
 opts.cpds = cpds;
 opts.dim =[nori ncpd];
@@ -175,8 +179,6 @@ if isempty(ip.Results.eye_pos)
 else
     eyeDat(:,2:3) = ip.Results.eye_pos*Exp.S.pixPerDeg;
 end
-
-
 
 
 % find index into frames
