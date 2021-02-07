@@ -27,7 +27,7 @@ function plotWaveforms(W, scale, varargin)
         if ip.Results.overloadSU
             SU(cc) = true;
         else
-            SU(cc) = W(cc).isiRate < 0;
+            SU(cc) = W(cc).isiV < .1;
         end
         
         nts = size(W(1).waveform,1);
@@ -37,8 +37,8 @@ function plotWaveforms(W, scale, varargin)
         else
             clr = .5*[1 1 1];
         end
-        plot(xax, W(cc).waveform*scale + W(cc).spacing + W(cc).depth, 'Color', clr, 'Linewidth', 2); hold on
-        text(mean(xax),  W(cc).spacing(end)+20 + W(cc).depth, sprintf('%d', cc))
+        plot(xax, W(cc).waveform*scale + W(cc).spacing - W(cc).depth, 'Color', clr, 'Linewidth', 2); hold on
+        text(mean(xax),  W(cc).spacing(end)+20 - W(cc).depth, sprintf('%d', cc))
         
     end
     
