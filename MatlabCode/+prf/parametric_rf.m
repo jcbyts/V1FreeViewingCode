@@ -1,14 +1,14 @@
-function lambda = parametric_rf(params, kxy)
-% parametric receptive field for hartley
-% lambda = prf.parametric_rf(params, kxy)
+function lambda = parametric_rf(params, X, logGauss)
+% parametric receptive field for grating stimulus
+% rate = prf.parametric_rf(params, X, logGauss)
 % Inputs:
 %   params [1 x 6] parameters of the model
-%   kxy    [n x 2] number of points to evaluate (each row is kx , ky)
+%   X    [n x 2]   orientation,spatial frequency of each grating
 %
 % Outpus:
-%   lambda [n x 1] rate at each kx,ky point
+%   rate [n x 1] rate at each kx,ky point
 %
-%  parameters are:
+%  Parameters are:
 %   1. Orientation Kappa
 %   2. Orientation Preference
 %   3. Spatial Frequency Preference
@@ -16,17 +16,28 @@ function lambda = parametric_rf(params, kxy)
 %   5. Gain
 %   6. Offset
 
-% orientation = atan2(kxy(:,2),kxy(:,1));
-orientation = kxy(:,1);
+if nargin < 3
+    logGauss = true;
+end
+
+orientation = X(:,1);
 orientation(isnan(orientation)) = 0;
+spatialFrequency = X(:,2);
 
-% orientationTuning = params(1) * (cos(orientation - params(2)).^2 - 1);
 
+% Von Mises that wraps at pi and normalized between 0 and 1
 orientationTuning = (exp(params(1)*cos(orientation - params(2)).^2) - 1) / (exp(params(1)) - 1);
 
-spatialFrequency = kxy(:,2);
 
-spatialFrequencyTuning = exp( - ( (log(1 + spatialFrequency) - log(1 + params(3))).^2/2/params(4)^2));
+if logGauss == 1
+    % LOG GAUSSIAN
+    spatialFrequencyTuning = exp( - ( (log(1 + spatialFrequency) - log(1 + params(3))).^2/2/params(4)^2));
+    % spatialFrequencyTuning = exp( - ( (log(spatialFrequency) - log(params(3))).^2/2/params(4)^2));
+else
+    % RAISED COSINE
+    logbase = log(max(params(4), 1.1));
+    spatialFrequencyTuning = cos( min(max( (log(spatialFrequency)/logbase)-log(params(3))/logbase, -pi/2), pi/2));
+end
 
 lambda = params(6) + (params(5) - params(6)) * (orientationTuning .* spatialFrequencyTuning);
 % lambda = params(5)*exp(orientationTuning - spatialFrequencyTuning) + params(6);
