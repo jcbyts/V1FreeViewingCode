@@ -195,8 +195,19 @@ for iTrial = 1:nTotalTrials
             newExp.D{iTrial}.PR.noiseNum = 32;
             newExp.D{iTrial}.PR.name = 'ForageProceduralNoise';
             
-            % save Grating info
-            [ori, sf] = cart2pol(trial(pldapsTrial).hartley.kxs, trial(pldapsTrial).hartley.kys);
+            % save Grating info by converting hartley stimulus to
+            % orientation and spatial frequency values like what is used in
+            % MarmoV5
+            %
+            % for future ref: you might wonder why cart2pol gets (ky,kx) as
+            % input. This is because horizontal frequencies correspond to
+            % vertical orientations in the image. Therefore the x and y axis
+            % are flipped when using cart2pol transforms to find the
+            % orientation. Another way of thinking about this is that when
+            % you index an image (e.g., I[m,n]), m is indexing the rows and
+            % therefore along the vertical axis, so the axes are flipped
+         
+            [ori, sf] = cart2pol(trial(pldapsTrial).hartley.kys, trial(pldapsTrial).hartley.kxs);
             ori = ori/pi*180; % rad2deg
             ori(ori < 0) = 180 + ori(ori < 0); % wrap 0 to 180
             
@@ -205,7 +216,7 @@ for iTrial = 1:nTotalTrials
             
             frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
             
-            [oris, spatfreqs] = cart2pol(trial(pldapsTrial).hartley.kx, trial(pldapsTrial).hartley.ky);
+            [oris, spatfreqs] = cart2pol(trial(pldapsTrial).hartley.ky, trial(pldapsTrial).hartley.kx);
             
             oris = oris/pi*180; % rad2deg
             oris(oris < 0) = 180 + oris(oris < 0); % wrap 0 to 180
@@ -288,8 +299,10 @@ for iTrial = 1:nTotalTrials
             newExp.D{iTrial}.PR.NoiseHistory = [frameTimes(1:n) on];
             newExp.D{iTrial}.PR.name = 'ForageProceduralNoise';
         case 'GaussianPyr'
+            % convert the flashed gaussian stimulus to a flashed dot
+            % stimulus to work like MarmoV5 stimuli
             frameTimes = trial(pldapsTrial).timing.flipTimes(3,:)';
-            newExp.D{iTrial}.P.dotSize = 0.5; % Made up. Let's see if this works
+            newExp.D{iTrial}.P.dotSize = 0.5; % Approximate a dot size based on the gaussian size
             newExp.D{iTrial}.PR.name = 'ForageProceduralNoise';
             
             xpos = trial(pldapsTrial).gaussianNoiseBlobs.xpos - newExp.S.centerPix(1);
