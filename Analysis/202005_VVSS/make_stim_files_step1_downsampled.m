@@ -4,7 +4,6 @@ RoiS.('logan_20200304') = [-20 -60 50 10];
 RoiS.('logan_20200306') = [-20 -60 50 10];
 RoiS.('logan_20191231') = [-20 -60 50 10];
 %% add paths
-
 user = 'jakelaptop';
 addFreeViewingPaths(user);
 
@@ -12,7 +11,7 @@ addFreeViewingPaths(user);
 %% load data
 
 close all
-sessId = 56;
+sessId = 57;
 [Exp, S] = io.dataFactoryGratingSubspace(sessId, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
 
 eyePosOrig = Exp.vpx.smo(:,2:3);
@@ -94,7 +93,7 @@ options = {'stimulus', stimset, ...
     'includeProbe', true, ...
     'correctEyePos', false, ...
     'nonlinearEyeCorrection', false, ...
-    'usePTBdraw', false, ...
+    'usePTBdraw', true, ...
     'overwrite', true};
 
 %%
@@ -127,7 +126,7 @@ fname{4} = io.dataGenerate(Exp, S, options{:});
 
 
 %% test that it worked
-id = 4;
+id = 1;
 load(fullfile('Data', fname{id}))
 iFrame = 1;
 
