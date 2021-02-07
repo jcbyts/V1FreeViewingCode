@@ -132,6 +132,7 @@ if debug
     plot(eyeDat(:,1), eyeDat(:,2), '-o', 'MarkerSize', 2); hold on
     plot(frameTimes, xpos(:,1), '.')
     drawnow
+    pause
 end
 
 xPosition = xpos - eyeAtFrame(:,1);
@@ -164,15 +165,15 @@ if t_downsample > 1
 	stimX = downsample_time(stimX, t_downsample) / t_downsample;
 	Robs = downsample_time(Robs, t_downsample);
     frameTimes = downsample_time(frameTimes(valid), t_downsample) / t_downsample;
-    xpos =  downsample_time(xpos(valid), t_downsample) / t_downsample;
-    ypos =  downsample_time(ypos(valid), t_downsample) / t_downsample;
+    xpos =  downsample_time(xpos(valid,:), t_downsample) / t_downsample;
+    ypos =  downsample_time(ypos(valid,:), t_downsample) / t_downsample;
     eyeAtFrame = downsample_time(eyeAtFrame(valid,:), t_downsample) / t_downsample;
     eyeLabels = downsample_time(eyeLabels(valid), t_downsample) / t_downsample;
     valid =  downsample_time(valid(valid), t_downsample) / t_downsample;
 else % apply valid
     frameTimes = frameTimes(valid);
-    xpos =  xpos(valid);
-    ypos =  ypos(valid);
+    xpos =  xpos(valid,:);
+    ypos =  ypos(valid,:);
     eyeAtFrame = eyeAtFrame(valid,:);
     eyeLabels = eyeLabels(valid);
     valid = valid(valid);
