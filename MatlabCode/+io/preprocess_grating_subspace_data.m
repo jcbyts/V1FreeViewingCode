@@ -102,9 +102,18 @@ ori = cell2mat(ori);
 cpd = cell2mat(cpd);
 
 if ip.Results.force_hartley
+    zx = find(ori==0);
+    iix = randsample(zx, ceil(.5*numel(zx)));
+    ori(iix) = 180;
+    
     [ky,kx] = pol2cart(ori/180*pi, cpd);
     ori = round(kx, 1);
     cpd = round(ky, 1);
+    % randomly assign half the kx==0 conditions to have flipped sign
+    % because the space is symmetric
+    zx = find(ori==0);
+    iix = randsample(zx, ceil(.5*numel(zx)));
+    cpd(iix) = -cpd(iix);
 end
     
 NT = numel(frameTime);
@@ -122,10 +131,15 @@ nori = numel(oris);
 [~, oriid] = max(ori==oris', [], 2);
 [~, cpdid] = max(cpd==cpds', [], 2);
 
-blank = cpdid==1;
-ncpd = ncpd - 1;
-cpdid = cpdid - 1;
-cpds(1) = [];
+if ip.Results.force_hartley
+    blank = false(size(ori));
+%     blank = ori==0 & cpd==0;
+else
+    blank = cpdid==1;
+    ncpd = ncpd - 1;
+    cpdid = cpdid - 1;
+    cpds(1) = [];
+end
 
 % find discontinuous fragments in the stimulus (trials)
 % fn_stim   = ceil((te-ts)*opts.fs_stim);
@@ -153,9 +167,9 @@ end
 
 opts.oris = oris;
 opts.cpds = cpds;
-opts.dim =[nori ncpd];
+opts.dim =[ncpd nori];
 
-ind = sub2ind([nori ncpd], oriid(~blank), cpdid(~blank));
+ind = sub2ind(opts.dim, cpdid(~blank), oriid(~blank));
 
 binsize = 1./Exp.S.frameRate;
 

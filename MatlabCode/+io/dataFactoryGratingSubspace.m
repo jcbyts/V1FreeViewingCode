@@ -16,7 +16,7 @@ ip.parse(varargin{:});
 
 dataPath = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 
-meta_file = fullfile(fileparts(which('addFreeViewingPaths')), 'Data', 'datasets.csv');
+meta_file = fullfile(fileparts(which('addFreeViewingPaths')), 'Data', 'datasets.xls');
 % meta_file = fullfile(dataPath, 'datasets.xls');
 
 data = readtable(meta_file);

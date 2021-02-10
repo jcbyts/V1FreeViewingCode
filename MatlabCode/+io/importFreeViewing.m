@@ -22,6 +22,15 @@ assert(exist(DataFolder, 'dir')==7, 'importFreeViewing: raw data path does not e
 % Baic marmoView import. Synchronize with Ephys if it exists
 Exp = io.basic_marmoview_import(DataFolder);
 
+% fix spatial frequency bug: marmoV5 data before 2021 February had a
+% scaling bug where all spatial frequencies off by a factor of two
+datebugfixed = datenum('20210201', 'yyyymmdd');
+thisdate = datenum(regexp(Exp.FileTag, '[0-9]*', 'match', 'once'), 'yyyymmdd');
+if thisdate < datebugfixed
+    warning('importFreeViewing: fixing early MarmoV5 spatial frequency bug')
+    Exp = io.correct_spatfreq_by_half(Exp);
+end
+
 Exp.sp = sp;  % Jude's cell array of spike times
 Exp.osp = osp; % keep the original Kilosort spike format
 
