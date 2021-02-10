@@ -2,7 +2,7 @@
 spikeSorting = 'jrclustwf';
 
 close all
-sessId = 56;
+sessId = 45;
 [Exp, S] = io.dataFactoryGratingSubspace(sessId, 'spike_sorting', spikeSorting, 'cleanup_spikes', 0);
 
 eyePosOrig = Exp.vpx.smo(:,2:3);

@@ -68,7 +68,7 @@ else
                     Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
                 end
                 
-                evalc('tmp = grat_rf_helper(Exp, ''fitminmax'', true, ''sdthresh'', 6, ''plot'', false);');
+                evalc("tmp = grat_rf_helper(Exp, 'plot', false, 'upsample', 2);");
                 
                 tmp.sorter = sorter;
                 Sgt{iEx} = tmp;
@@ -119,14 +119,16 @@ if cc > numel(Srf{iEx}.rffit)
 end
 
 %% refit guassian on spatial map
-for iEx = 1:numel(Srf)
+for iEx = 26:numel(Srf)
     if isempty(Srf{iEx})
         continue
     end
     Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Srf{iEx}.sorter);
-    stat = spat_rf_helper(Exp, 'plot', true, 'stat', Srf{iEx}, 'debug', false);
+    stat = spat_rf_helper(Exp, 'plot', false, 'stat', Srf{iEx}, 'debug', false);
     Srf{iEx} = stat;
 end
+
+save(sfname, '-v7.3', 'Srf')
 
 %% refit grating parametric
 for iEx = 1:numel(Sgt)
@@ -212,25 +214,8 @@ for ex = 1:numel(Srf)
          sfBw = [sfBw; Sgt{ex}.rffit(cc).sfBandwidth];
          gtr2 = [gtr2; Sgt{ex}.rffit(cc).r2];
              
-         
-         % significance
-         if isempty(mu) % no fit was run because RF never crossed threshold
-             sig = 0;
-         else
-             ms = (Srf{ex}.rffit(cc).mushift/Srf{ex}.rffit(cc).ecc);
-             sz = (Srf{ex}.maxV(cc)./Srf{ex}.rffit(cc).ecc);
-             sig = ms < .25 & sz > 5;
-         end
-         
-         sigs = [sigs; sig];
-         
-         % grating
-         zrf = Sgt{ex}.rf(:,:,cc)*Sgt{ex}.fs_stim / Sgt{ex}.sdbase(cc);
-         z = reshape(zrf(Sgt{ex}.timeax>=0,:), [], 1);
-         zthresh = 6;
-         sigg = [sigg; sum(z > zthresh) > (1-normcdf(zthresh))];
-         
-         
+         sigs = [sigs; Srf{ex}.sig(cc)];
+         sigg = [sigg; Sgt{ex}.sig(cc)];
         
          r2 = [r2; Srf{ex}.rffit(cc).r2]; % store r-squared
          ar = [ar; Srf{ex}.rffit(cc).ar];
@@ -281,7 +266,7 @@ plot(BIGROI([3 3]), BIGROI([2 4]), 'k')
 figure(1); clf
 % ix = sigs > 0.05 & sigs < 1;
 % ix = ix & (r2 > 0.025); % & (maxV./ecc)>10; % & ~outbounds;
-% ix = cgs == 2 & r2 > 0;
+% ix = cgs == 2 | cgs == 1;
 ix = sigs & sigg; %mshift./ecc < .25 & (maxV./ecc)>5;
 
 plot(ecc(ix), sfPref(ix), '.'); hold on
