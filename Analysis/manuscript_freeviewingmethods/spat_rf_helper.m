@@ -307,3 +307,13 @@ for cc = 1:NC
 end
 
 stat.rfLocations = rfLocations;
+
+% estimate significance
+stat.sig = false(NC,1);
+for cc = 1:NC
+    if isfield(stat.rffit(cc), 'mu') && ~isempty(stat.rffit(cc).mu)
+        ms = (stat.rffit(cc).mushift/stat.rffit(cc).ecc);
+        sz = (stat.maxV(cc)./stat.rffit(cc).ecc);
+        stat.sig(cc) = ms < .25 & sz > 5;
+    end
+end

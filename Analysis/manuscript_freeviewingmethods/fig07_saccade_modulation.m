@@ -31,9 +31,13 @@ if exist(fftname, 'file')==2
 else
     
     %%
-    for iEx = 1:numel(sesslist)
+    for iEx = 52:numel(sesslist)
 %         if isempty(fftrf{iEx})
-            try
+%             try
+                
+                if isempty(Srf{iEx}) || isempty(Sgt{iEx})
+                    continue
+                end
                 
                 try % use JRCLUST sorts if they exist
                     sorter = 'jrclustwf';
@@ -50,10 +54,10 @@ else
                 fftrf{iEx}.rfs_pre = rf_pre;
                 fftrf{iEx}.rfs_post = rf_post;
                 fftrf{iEx}.sorter = sorter;
-            catch me
-                disp('ERROR ERROR')
-                disp(me.message)
-            end
+%             catch me
+%                 disp('ERROR ERROR')
+%                 disp(me.message)
+%             end
 %         end
     end
     %%
@@ -135,6 +139,9 @@ oriBw  = [];  % orientation bandwidth (FWHM)
 sigg = [];
 sigs = [];
 
+mus = [];
+Cs = [];
+
 r2 = [];   % r-squared from gaussian fit to RF
 gtr2 = []; % r-squared of parametric fit to frequecy RF
 
@@ -151,6 +158,10 @@ field = 'rfs_post';
 
 zthresh = 8;
 for ex = 1:numel(Srf)
+    
+    if isempty(fftrf{ex})
+        continue
+    end
     
     if ~isfield(Srf{ex}, 'rffit') || ~isfield(Sgt{ex}, 'rffit') || (numel(Sgt{ex}.rffit) ~= numel(Srf{ex}.rffit))
         continue
@@ -233,17 +244,24 @@ oriPref(oriPref > 180) = oriPref(oriPref > 180) - 180;
 
 %%
 
-nrateHi = mrateHi ./ max(mrateHi,2);
-nrateLow = mrateLow ./ max(mrateHi,2);
+lags = fftrf{1}.rfs_post(1).lags;
+iix = lags>-.05 & lags<0;
+mnorm = mean(mrateHi(:,iix),2);
+
+nrateHi = mrateHi ./ mnorm;
+nrateLow = mrateLow ./ mnorm;
 
 ix = sigs & sigg;
+ix = ix & ecc < 1;
+sum(ix)
 % ix = ix & ecc <5;
 figure(1); clf
 
 
-imagesc( (nrateHi(ix,:) - nrateLow(ix,:)))
+imagesc(lags, find(ix), (nrateHi(ix,:) - nrateLow(ix,:)))
 
 figure(2); clf
-plot(nanmean(nrateHi(ix,:))); hold on
-plot(nanmean(nrateLow(ix,:)))
+errorbar(lags, nanmean(nrateHi(ix,:)), nanstd(nrateHi(ix,:))/sqrt(sum(ix))); hold on
+errorbar(lags, nanmean(nrateLow(ix,:)), nanstd(nrateLow(ix,:))/sqrt(sum(ix)))
+xlim([-.05 .3])
 %%

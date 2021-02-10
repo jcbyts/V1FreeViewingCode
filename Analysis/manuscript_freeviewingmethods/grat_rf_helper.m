@@ -44,7 +44,7 @@ forceHartley = true; %
 [Stim, Robs, grating] = io.preprocess_grating_subspace_data(Exp, 'force_hartley', true);
 Robs = Robs(:,Exp.osp.cids);
 
-if numel(unique(grating.oris)) > 20 % stimulus was not run as a hartley basis
+if numel(unique(grating.cpds)) > 20 % stimulus was not run as a hartley basis
     forceHartley = false;
     [Stim, Robs, grating] = io.preprocess_grating_subspace_data(Exp, 'force_hartley', false);
     Robs = Robs(:,Exp.osp.cids);
@@ -123,6 +123,13 @@ for cc = 1:NC
     % time x space (flattened) receptive field in units of spikes/sec
     rfflat = stat.rf(:,:,cc)*grating.fs_stim;
     
+%     %%
+%     figure(1); clf
+%     plot(rfflat)
+%     
+%     
+%     %%
+    
     % time x space x space RF
     rf3 = reshape(rfflat, [numel(stat.timeax), stat.dim]); % 3D spatiotemporal tensor
     
@@ -134,8 +141,8 @@ for cc = 1:NC
     end
     
     % Calculate median absolute deviations
-    adiff = abs(rf - median(rf(:))); % absolute difference
-    mad = median(adiff(:)); % median absolute deviation
+    adiff = abs(rf - nanmedian(rf(:))); % absolute difference
+    mad = nanmedian(adiff(:)); % median absolute deviation
     
     adiff = adiff ./ mad; % normalized (units of MAD)
     
@@ -173,19 +180,26 @@ for cc = 1:NC
         continue
     end
     
-    ytx = s.Centroid(bigg,:); % location (in space / time)
+    rfmask = rf3 .* (bw == bigg);
+    rfmask = rfmask / sum(rfmask(:));
+    sz = size(rfmask);
+    [tt,yy,xx] = ndgrid(1:sz(1), 1:sz(2), 1:sz(3));
+    
+    ytx = [yy(:)'*rfmask(:) tt(:)'*rfmask(:) xx(:)'*rfmask(:)];
+    
+%     ytx = s.Centroid(bigg,:); % location (in space / time)
     peaklagt = interp1(1:nlags, stat.timeax, ytx(2)); % peak lag using centroid
     
     peaklagf = floor(ytx(2));
     peaklagc = ceil(ytx(2));
     
     % "spatial" (orientation/frequency) RF
-    srf = squeeze(mean(rf3(peaklagf:peaklagc,:,:), 1))'; % average over peak lags
+    srf = squeeze(mean(rf3(peaklagf:peaklagc,:,:), 1)); % average over peak lags
     stat.rffit(cc).srf = srf;
     
     % initialize mean for fit based on centroid
-    x0 = interp1(1:numel(stat.xax), stat.xax, ytx(1));
-    y0 = interp1(1:numel(stat.yax), stat.yax, ytx(3));
+    x0 = interp1(1:numel(stat.xax), stat.xax, ytx(3));
+    y0 = interp1(1:numel(stat.yax), stat.yax, ytx(1));
     
     stat.peaklag(cc) = round(ytx(2));
     stat.peaklagt(cc) = peaklagt;
@@ -199,15 +213,15 @@ for cc = 1:NC
     mnI = min(srf(:));
     
     if forceHartley % stimulus was hartley basis
-        [theta0, cpd0] = cart2pol(x0, y0);
-        [xx,yy] = meshgrid(grating.oris, grating.cpds);
-        [X0(:,1), X0(:,2)] = cart2pol(xx(:), yy(:));
+        [theta0, cpd0] = cart2pol(y0, x0);
+        [xx,yy] = meshgrid(grating.oris, -grating.cpds);
+        [X0(:,1), X0(:,2)] = cart2pol(yy(:), xx(:));
         if ip.Results.upsample > 1
             xx = imresize(xx, ip.Results.upsample, 'bilinear');
             yy = imresize(yy, ip.Results.upsample, 'bilinear');
             I = imresize(I, ip.Results.upsample, 'bilinear');
         end
-        [X(:,1), X(:,2)] = cart2pol(xx(:), yy(:));
+        [X(:,1), X(:,2)] = cart2pol(yy(:), xx(:));
     else % stimulus was orientation/frequency
         theta0 = x0/180*pi;
         cpd0 = y0;
@@ -224,7 +238,7 @@ for cc = 1:NC
     
     % Do the fitting
     
-%     try
+    try
         % try global search
         if log_gauss
             sfsd0 = max(sqrt((cpd0.^2 + log(.5))/2), 1);
@@ -281,10 +295,10 @@ for cc = 1:NC
             obw = nan;
         end
         
-%     catch
+    catch
 %         
-%         obw = nan;
-%         sfbw = nan;
+        obw = nan;
+        sfbw = nan;
 % %         %% fit with nlinfit
 % %         try
 % %             par0 = [2 theta0 1.5*cpd0 1.5 mxI mnI]; % initial parameters
@@ -326,7 +340,7 @@ for cc = 1:NC
 % %                 evalc('phat = lsqnonlin(fun, par0, lb, ub)');
 % %                 %         evalc('phat = lsqcurvefit(fun, par0, X, I(:), lb, ub);');
 % %             catch
-% %                 phat = nan(size(par0));
+                phat = nan(size(par0));
 % %                 
 % %             end
 % %             
@@ -338,7 +352,7 @@ for cc = 1:NC
 % %             warningFlag = 1;
 % %         end
 %         phat = nan(size(par0));
-%     end
+    end
 %         
     fprintf('Success\n')
     %% evaluate
@@ -354,6 +368,7 @@ for cc = 1:NC
         axis xy
         subplot(2,3,3)
         imagesc(stat.xax, stat.yax, Ihat)
+        title( phat(2)/pi*180)
         axis xy
         subplot(2,2,3)
         contourf(stat.xax, stat.yax, stat.rffit(cc).srf, 10, 'Linestyle', 'none'); hold on
@@ -384,7 +399,7 @@ end
 stat.sig = false(NC,1);
 
 for cc = 1:NC
-    if isempty(stat.rffit(cc).pHat)
+    if isempty(stat.rffit(cc).pHat) || stat.peaklag(cc)==0
         stat.sig(cc) = false;
     else
         zrf = stat.rf(:,:,cc)*stat.fs_stim / stat.sdbase(cc);

@@ -18,7 +18,7 @@ load(fftname)
 
 %% Explore
 
-iEx = 1;
+iEx = 45;
 fprintf('Loading session [%s]\n', sesslist{iEx})
 
 %% Refit space?
@@ -33,7 +33,7 @@ Sgt{iEx} = stat;
 
 %% refit fftrf?
 Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
-rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', false, 'plot', false, 'usestim', 'post', 'alignto', 'fixon');
+rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', false, 'plot', true, 'usestim', 'post', 'alignto', 'fixon');
 fftrf{iEx}.rfs_post = rf_post;
 
 
@@ -93,13 +93,6 @@ for i = 1:nsteps
     imagesc(fftrf{iEx}.(field)(cc).rf.kx, fftrf{iEx}.(field)(cc).rf.ky, frf(:,:,i), clim)
 end
 
-
-% 
-% figure(iEx + 1); clf
-% 
-% fftrf{iEx}.rfs_post
-% 
-% %%
 
 figure(iEx); clf
 subplot(321, 'align')
@@ -168,6 +161,7 @@ if sigg && ~isempty(Sgt{iEx}.rffit(cc).srf)
     axis xy
     xlabel('Orientation (deg)')
     ylabel('Spatial Frequency')
+    title(Sgt{iEx}.rffit(cc).oriPref)
 end
 
 % TIME (SPATIAL MAPPING)
@@ -199,16 +193,25 @@ if sigg
 % PLOTTING FIT
 [xx,yy] = meshgrid(Sgt{iEx}.rffit(cc).oriPref/180*pi, 0:.1:15);
 X = [xx(:) yy(:)];
-phat = prf.parametric_rf(Sgt{iEx}.rffit(cc).pHat, X);
+
+
+
+
 
 % plot data RF tuning
 par = Sgt{iEx}.rffit(cc).pHat;
+if isempty(par)
+sigg = false;
+end
 
 lag = Sgt{iEx}.peaklag(cc);
+if lag == 0
+    sigg = false;
+end
 
 fs = Sgt{iEx}.fs_stim;
-srf = reshape(Sgt{iEx}.rf(lag,:,cc)*fs, Sgt{iEx}.dim)';
-srfeb = reshape(Sgt{iEx}.rfsd(lag,:,cc)*fs, Sgt{iEx}.dim)';
+srf = reshape(Sgt{iEx}.rf(lag,:,cc)*fs, Sgt{iEx}.dim);
+srfeb = reshape(Sgt{iEx}.rfsd(lag,:,cc)*fs, Sgt{iEx}.dim);
 
 if Sgt{iEx}.ishartley
     
