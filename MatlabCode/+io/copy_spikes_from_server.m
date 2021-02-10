@@ -4,7 +4,7 @@ function copy_spikes_from_server(sessionId, spikesTag)
 %   sessionid 
 %   spikesTag (default: kilo)
 
-if nargin < 2
+if nargin < 2 || isempty(spikesTag)
     spikesTag = 'kilo';
 end
 
@@ -12,7 +12,7 @@ serverDir = getpref('FREEVIEWING', 'SERVER_DATA_DIR');
 dataPath = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 
 fvpath = fileparts(which('addFreeViewingPaths'));
-data = readtable(fullfile(fvpath, 'Data', 'datasets.csv'));
+data = readtable(fullfile(fvpath, 'Data', 'datasets.xls'));
 
 if ischar(sessionId)
     sessionId = find(strcmp(data.Tag, sessionId));

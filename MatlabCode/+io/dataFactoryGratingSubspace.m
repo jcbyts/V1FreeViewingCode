@@ -10,7 +10,7 @@ function varargout = dataFactoryGratingSubspace(sessionId, varargin)
 % Example:
 %   Exp = io.dataFactory(5); % load the 5th session
 ip = inputParser();
-ip.addParameter('spike_sorting', 'kilowf')
+ip.addParameter('spike_sorting', [])
 ip.addParameter('cleanup_spikes', 0)
 ip.parse(varargin{:});
 
@@ -57,6 +57,7 @@ S.rootDir = rootDir;
 S.rawDir = rawDir;
 S.serverDir = serverDir;
 S.rawFilePath = fullfile(serverDir, rootDir, rawDir);
+S.spikeSorting = ip.Results.spike_sorting;
 
 % try loading the file
 fname = fullfile(dataPath, S.processedFileName);

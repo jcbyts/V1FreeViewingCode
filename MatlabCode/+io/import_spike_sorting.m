@@ -13,7 +13,7 @@ function varargout = import_spike_sorting(DataFolder, spikesTag)
 % over all others. If it does not, then it wil run threshold spike sorting
 
 
-if nargin < 2
+if nargin < 2 || isempty(spikesTag)
     % assume it's a Kilosort file
     spikesTag = 'kilo';
 end

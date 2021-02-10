@@ -17,7 +17,8 @@ end
 assert(exist(DataFolder, 'dir')==7, 'importFreeViewing: raw data path does not exist')
 
 % Load spikes data
-[sp,osp] = io.import_spike_sorting(DataFolder);
+[sp,osp] = io.import_spike_sorting(DataFolder, S.spikeSorting);
+io.copy_spikes_from_server(strrep(S.processedFileName, '.mat', ''), S.spikeSorting)
 
 % Baic marmoView import. Synchronize with Ephys if it exists
 Exp = io.basic_marmoview_import(DataFolder);
@@ -25,7 +26,7 @@ Exp = io.basic_marmoview_import(DataFolder);
 % fix spatial frequency bug: marmoV5 data before 2021 February had a
 % scaling bug where all spatial frequencies off by a factor of two
 datebugfixed = datenum('20210201', 'yyyymmdd');
-thisdate = datenum(regexp(Exp.FileTag, '[0-9]*', 'match', 'once'), 'yyyymmdd');
+thisdate = datenum(regexp(S.processedFileName, '[0-9]*', 'match', 'once'), 'yyyymmdd');
 if thisdate < datebugfixed
     warning('importFreeViewing: fixing early MarmoV5 spatial frequency bug')
     Exp = io.correct_spatfreq_by_half(Exp);
@@ -53,7 +54,10 @@ boff = find(diff(x)==-1);
 
 bon = bon(2:end); % start of bad
 boff = boff(1:end-1); % end of bad
-
+if isempty(bon)
+    boff = 1;
+    bon = size(Exp.vpx.raw,1);
+end
 gdur = Exp.vpx.raw(bon,1)-Exp.vpx.raw(boff,1);
 
 remove = gdur < 1;
