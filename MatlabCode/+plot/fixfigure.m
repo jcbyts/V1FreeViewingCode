@@ -48,7 +48,7 @@ set(gcf, 'Renderer', 'painters')
 function fixChildren(figureChildren,axisOptions,opts)
 % Loop through all the children of the figure:
 for kChild = 1:length(figureChildren)
-    if isa(figureChildren(2), 'matlab.graphics.layout.TiledChartLayout')
+    if isa(figureChildren(kChild), 'matlab.graphics.layout.TiledChartLayout')
         fixChildren(get(figureChildren(kChild), 'children'), axisOptions, opts);
     else
         currentChildProperties = get(figureChildren(kChild));
