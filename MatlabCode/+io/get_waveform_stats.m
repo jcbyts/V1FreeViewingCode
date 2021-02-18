@@ -1,4 +1,4 @@
-function W = get_waveform_stats(osp, varargin)
+function [W,S] = get_waveform_stats(osp, varargin)
 % get waveform details
 % Inputs:
 %   osp <struct> the spike struct from getSpikesFromKilo
@@ -314,13 +314,14 @@ for cc = 1:NC
     
     % fit autocorrelation on basis
     Duration = 200; % ms
-    t = (0:binSize*1e3:Duration)';
+    t = ((binSize*1e3):binSize*1e3:Duration)';
     
     numBasis = 14; % should be a function of duration :-/
-    shortestLag = .5;
+    shortestLag = 1;
     nlStretch = 1.6; % 2 equals doubling
     B = raised_cosine(t, numBasis, shortestLag, nlStretch);
-    B(1:2,1) = 1;
+%     B(1,1) = 1;
+    B = B./sum(B,2);
 %     B = orth(B); % orthogonalize the basis
     
 % plot Basis    
@@ -340,7 +341,7 @@ for cc = 1:NC
         NT = numel(spcnt);
         Xd = conv2(spcnt(:), B, 'full');
         Xd = Xd(1:NT,:);
-        Xd = [ones(NT, 1) Xd]; %#ok<AGROW>
+        Xd = [ones(NT, 1) Xd];
         
         % offset by one bin (so it doesn't perfectly predict itself)
         n = 2;
@@ -360,13 +361,14 @@ for cc = 1:NC
         hspike = B*w(2:end)+w(1);
         hspike = hspike/binSize;
     else
-        %% fit directly to autocorrelation
-        
+        %% fit directly to autocorrelation        
         posix = lags > 0;
         x = xc(posix)';
         
-        w = pinv(B(1:numel(x),:))*x(:);
+        
+        w = pinv(B)*x(:);
         hspike = B*w;
+
     end
 
     if debug
@@ -379,7 +381,8 @@ for cc = 1:NC
     end
     
     if debug
-        input('check')
+        keyboard
+%         input('check')
     end
     
     % smoothed autocorrelation in spike rate
@@ -419,4 +422,5 @@ for cc = 1:NC
     W(cc).shiftwaveform = wnew;
     W(cc).BRI = BRI;
     W(cc).normrate = normrate;
+    W(cc).cg = osp.cgs(cc);
 end
