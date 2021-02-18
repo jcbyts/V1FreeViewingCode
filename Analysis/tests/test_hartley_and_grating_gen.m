@@ -76,7 +76,7 @@ hold on
 plot(kx, ky, 'or', 'Linewidth', 2)
 xlabel('horizontal frequencies')
 ylabel('vertical frequencies')
-
+axis xy
 
 
 
