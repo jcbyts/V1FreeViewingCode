@@ -12,7 +12,7 @@ RoiS.('logan_20191231') = [-20 -60 50 10];
 %% load data
 
 close all
-sessId = 56;
+sessId = 45;
 [Exp, S] = io.dataFactoryGratingSubspace(sessId, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
 
 eyePosOrig = Exp.vpx.smo(:,2:3);
@@ -77,7 +77,7 @@ fname = {};
 
 eyesmoothing = 19;
 
-% Gabor reverse correlation
+%% Gabor reverse correlation
 stimset = 'Gabor';
 options = {'stimulus', stimset, ...
     'debug', false, ...
@@ -89,7 +89,6 @@ options = {'stimulus', stimset, ...
     'usePTBdraw', true, ...
     'overwrite', false};
 
-%%
 options{find(strcmp(options, 'testmode')) + 1} = true;
 fname = io.dataGenerateHdf5(Exp, S, options{:});
 options{find(strcmp(options, 'testmode')) + 1} = false;
@@ -122,7 +121,7 @@ options{find(strcmp(options, 'stimulus')) + 1} = stimset; % change the stimulus 
 options{find(strcmp(options, 'testmode')) + 1} = true;
 io.dataGenerateHdf5(Exp, S, options{:});
 options{find(strcmp(options, 'testmode')) + 1} = false;
-options{find(strcmp(options, 'overwrite')) + 1} = true;
+% options{find(strcmp(options, 'overwrite')) + 1} = false;
 io.dataGenerateHdf5(Exp, S, options{:});
 
 %% Add Neuron meta data
@@ -133,7 +132,7 @@ h5write(fname, '/Neurons/cgs', Exp.osp.cgs)
 %% test that it worked
 id = 1;
 stim = 'Gabor';
-set = 'Test';
+set = 'Train';
 
 sz = h5readatt(fname, ['/' stim '/' set '/Stim'], 'size');
 
@@ -152,22 +151,17 @@ imagesc(I(1:2:end,1:2:end));% axis xy
 colorbar
 colormap gray
 
-%%
-
-
-
-
-
-W(1)
 
 %% get STAs to check that you have the right rect
 
 Stim = h5read(fname, ['/' stim '/' set '/Stim']);
 Robs = h5read(fname, ['/' stim '/' set '/Robs']);
-eyeAtFrame = h5read(fname{1}, ['/' stim '/' set '/eyeAtFrame']);
-%%
+eyeAtFrame = h5read(fname, ['/' stim '/' set '/eyeAtFrame']);
+labels = h5read(fname, ['/' stim '/' set '/labels']);
 NX = size(Stim,2);
 NY = size(Stim,3);
+%%
+
 Stim = reshape(Stim, size(Stim, 1), NX*NY);
 
 % reshape(Stim, 
