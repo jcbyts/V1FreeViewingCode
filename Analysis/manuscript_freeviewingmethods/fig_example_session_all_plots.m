@@ -1,15 +1,16 @@
 
 
-sesslist = io.dataFactoryGratingSubspace;
+%% Load analyses
+sesslist = io.dataFactory;
 sesslist = sesslist(1:57); % exclude monash sessions
 
-%% Load analyses
 % Spatial RFs
 sfname = fullfile('Data', 'spatialrfs.mat');
 load(sfname)
 
 % Grating RFs
-gfname = fullfile('Data', 'gratrf.mat');
+fittype = 'loggauss';
+gfname = fullfile('Data', sprintf('gratrf_%s.mat', fittype));
 load(gfname)
 
 % FFT RF
@@ -18,7 +19,7 @@ load(fftname)
 
 %% Explore
 
-iEx = 45;
+iEx = 1;
 fprintf('Loading session [%s]\n', sesslist{iEx})
 
 %% Refit space?
@@ -28,12 +29,12 @@ Srf{iEx} = stat;
 
 %% refit grating?
 Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
-stat = grat_rf_helper(Exp, 'plot', true, 'stat', Sgt{iEx}, 'debug', false, 'boxfilt', 1, 'sftuning', 'loggauss', 'upsample', 2);
+stat = grat_rf_helper(Exp, 'plot', true, 'stat', Sgt{iEx}, 'debug', true, 'boxfilt', 1, 'sftuning', 'loggauss', 'upsample', 2);
 Sgt{iEx} = stat;
 
 %% refit fftrf?
 Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
-rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', false, 'plot', true, 'usestim', 'post', 'alignto', 'fixon');
+rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', true, 'plot', true, 'usestim', 'post', 'alignto', 'fixon');
 fftrf{iEx}.rfs_post = rf_post;
 
 
@@ -84,14 +85,15 @@ end
 plot.suplabel(strrep(sesslist{iEx}, '_', ' '), 't');
 
 
-frf = fftrf{iEx}.rfs_post(cc).frf;
-nsteps = numel(fftrf{iEx}.rfs_post(cc).frfsteps);
-figure(10); clf
-clim = [min(frf(:)) max(frf(:))];
-for i = 1:nsteps
-    subplot(1,nsteps+1, i)
-    imagesc(fftrf{iEx}.(field)(cc).rf.kx, fftrf{iEx}.(field)(cc).rf.ky, frf(:,:,i), clim)
-end
+% frf = fftrf{iEx}.rfs_post(cc).frf;
+% nsteps = numel(fftrf{iEx}.rfs_post(cc).frfsteps);
+% figure(10); clf
+% clim = [min(frf(:)) max(frf(:))];
+% for i = 1:nsteps
+%     subplot(1,nsteps+1, i)
+%     imagesc(fftrf{iEx}.(field)(cc).rf.kx, fftrf{iEx}.(field)(cc).rf.ky, frf(:,:,i), clim)
+%     axis xy
+% end
 
 
 figure(iEx); clf
@@ -151,18 +153,37 @@ if sigs
     ylabel('Elevation (d.v.a)')
 end
 
-%     xlim(xd)
-%     ylim(yd)
-
 if sigg && ~isempty(Sgt{iEx}.rffit(cc).srf)
     subplot(3,2,2) % grating RF and fit
-    contourf(Sgt{iEx}.xax, Sgt{iEx}.yax, Sgt{iEx}.rffit(cc).srf, 10, 'Linestyle', 'none'); hold on
-    contour(Sgt{iEx}.xax, Sgt{iEx}.yax, Sgt{iEx}.rffit(cc).srfHat/max(Sgt{iEx}.rffit(cc).srfHat(:)), [1 .5], 'r', 'Linewidth', 2)
+    srf = Sgt{iEx}.rffit(cc).srf;
+    srf = [rot90(srf,2) srf(:,2:end)];
+    
+    srfHat = Sgt{iEx}.rffit(cc).srfHat/max(Sgt{iEx}.rffit(cc).srfHat(:));
+    srfHat = [rot90(srfHat,2) srfHat(:,2:end)];
+    
+    xax = [-fliplr(Sgt{iEx}.xax(:)') Sgt{iEx}.xax(2:end)'];
+    contourf(xax, -Sgt{iEx}.yax, srf, 10, 'Linestyle', 'none'); hold on
+    contour(xax, -Sgt{iEx}.yax, srfHat, [1 .5], 'r', 'Linewidth', 2)
     axis xy
-    xlabel('Orientation (deg)')
-    ylabel('Spatial Frequency')
+    xlabel('Frequency (cyc/deg)')
+    ylabel('Frequency (cyc/deg)')
     title(Sgt{iEx}.rffit(cc).oriPref)
+    hc = colorbar;
+    
+    subplot(3,2,4)
+    [~, spmx] = max(reshape(Sgt{iEx}.rffit(cc).srf, [], 1));
+    [~, spmn] = min(reshape(Sgt{iEx}.rffit(cc).srf, [], 1));
+
+    cmap = lines;
+    plot.errorbarFill(Sgt{iEx}.timeax, Sgt{iEx}.rf(:,spmx,cc)*Sgt{iEx}.fs_stim, Sgt{iEx}.rfsd(:,spmx,cc)*Sgt{iEx}.fs_stim, 'b', 'FaceColor', cmap(1,:), 'EdgeColor', cmap(1,:), 'FaceAlpha', .8); hold on
+    plot.errorbarFill(Sgt{iEx}.timeax, Sgt{iEx}.rf(:,spmn,cc)*Sgt{iEx}.fs_stim, Sgt{iEx}.rfsd(:,spmn,cc)*Sgt{iEx}.fs_stim, 'r', 'FaceColor', 'r', 'EdgeColor', 'r', 'FaceAlpha', .8);
+    
+    ylabel('\Delta Firing Rate (sp s^{-1})')
+    xlabel('Time Lag (ms)')
+    axis tight
+
 end
+
 
 % TIME (SPATIAL MAPPING)
 subplot(3,2,3)
@@ -174,22 +195,9 @@ if ~isnan(Srf{iEx}.spmx(cc))
     
     xlabel('Time Lag (ms)')
     ylabel('Firing Rate')
-    
-    subplot(3,2,4)
-    [~, spmx] = max(reshape(Sgt{iEx}.rffit(cc).srf', [], 1));
-    [~, spmn] = min(reshape(Sgt{iEx}.rffit(cc).srf', [], 1));
-    try
-    plot.errorbarFill(Sgt{iEx}.timeax, Sgt{iEx}.rf(:,spmx,cc)*Sgt{iEx}.fs_stim, Sgt{iEx}.rfsd(:,spmx,cc)*Sgt{iEx}.fs_stim, 'b', 'FaceColor', 'b', 'EdgeColor', 'b'); hold on
-    plot.errorbarFill(Sgt{iEx}.timeax, Sgt{iEx}.rf(:,spmn,cc)*Sgt{iEx}.fs_stim, Sgt{iEx}.rfsd(:,spmn,cc)*Sgt{iEx}.fs_stim, 'r', 'FaceColor', 'r', 'EdgeColor', 'r');
-    
-    plot(Srf{iEx}.peaklagt(cc)*[1 1], ylim, 'k', 'Linewidth', 2)
-    plot(Sgt{iEx}.peaklagt(cc)*[1 1], ylim, 'k--', 'Linewidth', 2)
-    xlabel('Time Lag (ms)')
-    axis tight
-    end
 end
 
-if sigg
+if sigg && Sgt{iEx}.peaklag(cc) > 0
 % PLOTTING FIT
 [xx,yy] = meshgrid(Sgt{iEx}.rffit(cc).oriPref/180*pi, 0:.1:15);
 X = [xx(:) yy(:)];
@@ -200,14 +208,8 @@ X = [xx(:) yy(:)];
 
 % plot data RF tuning
 par = Sgt{iEx}.rffit(cc).pHat;
-if isempty(par)
-sigg = false;
-end
 
 lag = Sgt{iEx}.peaklag(cc);
-if lag == 0
-    sigg = false;
-end
 
 fs = Sgt{iEx}.fs_stim;
 srf = reshape(Sgt{iEx}.rf(lag,:,cc)*fs, Sgt{iEx}.dim);
@@ -221,25 +223,37 @@ if Sgt{iEx}.ishartley
     
     ori0 = Sgt{iEx}.rffit(cc).oriPref/180*pi;
     
-    [Xq, Yq] = pol2cart(ori0*ones(size(sfs)), sfs);
+    [Yq, Xq] = pol2cart(ori0*ones(size(sfs)), sfs);
     
-    r = interp2(Sgt{iEx}.xax, Sgt{iEx}.yax, srf, Xq, Yq);
+    r = interp2(Sgt{iEx}.xax, -Sgt{iEx}.yax, srf, Xq, Yq);
+    eb = interp2(Sgt{iEx}.xax, -Sgt{iEx}.yax, srfeb, Xq, Yq);
     
     subplot(3,2,6)
-    plot(sfs, r, '-o'); hold on
+    h = errorbar(sfs, r, eb, 'ok'); hold on
+    h.CapSize = 0;
+    h.MarkerSize = 2;
+    h.MarkerFaceColor = 'k';
+    h.LineWidth = 1.5;
     xlabel('Spatial Frequency (cpd)')
+    xlim([0 8])
     
     oris = 0:(pi/10):pi;
     sf0 = Sgt{iEx}.rffit(cc).sfPref;
-    [Xq, Yq] = pol2cart(oris, sf0*ones(size(oris)));
+    [Yq, Xq] = pol2cart(oris, sf0*ones(size(oris)));
     
-    r = interp2(Sgt{iEx}.xax, Sgt{iEx}.yax, srf, Xq, Yq, 'linear');
+    r = interp2(Sgt{iEx}.xax, -Sgt{iEx}.yax, srf, Xq, Yq, 'linear');
+    eb = interp2(Sgt{iEx}.xax, -Sgt{iEx}.yax, srfeb, Xq, Yq);
     
     subplot(3,2,5)
-    plot(oris/pi*180, r, '-o'); hold on
+    h = errorbar(oris/pi*180, r, eb, 'ok'); hold on
+    h.CapSize = 0;
+    h.MarkerSize = 2;
+    h.MarkerFaceColor = 'k';
+    h.LineWidth = 1.5;
     xlabel('Orientation (deg)')
     ylabel('Firing Rate')
-
+    xlim([0 180])
+    
 else
     %%
     [i,j] = find(srf == max(srf(:)));
@@ -272,7 +286,7 @@ end
     
     subplot(3,2,6)
     plot(spatfreq, spatialFrequencyTuning, 'r', 'Linewidth', 2)
-    plot(par(3)*[1 1], ylim, 'b')
+%     plot(par(3)*[1 1], ylim, 'b')
     
     
     % plot bandwidth
@@ -287,10 +301,11 @@ end
         b2 = par(3)*exp(a*logbase);
     end
     
-    plot(b2*[1 1], ylim, 'b')
-    plot(b1*[1 1], ylim, 'k')
-    plot( Sgt{iEx}.rffit(cc).sfPref*[1 1], ylim)
+%     plot(b2*[1 1], ylim, 'b')
+%     plot(b1*[1 1], ylim, 'k')
+%     plot( Sgt{iEx}.rffit(cc).sfPref*[1 1], ylim)
 end
+
 
 plot.suplabel(sprintf('%s: %d', strrep(sesslist{iEx}, '_', ' '), cc), 't');
 plot.fixfigure(gcf, 10, [4 8], 'offsetAxes', false)

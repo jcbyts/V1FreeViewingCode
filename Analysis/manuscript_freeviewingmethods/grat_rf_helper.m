@@ -197,9 +197,10 @@ for cc = 1:NC
     srf = squeeze(mean(rf3(peaklagf:peaklagc,:,:), 1)); % average over peak lags
     stat.rffit(cc).srf = srf;
     
+    [y0,x0]=find(srf==max(srf(:)));
     % initialize mean for fit based on centroid
-    x0 = interp1(1:numel(stat.xax), stat.xax, ytx(3));
-    y0 = interp1(1:numel(stat.yax), stat.yax, ytx(1));
+    x0 = interp1(1:numel(stat.xax), stat.xax, x0);
+    y0 = interp1(1:numel(stat.yax), -stat.yax, y0);
     
     stat.peaklag(cc) = round(ytx(2));
     stat.peaklagt(cc) = peaklagt;
@@ -216,17 +217,68 @@ for cc = 1:NC
         [theta0, cpd0] = cart2pol(y0, x0);
         [xx,yy] = meshgrid(grating.oris, -grating.cpds);
         [X0(:,1), X0(:,2)] = cart2pol(yy(:), xx(:));
+        minSF = min(X0(X0(:,2)>0,2));
         if ip.Results.upsample > 1
             xx = imresize(xx, ip.Results.upsample, 'bilinear');
             yy = imresize(yy, ip.Results.upsample, 'bilinear');
             I = imresize(I, ip.Results.upsample, 'bilinear');
         end
         [X(:,1), X(:,2)] = cart2pol(yy(:), xx(:));
+        
+        [kx,ky] = meshgrid(grating.oris, -grating.cpds);
+        sf = hypot(kx(:), ky(:));
+        sfs = min(sf):max(sf);
+        
+        ori0 = theta0;
+        
+        [Yq, Xq] = pol2cart(ori0*ones(size(sfs)), sfs);
+        
+        % fit SF initial
+        r = interp2(grating.oris, -grating.cpds, srf, Xq, Yq);
+        sfs = sfs(~isnan(r));
+        r = r(~isnan(r))';
+        x = [ones(size(sfs(:)))*ori0 sfs(:)];
+        fun = @(params, x) prf.parametric_rf([0 0 params max(r) min(r)], x);
+        
+        evalc("phat = lsqcurvefit(fun, [cpd0 2], x, r);");
+%         figure
+%         plot(sfs, r, 'o'); hold on
+%         plot(linspace(0, 10, 100), fun(phat,[zeros(100,1) linspace(0, 10, 100)']))
+        
+        cpd0 = max(real(phat(1)), cpd0);
+        cpdb0 = real(phat(2));
+        
+        % fit orientation initial
+        oris = 0:(pi/10):pi;
+        [Yq, Xq] = pol2cart(oris, cpd0*ones(size(oris)));
+    
+        r = interp2(grating.oris, -grating.cpds, srf, Xq, Yq);
+        oris = oris(~isnan(r))';
+        r = r(~isnan(r))';
+        x = [oris ones(size(oris(:)))*cpd0];
+        
+        try
+            fun = @(params, x) prf.parametric_rf([params cpd0 cpdb0 max(r) min(r)], x);
+            evalc("phat = lsqcurvefit(fun, [ori0 1], x, r);");
+            ori0 = phat(2);
+            orib0 = phat(1);
+        catch
+            ori0 = theta0;
+            orib0 = 0; %initialize with no orientation tuning
+        end
+%         figure
+%         plot(oris, r, 'o'); hold on
+%         plot(linspace(0, pi, 100), fun(phat, [linspace(0, pi, 100)', ones(100,1)*cpd0]))
+        
+%         ori0 = phat(2);
+%         orib0 = phat(1);
+    
     else % stimulus was orientation/frequency
         theta0 = x0/180*pi;
         cpd0 = y0;
         [xx,yy] = meshgrid(grating.oris/180*pi, grating.cpds);
         X0 = [xx(:), yy(:)];
+        minSF = min(grating.cpds(grating.cpds>0));
         if ip.Results.upsample > 1
             xx = imresize(xx, ip.Results.upsample, 'bilinear');
             yy = imresize(yy, ip.Results.upsample, 'bilinear');
@@ -241,20 +293,26 @@ for cc = 1:NC
     try
         % try global search
         if log_gauss
-            sfsd0 = max(sqrt((cpd0.^2 + log(.5))/2), 1);
-            par0 = [2    theta0  cpd0 sfsd0  mxI     mnI]; % initial parameters
-            lb =   [0    -pi     0.1  0      .5*mxI  -mxI];
+            par0 = [orib0 ori0 cpd0 cpdb0  mxI     mnI]; % initial parameters
+            lb =   [0    -pi     0.1  -10      .5*mxI  -mxI];
             ub =   [500  2*pi    20   10     2*mxI   .5*mxI];
         else
-            par0 = [2 theta0 cpd0 2 mxI mnI]; % initial parameters
+            par0 = [orib0 ori0 cpd0 2 mxI mnI]; % initial parameters
             lb = [0 -pi 0.1 1.5 .5*mxI -mxI];
             ub = [500 2*pi 20 10 2*mxI .5*mxI];
         end
+        
+        I = I(:);
+        fitix = X(:,2) >= minSF;
+        fun = @(params, x) prf.parametric_rf([par0(1:4) params], x);
+        evalc("phat = lsqcurvefit(fun, [mxI mnI], X(fitix,:), I(fitix));");
+        par0(5:6) = phat;
         % least-squares with some scaling by firing rate
 %         lossfun = @(r,lambda) sqrt(r)'*((r - lambda).^2);
         lossfun = @(r,lambda) sum((r - lambda).^2);
         
-        fun = @(params) lossfun(I(:), prf.parametric_rf(params, X, log_gauss));
+        
+        fun = @(params) lossfun(I(fitix), prf.parametric_rf(params, X(fitix,:), log_gauss));
         
         opts = optimoptions('fmincon');
         problem = createOptimProblem('fmincon','objective', ...
@@ -265,7 +323,20 @@ for cc = 1:NC
         ms = MultiStart(gs,'UseParallel',true);
         [phat,~] = run(ms,problem, 100);
         
-        
+        if phat(1) < 1e-5 % refit without orientation tuning
+            fun = @(params) lossfun(I(fitix), prf.parametric_rf([0 0 params], X(fitix,:), log_gauss));
+            
+            opts = optimoptions('fmincon');
+            problem = createOptimProblem('fmincon','objective', ...
+                @(params) fun(params),'x0',phat(3:end),'lb',lb(3:end), ...
+                'ub',ub(3:end),'options',opts);
+            %
+            gs = GlobalSearch('Display','none','XTolerance',1e-3,'StartPointsToRun','bounds');
+            ms = MultiStart(gs,'UseParallel',true);
+            [phat,~] = run(ms,problem, 100);
+            phat = [0 0 phat];
+        end
+            
         % -- GET METRICS
         par = phat;
         
@@ -340,7 +411,7 @@ for cc = 1:NC
 % %                 evalc('phat = lsqnonlin(fun, par0, lb, ub)');
 % %                 %         evalc('phat = lsqcurvefit(fun, par0, X, I(:), lb, ub);');
 % %             catch
-                phat = nan(size(par0));
+                phat = par0;
 % %                 
 % %             end
 % %             
@@ -357,6 +428,14 @@ for cc = 1:NC
     fprintf('Success\n')
     %% evaluate
     Ihat = reshape(prf.parametric_rf(phat, X0, log_gauss), size(xx)/ip.Results.upsample);
+    Ihat0 = reshape(prf.parametric_rf(par0, X0, log_gauss), size(xx)/ip.Results.upsample);
+    r2 = rsquared(srf(:), Ihat(:));
+    r20 = rsquared(srf(:), Ihat0(:));
+    if r20 > r2
+        phat = par0;
+        Ihat = Ihat0;
+        r2 = r20;
+    end
     
     if ip.Results.debug
         figure(55); clf
@@ -387,7 +466,7 @@ for cc = 1:NC
     stat.rffit(cc).sfBandwidth = sfbw;
     stat.rffit(cc).base = phat(6);
     stat.rffit(cc).amp = phat(5);
-    stat.rffit(cc).r2 = rsquared(srf(:), Ihat(:));
+    stat.rffit(cc).r2 = r2;
     stat.rffit(cc).srfHat = Ihat;
     stat.rffit(cc).cid = cc;
     stat.ishartley = forceHartley;

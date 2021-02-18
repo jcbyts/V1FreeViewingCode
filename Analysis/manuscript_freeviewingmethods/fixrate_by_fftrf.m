@@ -1,4 +1,4 @@
-function [fftrf, opts] = fixrate_by_fftrf(Exp, srf, grf, varargin)
+function [fftrf, plotopts] = fixrate_by_fftrf(Exp, srf, grf, varargin)
 % S = fixrate_by_fftrf(Exp, srf, grf, varargin)
 % Calculate stimulus modulation using the spatial RF and grating RF
 % measured for each cell applied to the image at each fixation
@@ -16,7 +16,8 @@ function [fftrf, opts] = fixrate_by_fftrf(Exp, srf, grf, varargin)
 %                   ('fixon' or 'sacon')
 %   'usestim'       use pre or postsaccadic stimulus ('pre' or 'post')
 % Output:
-%   S <struct>
+%   fftrf <struct>      main results
+%   plotopts <struct>   additional data for plotting
 %
 % (c) jly 2020
 
@@ -32,7 +33,7 @@ ip.addParameter('debug', false)
 ip.parse(varargin{:})
 
 
-opts = ip.Results;
+plotopts = ip.Results;
 
 %% Bin spikes and eye position
 sm = ip.Results.smoothing;
@@ -92,9 +93,11 @@ ypos = zeros(nfix, 2);
 [~, ~, id1] = histcounts(fixon, eyeTime);
 [~, ~, id2] = histcounts(sacon, eyeTime);
 
+fixindex = zeros(nfix);
 for ifix = 1:nfix
     prefix = id1(ifix) + (-100:-50);
     postfix = id1(ifix):(id2(ifix)-20);
+    fixindex(ifix) = id1(ifix);
     xpos(ifix,1) = mean(eyeX(prefix));
     xpos(ifix,2) = mean(eyeX(postfix));
     ypos(ifix,1) = mean(eyeY(prefix));
@@ -327,6 +330,11 @@ end
 
 % setup movie
 exname = strrep(Exp.FileTag, '.mat', '');
+if nargout > 1
+    plotopts.clusts = clusts;
+    clustMeta = repmat(struct('rfCenter', [], 'rect', [], 'fixIms', [], 'fftIms', [],...
+        'fixMeta', []), max(clusts), 1);
+end
 
 for clustGroup = unique(clusts(:)')
     
@@ -350,11 +358,12 @@ for clustGroup = unique(clusts(:)')
     end
     
     rfwidth = hypot(rfCenter(1), rfCenter(2));
-    rfwidth = min(rfwidth, 1);
+    rfwidth = max(rfwidth, 1);
     rect = [-1 -1 1 1]*ceil(ppd*rfwidth); % window centered on RF
     dims = [rect(4)-rect(2) rect(3)-rect(1)];
     fixIms = zeros(dims(1), dims(2), nfix, 2);
     fftIms = zeros(dims(1), dims(2), nfix, 2);
+    fixMeta = zeros(nfix, 4); % trial, x, y
     
     hwin = hanning(dims(1))*hanning(dims(2))';
     
@@ -423,8 +432,6 @@ for clustGroup = unique(clusts(:)')
                 plot([imrect(1) imrect(1) + imrect(3)], imrect(2)+imrect([4 4]), 'r', 'Linewidth', 2)
                 plot(imrect([1 1]),[imrect(2), imrect(2) + imrect(4)], 'r', 'Linewidth', 2)
                 plot(imrect(1)+imrect([3 3]), [imrect(2), imrect(2) + imrect(4)], 'r', 'Linewidth', 2)
-                
-                subplot(132, 'align')
             end
             
             if ~all(size(I)==dims(1))
@@ -434,6 +441,7 @@ for clustGroup = unique(clusts(:)')
             Iwin = (I - mean(I(:))).*hwin;
             
             if ip.Results.makeMovie
+                subplot(132, 'align')
                 imagesc(Iwin, [-1 1]*max(abs(Iwin(:))))
                 axis off
             end
@@ -455,10 +463,21 @@ for clustGroup = unique(clusts(:)')
             
             fixIms(:,:,thisfix,2) = Iwin;
             fftIms(:,:,thisfix,2) = fIm;
+            fixMeta(thisfix,1) = thisTrial;
+            fixMeta(thisfix,2:3) = [eyeX eyeY];
+            fixMeta(thisfix,4) = fixindex(thisfix);
             
         end
         
         
+    end
+    
+    if nargout > 1
+        clustMeta(clustGroup).rfCenter = rfCenter;
+        clustMeta(clustGroup).rect = rect;
+        clustMeta(clustGroup).fixIms = fixIms;
+        clustMeta(clustGroup).fftIms = fftIms;
+        clustMeta(clustGroup).fixMeta = fixMeta;
     end
     
     if ip.Results.makeMovie
@@ -585,6 +604,7 @@ for clustGroup = unique(clusts(:)')
         colormap(viridis)
         drawnow
         
+        [rho, pval] = corr(fproj, spksfilt);
         
         fftrf(cc).frfsteps = steps;
         fftrf(cc).frf = frf;
@@ -605,6 +625,8 @@ for clustGroup = unique(clusts(:)')
         fftrf(cc).xproj.levels = levels;
         fftrf(cc).cid = grf.rffit(cc).cid;
         fftrf(cc).rect = rect;
+        fftrf(cc).corrrho = rho;
+        fftrf(cc).corrp = pval;
         
         [i,j] = find(squeeze(spks(ind,cc,:)));
         
@@ -629,7 +651,6 @@ for clustGroup = unique(clusts(:)')
                 keyboard
             end
             
-            
         end
     end
 end
@@ -637,7 +658,11 @@ end
 
 %%
 
-
+if nargout > 1
+    plotopts.clustMeta = clustMeta;
+    plotopts.spks = spks;
+    plotopts.fixdur = fixdur;
+end
 
 %%
 
