@@ -26,8 +26,11 @@ spatialFrequency = X(:,2);
 
 
 % Von Mises that wraps at pi and normalized between 0 and 1
-orientationTuning = (exp(params(1)*cos(orientation - params(2)).^2) - 1) / (exp(params(1)) - 1);
-
+if params(1)==0
+    orientationTuning = ones(size(orientation));
+else
+    orientationTuning = (exp(params(1)*cos(orientation - params(2)).^2) - 1) / (exp(params(1)) - 1);
+end
 
 if logGauss == 1
     % LOG GAUSSIAN
