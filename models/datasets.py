@@ -5,7 +5,7 @@ import h5py
 
 def get_stim_list(id):
     stim_list = {
-            '20191231': 'logan_20191231_Gabor_-20_-10_50_60_2_2_0_19_0.mat',
+            '20191231': 'logan_20191231_-20_-10_50_60_0_19_0_1.hdf5',
             '20200304': 'logan_20200304_-20_-10_50_60_0_19_0_1.hdf5',
             '20200306': 'logan_20200306_Gabor_-20_-10_40_60_2_2_0_9_0.mat'
         }
@@ -105,7 +105,7 @@ class PixelDataset(Dataset):
         cgs = self.fhandle['Neurons']['cgs'][:][0]
         
         self.NC = len(self.cluster_ids)
-        if cids:
+        if cids is not None:
             self.cids = cids
             self.NC = len(cids)
             self.cluster_ids = self.cluster_ids[cids]
@@ -148,21 +148,22 @@ class PixelDataset(Dataset):
 
             # loop over stimuli included in this index
             for ss in range(len(uinds)):
-                stim_start = np.where(self.stim_indices==uinds[ss])[0][0]
+                istim = uinds[ss] # index into stimulus
+                stim_start = np.where(self.stim_indices==istim)[0][0]
                 # stim_inds = np.where(uinverse==ss)[0] - stim_start
                 stim_inds = indices - stim_start
                 stim_inds = stim_inds[uinverse==ss]
-                valid_inds = self.valid[uinds[ss]][stim_inds]
+                valid_inds = self.valid[istim][stim_inds]
                 file_inds = np.expand_dims(valid_inds, axis=1) - range(0,self.num_lags*self.downsample_t)
 
                 ufinds, ufinverse = np.unique(file_inds.flatten(), return_inverse=True)
                 if self.cropidx and not self.shifter:
-                    I = self.fhandle[self.stims[ss]][self.stimset]["Stim"][self.cropidx[1][0]:self.cropidx[1][1],self.cropidx[0][0]:self.cropidx[0][1],ufinds]
+                    I = self.fhandle[self.stims[istim]][self.stimset]["Stim"][self.cropidx[1][0]:self.cropidx[1][1],self.cropidx[0][0]:self.cropidx[0][1],ufinds]
                 else:
-                    I = self.fhandle[self.stims[ss]][self.stimset]["Stim"][:,:,ufinds]
+                    I = self.fhandle[self.stims[istim]][self.stimset]["Stim"][:,:,ufinds]
 
                 if self.shifter:
-                    eyepos = self.fhandle[self.stims[ss]][self.stimset]["eyeAtFrame"][1:3,ufinds].T
+                    eyepos = self.fhandle[self.stims[istim]][self.stimset]["eyeAtFrame"][1:3,ufinds].T
                     eyepos[:,0] -= self.centerpix[0]
                     eyepos[:,1] -= self.centerpix[1]
                     eyepos/= self.ppd
@@ -170,9 +171,9 @@ class PixelDataset(Dataset):
                     if self.cropidx:
                         I = I[self.cropidx[1][0]:self.cropidx[1][1],self.cropidx[0][0]:self.cropidx[0][1],:]
 
-                R = self.fhandle[self.stims[ss]][self.stimset]["Robs"][:,valid_inds]
+                R = self.fhandle[self.stims[istim]][self.stimset]["Robs"][:,valid_inds]
                 if self.include_eyepos:
-                    eyepos = self.fhandle[self.stims[ss]][self.stimset]["eyeAtFrame"][1:3,valid_inds].T
+                    eyepos = self.fhandle[self.stims[istim]][self.stimset]["eyeAtFrame"][1:3,valid_inds].T
                     eyepos[:,0] -= self.centerpix[0]
                     eyepos[:,1] -= self.centerpix[1]
                     eyepos/= self.ppd
@@ -192,7 +193,7 @@ class PixelDataset(Dataset):
                     else:
                         ep = None
                 else:
-                    S = torch.cat( (S, self.transform_stim(I)), dim=0)
+                    S = torch.cat( (S, torch.tensor(self.transform_stim(I))), dim=0)
                     Robs = torch.cat( (Robs, torch.tensor(R.astype('float32'))), dim=0)
                     if self.include_eyepos:
                         ep = torch.cat( (ep, torch.tensor(eyepos.astype('float32'))), dim=0)
