@@ -411,8 +411,12 @@ class Point2DGaussian(Readout):
         return y
 
     def regularizer(self):
+        if self.shifter is None:
+            out = 0
+        else:
+            out = self.shifter(self.regvalplaceholder).abs().sum()*10
         # enforce the shifter to have 0 shift at 0,0 in
-        return self.shifter(self.regvalplaceholder).abs().sum()*10
+        return out
 
     def __repr__(self):
         """
