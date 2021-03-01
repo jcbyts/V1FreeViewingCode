@@ -27,3 +27,5 @@ Data/
 *.experiment
 checkpoints/
 checkpoints/checkpoints/
+Analysis/notebooks/*.pt
+Analysis/notebooks/*.hdf5
