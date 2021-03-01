@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import h5py
+from tqdm import tqdm
 
 def get_stim_list(id):
     stim_list = {
@@ -141,21 +142,33 @@ class PixelDataset(Dataset):
         
         if self.preload:
             return {'stim': self.x[index,:,:,:], 'robs': self.y[index,:], 'eyepos': self.eyepos[index,:]}
-        else:            
+        else:  
+
+            if type(index)==int: # special case where a single instance is indexed
+                inisint = True
+            else:
+                inisint = False
+
             # index into valid stimulus indices (this is part of handling multiple stimulus sets)
             uinds, uinverse = np.unique(self.stim_indices[index], return_inverse=True)
             indices = self.indices_hack[index] # this is now a numpy array
 
+            
             # loop over stimuli included in this index
             for ss in range(len(uinds)):
                 istim = uinds[ss] # index into stimulus
                 stim_start = np.where(self.stim_indices==istim)[0][0]
                 # stim_inds = np.where(uinverse==ss)[0] - stim_start
                 stim_inds = indices - stim_start
-                stim_inds = stim_inds[uinverse==ss]
-                valid_inds = self.valid[istim][stim_inds]
-                file_inds = np.expand_dims(valid_inds, axis=1) - range(0,self.num_lags*self.downsample_t)
-
+                ix = uinverse==ss
+                if inisint:
+                    valid_inds = self.valid[istim][stim_inds]
+                    file_inds = valid_inds - range(0,self.num_lags*self.downsample_t)
+                else:
+                    stim_inds = stim_inds[ix]
+                    valid_inds = self.valid[istim][stim_inds]
+                    file_inds = np.expand_dims(valid_inds, axis=1) - range(0,self.num_lags*self.downsample_t)
+                    
                 ufinds, ufinverse = np.unique(file_inds.flatten(), return_inverse=True)
                 if self.cropidx and not self.shifter:
                     I = self.fhandle[self.stims[istim]][self.stimset]["Stim"][self.cropidx[1][0]:self.cropidx[1][1],self.cropidx[0][0]:self.cropidx[0][1],ufinds]
@@ -174,15 +187,30 @@ class PixelDataset(Dataset):
                 R = self.fhandle[self.stims[istim]][self.stimset]["Robs"][:,valid_inds]
                 if self.include_eyepos:
                     eyepos = self.fhandle[self.stims[istim]][self.stimset]["eyeAtFrame"][1:3,valid_inds].T
-                    eyepos[:,0] -= self.centerpix[0]
-                    eyepos[:,1] -= self.centerpix[1]
+                    if inisint:
+                        eyepos[0] -= self.centerpix[0]
+                        eyepos[1] -= self.centerpix[1]
+                    else:    
+                        eyepos[:,0] -= self.centerpix[0]
+                        eyepos[:,1] -= self.centerpix[1]
                     eyepos/= self.ppd
 
                 sz = I.shape
+                if inisint:
+                    I = np.expand_dims(I, axis=3)
+                
                 I = I[:,:,ufinverse].reshape(sz[0],sz[1],-1, self.num_lags*self.downsample_t).transpose((2,3,0,1))
                 R = R.T
-                if self.NC != R.shape[1]:
-                    R = R[:,np.asarray(self.cids)]
+                if inisint:
+                    NumC = len(R)
+                else:
+                    NumC = R.shape[1]
+
+                if self.NC != NumC:
+                    if inisint:
+                        R = R[np.asarray(self.cids)]
+                    else:
+                        R = R[:,np.asarray(self.cids)]
 
                 # concatentate if necessary
                 if ss ==0:
@@ -192,6 +220,12 @@ class PixelDataset(Dataset):
                         ep = torch.tensor(eyepos.astype('float32'))
                     else:
                         ep = None
+
+                    # if inisint:
+                    #     S = S[0,:,:,:] #.unsqueeze(0)
+                    #     Robs = Robs[0,:] #.unsqueeze(0)
+                    #     ep = ep[0,:] #.unsqueeze(0)
+
                 else:
                     S = torch.cat( (S, torch.tensor(self.transform_stim(I))), dim=0)
                     Robs = torch.cat( (Robs, torch.tensor(R.astype('float32'))), dim=0)
@@ -274,6 +308,101 @@ class PixelDataset(Dataset):
         im2 = im2[:,0,:,:].permute((1,2,0)).detach().cpu().numpy()
 
         return im2
+    
+    def get_null_adjusted_ll_temporal(self,model,batch_size=5000):
+        """
+        Get raw and null log-likelihood for all time points
+        """
+        loss = torch.nn.PoissonNLLLoss(log_input=False, reduction='none')
+        import torch
+
+        nt = len(self)
+        llneuron = np.zeros((nt, self.NC))
+        llnull = np.zeros((nt, self.NC))
+        robs = np.zeros((nt,self.NC))
+        eyepos = np.zeros((nt,2))
+
+        nsteps = nt//batch_size + 1
+
+        model.cpu()
+
+        print("Getting log-likelihood for all time bins")
+        for istep in tqdm(range(nsteps)):
+    
+            index = (istep-1)*batch_size + np.arange(0, batch_size)
+            index = index[index < nt]
+
+            sample = self[index]
+    
+            yhat = model(sample['stim'], shifter=sample['eyepos'])
+            llneuron[index,:] = -loss(yhat,sample['robs']).detach().cpu().numpy()
+            llnull[index,:] = -loss(torch.ones(sample['robs'].shape)*sample['robs'].mean(axis=0), sample['robs']).detach().cpu().numpy()
+            robs[index,:] = sample['robs']
+            eyepos[index,:] = sample['eyepos']
+        
+        return {'llraw': llneuron, 'llnull': llnull, 'robs': robs, 'eyepos': eyepos}
+
+    def get_ll_by_eyepos(self, model, lldict=None, nbins=20, binsize=.5, bounds=[-5,5],
+        batch_size=5000, plot=True, use_stim=None):
+        """
+        get_ll_by_eyepos gets the null-adjusted loglikelihood for each cell as a function of eye position
+        """
+        if lldict is None:
+            lldict = self.get_null_adjusted_ll_temporal(model, batch_size=batch_size)
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        print("Getting log-likelihood as a function of eye position")
+
+        bins = np.linspace(bounds[0],bounds[1],nbins)
+
+        LLspace = np.zeros((nbins,nbins,self.NC))
+
+        if plot:
+            sx = np.ceil(np.sqrt(self.NC))
+            sy = np.round(np.sqrt(self.NC))
+            plt.figure(figsize=(3*sx,3*sy))
+
+        for cc in tqdm(range(self.NC)):
+            for ii,xx in zip(range(nbins),bins):
+                for jj,yy in zip(range(nbins),bins):
+                    ix = np.hypot(lldict['eyepos'][:,0] - xx, lldict['eyepos'][:,1]-yy) < binsize
+                    if not use_stim is None:
+                        ix = np.logical_and(self.stim_indices==use_stim, ix)
+                    LLspace[jj,ii,cc] = np.mean(lldict['llraw'][ix,cc]-lldict['llnull'][ix,cc])
+
+            if plot:
+                plt.subplot(sx,sy,cc+1)
+                plt.imshow(LLspace[:,:,cc], extent=[bounds[0],bounds[1],bounds[0],bounds[1]])
+                plt.title(cc)
+
+        return LLspace
+    
+    def get_null_adjusted_ll(self, model, sample=None, bits=False, use_shifter=True):
+    '''
+    get null-adjusted log likelihood
+    bits=True will return in units of bits/spike
+    '''
+        m0 = model.cpu()
+        loss = torch.nn.PoissonNLLLoss(log_input=False, reduction='none')
+        if sample is None:
+            sample = self[:]
+
+        lnull = -loss(torch.ones(sample['robs'].shape)*sample['robs'].mean(axis=0), sample['robs']).detach().cpu().numpy().sum(axis=0)
+        if use_shifter:
+            yhat = m0(sample['stim'], shifter=sample['eyepos'])
+        else:
+            yhat = m0(sample['stim'])
+        llneuron = -loss(yhat,sample['robs']).detach().cpu().numpy().sum(axis=0)
+        rbar = sample['robs'].sum(axis=0).numpy()
+        ll = (llneuron - lnull)/rbar
+        if bits:
+            ll/=np.log(2)
+        return ll
+                # plt.colorbar()
+
+
+
 
 #% testing code
 # gd = PixelDataset('20200304', stims=["Gabor"],

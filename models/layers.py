@@ -1,12 +1,15 @@
 import math
 import torch
 from torch import nn
+from typing import Tuple, Union
 
 # from pytorch_lightning import LightningModule
 from torch.nn import functional as F
 
+from torch import Tensor
 from torch.nn.parameter import Parameter
-from torch.nn.common_types import _size_2_t # for conv2 default
+from torch.nn.common_types import _size_2_t, _size_3_t # for conv2,conv3 default
+from torch.nn.modules.utils import _triple # for posconv3
 
 """
 1. posConv2D:   2D convolutional with positive weights
@@ -39,6 +42,36 @@ class posConv2D(nn.Conv2d):
     def forward(self, x):
         posweight = torch.maximum(self.weight, self.minval)
         return self._conv_forward(x, posweight)
+
+class posConv3d(nn.Conv3d):
+    """
+    3D convolutional layer that is constrained to have positive weights
+    """
+    def __init__(self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: _size_3_t,
+        stride: _size_3_t = 1,
+        padding: _size_3_t = 0,
+        dilation: _size_3_t = 1,
+        groups: int = 1,
+        bias: bool = True,
+        padding_mode: str = 'zeros'
+    ):
+
+        super(posConv3d, self).__init__(in_channels,
+            out_channels, kernel_size, stride,
+            padding, dilation, groups, bias, padding_mode)
+        self.register_buffer("minval", torch.tensor(0.0))
+
+    def forward(self, input: Tensor) -> Tensor:
+        posweight = torch.maximum(self.weight, self.minval)
+        if self.padding_mode != 'zeros':
+            return F.conv3d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
+                            posweight, self.bias, self.stride, _triple(0),
+                            self.dilation, self.groups)
+        return F.conv3d(input, posweight, self.bias, self.stride,
+                        self.padding, self.dilation, self.groups)
 
 
 class PosLinear(nn.Linear):
@@ -234,3 +267,51 @@ class divNormPow(nn.Module):
         x = x.reshape(snew) # [N*X*Y, K] --> [N, Y, X, K]
         x = x.permute(list(np.argsort(pdims))) # [N, Y, X, K] --> [N, K, Y, X]
         return x
+
+
+class Chomp(nn.Module):
+    '''
+    Chomp layer is for "chomping" off the result of padding on the output of a convolutional layer
+    '''
+    def __init__(self, chomp_sizes: Union[int, Tuple[int], Tuple[int, int], Tuple[int, int, int]], nb_dims):
+        super(Chomp, self).__init__()
+        if isinstance(chomp_sizes, int):
+            self.chomp_sizes = [chomp_sizes] * nb_dims
+        else:
+            self.chomp_sizes = chomp_sizes
+
+        assert len(self.chomp_sizes) == nb_dims, "must enter a chomp size for each dim"
+        self.nb_dims = nb_dims
+
+    def forward(self, x):
+        input_size = x.size()
+
+        if self.nb_dims == 1:
+            slice_d = slice(0, input_size[2] - self.chomp_sizes[0], 1)
+            return x[:, :, slice_d].contiguous()
+
+        elif self.nb_dims == 2:
+            if self.chomp_sizes[0] % 2 == 0:
+                slice_h = slice(self.chomp_sizes[0] // 2, input_size[2] - self.chomp_sizes[0] // 2, 1)
+            else:
+                slice_h = slice(0, input_size[2] - self.chomp_sizes[0], 1)
+            if self.chomp_sizes[2] % 2 == 0:
+                slice_w = slice(self.chomp_sizes[1] // 2, input_size[3] - self.chomp_sizes[1] // 2, 1)
+            else:
+                slice_w = slice(0, input_size[3] - self.chomp_sizes[1], 1)
+            return x[:, :, slice_h, slice_w].contiguous()
+
+        elif self.nb_dims == 3:
+            slice_d = slice(0, input_size[2] - self.chomp_sizes[0], 1)
+            if self.chomp_sizes[1] % 2 == 0:
+                slice_h = slice(self.chomp_sizes[1] // 2, input_size[3] - self.chomp_sizes[1] // 2, 1)
+            else:
+                slice_h = slice(0, input_size[3] - self.chomp_sizes[1], 1)
+            if self.chomp_sizes[2] % 2 == 0:
+                slice_w = slice(self.chomp_sizes[2] // 2, input_size[4] - self.chomp_sizes[2] // 2, 1)
+            else:
+                slice_w = slice(0, input_size[4] - self.chomp_sizes[2], 1)
+            return x[:, :, slice_d, slice_h, slice_w].contiguous()
+
+        else:
+            raise RuntimeError("Invalid number of dims")
