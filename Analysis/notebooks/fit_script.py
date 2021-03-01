@@ -1,5 +1,5 @@
 # %% Import libraries
-sys.path.insert(0, '/home/jcbyts/Repos/')
+sys.path.insert(0, '/home/jake/Data/Repos/')
 # import deepdish as dd
 import Utils as U
 import gratings as gt
@@ -27,13 +27,13 @@ for i in range(len(sesslist)):
     print("%d %s" %(i, sesslist[i]))
 
 # %% setup session
-for iSess in range(1, 45): #range(len(sesslist)):
+for iSess in range(1): #range(len(sesslist)):
     print("Session # %d" %iSess)
     indexlist = [iSess]
 
 # indexlist = [10]
     try:
-        stim, sacon, sacoff, Robs, DF, basis, opts, _ = gt.load_and_setup(indexlist,npow=1.8,num_saclags=60,back_shifts=20,num_lags=15)
+        stim, sacon, sacoff, Robs, DF, basis, opts, _ = gt.load_and_setup(indexlist,npow=1.8) #,num_saclags=60,back_shifts=20,num_lags=15)
         # %% build time-embedded stimulus
         num_saclags = 60
         back_shifts = 20
@@ -79,7 +79,7 @@ v = np.intersect1d(np.where(valid)[0], np.where(ed)[0])
 # %% fit models
 ndns, names = gt.fit_models(Xstim, Robs, XsacOn, XsacOff, XsacDur, opts,
     valid=v,
-    datapath='/home/jcbyts/Data/MitchellV1FreeViewing/grating_analyses/lbfgs',
+    datapath='/home/jake/Data/Datasets/MitchellV1FreeViewing/grating_analyses/lbfgs',
     tag=opts['exname'][0]
 )
 

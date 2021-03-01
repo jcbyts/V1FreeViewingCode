@@ -1,5 +1,5 @@
 # %% Import libraries
-sys.path.insert(0, '/home/jcbyts/Repos/')
+sys.path.insert(0, '/home/jake/Data/Repos/')
 import deepdish as dd
 import Utils as U
 import gratings as gt
@@ -27,9 +27,8 @@ for i in range(len(sesslist)):
     print("%d %s" %(i, sesslist[i]))
 
 # %% Load one session
-indexlist = [17]
-stim, sacon, sacoff, Robs, DF, basis, opts, sacbc = gt.load_and_setup(indexlist,npow=1.8,opts={'padding':50})
-
+indexlist = [51]
+stim, sacon, sacoff, Robs, DF, basis, opts, sacbc, valid, eyepos = gt.load_and_setup(indexlist,npow=1.8)
 # # %% save to matlab
 # opts['stim'] = stim
 # opts['sacon'] = sacon
@@ -74,7 +73,7 @@ lbfgs_params['maxiter'] = 10000
 
 noise_dist = 'poisson'
 seed = 66
-optimizer = 'lbfgs'
+optimizer = 'adam'
 
 
 if noise_dist=='poisson':
@@ -97,18 +96,55 @@ glm_par = NDNutils.ffnetwork_params(
     input_dims=[1,NX,NY,num_lags],
     layer_sizes=[NC],
     layer_types=['readout'],
-    act_funcs=['softplus'],
+    act_funcs=['lin'],
     normalization=[0],
     reg_list={'l2':1e-2, 'd2xt': 1e-5, 'l1':1e-5}
     )
 
-glm = NDN.NDN([glm_par], tf_seed=seed, noise_dist=noise_dist)
+autoencoder = NDNutils.ffnetwork_params(input_dims=[1, NC, 1],
+    xstim_n=[1],
+    layer_sizes=[2, 1, NC],
+    time_expand=[0, 15, 0],
+    layer_types=['normal', 'temporal', 'normal'],
+    conv_filter_widths=[None, 1, None],
+    act_funcs=['relu', 'lin', 'lin'],
+    normalization=[1, 1, 0],
+    reg_list={'d2t':[None, 1e-5, None]}
+    )
 
-_ = glm.train(input_data=[Xstim], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
-    learning_alg=optimizer, opt_params=opt_params, use_dropout=False)
+add_par = NDNutils.ffnetwork_params(
+    xstim_n=None, ffnet_n=[0,1], layer_sizes=[NC],
+    layer_types=['add'], act_funcs=['softplus']
+)
+
+glm = NDN.NDN([glm_par, autoencoder, add_par], tf_seed=seed, noise_dist=noise_dist)
+
+# time_expand=[0, 0, num_ca_lags], normalization=[0,0,0], 
+#     layer_types=['conv','normal', 'conv'], conv_filter_widths=[L, None, 1],
+
+glm.batch_size = adam_params['batch_size']
+glm.initialize_output_reg(network_target=1,layer_target=1, reg_vals={'d2t': 1e-1})
+glm.time_spread = 100
+
+v2f = glm.fit_variables()
+for nn in range(len(v2f[1])-1):
+    v2f[1][nn]['biases'] = False
+#%%
+_ = glm.train(input_data=[Xstim, Robs], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+    learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f)
 
 print("Done")
 
+#%%
+
+# rpred = glm0.generate_prediction(input_data=[Xstim, Robs], ffnet_target=-1, layer_target=-1)
+rpred1 = glm.generate_prediction(input_data=[Xstim, Robs], ffnet_target=1, layer_target=1)
+plt.figure(figsize=(10,4))
+# f = plt.plot(rpred[:200])
+f = plt.plot(rpred1[:200])
+
+#%%
+glm0 = glm.copy_model()
 #%%
 reg_min=gt.find_best_reg(glm, input_data=[Xstim], output_data=Robs,
     train_indxs=Ui, test_indxs=Xi, reg_type='l2',
