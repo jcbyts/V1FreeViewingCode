@@ -25,15 +25,5 @@ Data/
 *.mp4
 *.ckpt
 *.experiment
-Analysis/notebooks/checkpoints
-Analysis/notebooks/lightning_logs
-Analysis/notebooks/__pycache__/
-Analysis/notebooks/test_cores_devel/
-Analysis/notebooks/test_cores_refine/
-Analysis/notebooks/core_shifter/
-Analysis/notebooks/core_shifter_calibration/
-Analysis/notebooks/core_shifter_ls1/
-Analysis/notebooks/core_shifter_ls2/
-Analysis/notebooks/core_shifter_ls4/
-Analysis/notebooks/test_linear_model/
-Analysis/notebooks/glms/
+checkpoints/
+checkpoints/checkpoints/
