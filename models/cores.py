@@ -909,12 +909,10 @@ class Stacked3dCore(Core3d):
         weight_norm=None,
         group_norm=None,
         bias=None,
-        input_regularizer="RegMats",
-        hidden_regularizer="RegMats",
-        input_reg_types=["d2xt", "local","center"],
-        input_reg_amt=[.25,.25,.5],
-        hidden_reg_types=["d2x", "local", "center"],
-        hidden_reg_amt=[.33,.33,.33],
+        regularizer="RegMats",
+        reg_types=None,
+        reg_amt=None,
+        gamma_group=.5,
         pad_input=0,
         stack=None,
         use_avg_reg=True,
@@ -938,21 +936,6 @@ class Stacked3dCore(Core3d):
 
         super().__init__()
 
-        # regularizer_config = (
-        #     dict(padding=laplace_padding, kernel=input_kern)
-        #     if input_regularizer == "GaussianLaplaceL2"
-        #     else dict(padding=laplace_padding)
-        # )
-        # self._input_weights_regularizer = regularizers.__dict__[input_regularizer](**regularizer_config)
-        
-        # regularizer_config = {'dims': [input_channels, input_kern,input_kern],
-        #                     'type': input_reg_types, 'amount': input_reg_amt}
-        # self._input_weights_regularizer = regularizers.__dict__["RegMats"](**regularizer_config)
-
-        # regularizer_config = {'dims': [hidden_channels, hidden_kern,hidden_kern],
-        #                     'type': hidden_reg_types, 'amount': hidden_reg_amt}
-        # self._hidden_weights_regularizer = regularizers.__dict__["RegMats"](**regularizer_config)
-
         self.layers = len(num_channels)
         self.input_channels = input_channels # number of input channels
         self.num_channels = num_channels
@@ -964,6 +947,21 @@ class Stacked3dCore(Core3d):
         self.weight_norm = weight_norm
         self.group_norm = group_norm
         self.bias = bias
+        self.gamma_group = gamma_group
+
+        # setup regularization (using reg mats)
+        if reg_types is None:
+            reg_types = []
+            reg_amt = []
+            for l in range(self.layers):
+                reg_amt.append([.25,.25,.5])
+                reg_types.append(["d2xt", "local","center"])
+
+        self._weights_regularizer = nn.ModuleList()
+        for l in range(self.layers):
+            regularizer_config = {'dims': list(kernel_size[l]),
+                                'type': reg_types[l], 'amount': reg_amt[l]}
+            self._weights_regularizer.append(regularizers.__dict__[regularizer](**regularizer_config))
         
         if self.ei_split is None:
             self.ei_split = [0 for i in range(self.layers)]
@@ -1006,7 +1004,7 @@ class Stacked3dCore(Core3d):
                 input_channels,
                 self.num_channels[0],
                 self.kernel_size[0],
-                padding=pad_input,
+                padding=tuple(np.asarray(self.kernel_size[0])//2),
                 bias=self.bias[0] and not self.group_norm[0]),
                 dim=0, name='weight')
         else:
@@ -1014,7 +1012,7 @@ class Stacked3dCore(Core3d):
                 input_channels,
                 self.num_channels[0],
                 self.kernel_size[0],
-                padding=pad_input,
+                padding=tuple(np.asarray(self.kernel_size[0])//2),
                 bias=self.bias[0] and not self.group_norm[0])
 
         # add activation
@@ -1049,7 +1047,7 @@ class Stacked3dCore(Core3d):
                     self.num_channels[l-1],
                     self.num_channels[l],
                     self.kernel_size[l],
-                    padding=0,
+                    padding=tuple(np.asarray(self.kernel_size[l])//2),
                     bias=self.bias[l]),
                     dim=0)
 
@@ -1058,7 +1056,7 @@ class Stacked3dCore(Core3d):
                     self.num_channels[l-1],
                     self.num_channels[l],
                     self.kernel_size[l],
-                    padding=0,
+                    padding=tuple(np.asarray(self.kernel_size[l])//2),
                     bias=self.bias[l])
 
             # specify Exc / Inh split
@@ -1086,14 +1084,6 @@ class Stacked3dCore(Core3d):
         self.apply(self.init_conv)
 
 
-
-
-
-
-        # # center regularization
-        # regw = 1 - regularizers.gaussian2d(input_kern,sigma=input_kern//2)
-        # self.register_buffer("center_reg_weights", torch.tensor(regw))
-
     def forward(self, input_):
         ret = []
         for l, feat in enumerate(self.features):
@@ -1102,18 +1092,13 @@ class Stacked3dCore(Core3d):
 
         return torch.cat([ret[ind] for ind in self.stack], dim=1)
 
-    def input_reg(self):
-        return self._input_weights_regularizer(self.features[0].conv.weight)
-
-    def hidden_reg(self):
+    def weight_reg(self):
         ret = 0
-        for l in range(1, self.layers):
-            ret = ret + self._hidden_weights_regularizer(self.features[l].conv.weight)
-        return self.gamma_hidden * self.group_sparsity() + ret
-
-    # def center_reg(self):
-    #     ret = torch.einsum('ijxy,xy->ij', self.features[0].conv.weight, self.center_reg_weights).pow(2).mean()
-    #     return ret
+        for l in range(self.layers):
+            nch = self.features[l].conv.weight.shape[1]
+            for ch in range(nch): # loop over input channels
+                ret = ret + self._weights_regularizer[l](self.features[l].conv.weight[:,ch,:,:])
+        return ret
 
     def group_sparsity(self):
         ret = 0
@@ -1122,14 +1107,17 @@ class Stacked3dCore(Core3d):
         return ret / ((self.layers - 1) if self.layers > 1 else 1)
 
     def regularizer(self):
-        return self.hidden_reg() + self.gamma_input * self.input_reg()
+        return self.weight_reg() + self.gamma_group * self.group_sparsity()
 
     @property
     def outchannels(self):
+        ret = 0
         if self.stack:
-            ret = len(self.stack) * self.hidden_channels
+            for l in self.stack:
+                ret += self.features[l].conv.weight.shape[0]
         else:
-            ret = len(self.features) * self.hidden_channels
+            for l in range(self.layers):
+                ret += self.features[l].conv.weight.shape[0]
         return ret
     
     def plot_filters(model, sort=False):

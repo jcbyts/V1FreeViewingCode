@@ -32,6 +32,7 @@ class PixelDataset(Dataset):
     cids            <list>      list of cells to include (file is loaded in its entirety and then sampled because slicing hdf5 has to be simple)
     cropidx                     index of the form [(x0,x1),(y0,y1)] or None type
     include_eyepos  <bool>      flag to include the eye position info in __get_item__ output
+    temporal        <bool>      include temporal dimension explicitly instead of buried as channel dimension
 
     """
     def __init__(self,id,
@@ -47,9 +48,12 @@ class PixelDataset(Dataset):
         dirname='/home/jake/Data/Datasets/MitchellV1FreeViewing/stim_movies/',
         cids=None,
         cropidx=None,
-        include_eyepos=False,
         shifter=None,
-        preload=False):
+        preload=False,
+        include_eyepos=False,
+        include_saccades=0,
+        include_frametime=0,
+        temporal=False):
         
         # load data
         self.dirname = dirname
@@ -65,9 +69,12 @@ class PixelDataset(Dataset):
         self.downsample_t = downsample_t
         self.fixations_only = fixations_only
         self.include_eyepos = include_eyepos
+        self.include_saccades = include_saccades
+        self.include_frametime = include_frametime
         self.valid_eye_rad = valid_eye_rad
         self.valid_eye_ctr = valid_eye_ctr
         self.shifter=shifter
+        self.temporal = temporal
 
         # sanity check stimuli (all requested stimuli must be keys in the file)
         newstims = []
@@ -92,7 +99,18 @@ class PixelDataset(Dataset):
         indices = [[i] * v for i, v in enumerate(self.lens)]
         self.stim_indices = np.asarray(sum(indices, []))
         self.indices_hack = np.arange(0,len(self.stim_indices)) # stupid conversion from slice/int/range to numpy array
-        
+        self.frame_time = np.zeros(len(self.stim_indices))
+        if self.include_frametime>1:
+            print("reading frame times")
+            for ii,stim in zip(range(len(self.stims)), self.stims):
+                print("%d) %s" %(ii,stim))
+                inds = self.stim_indices==ii
+                self.frame_time[inds] = self.fhandle[stim][self.stimset]['frameTimesOe'][0,self.valid[ii]]
+            self.frame_basiscenters = np.linspace(np.min(self.frame_time), np.max(self.frame_time), self.include_frametime)
+            self.frame_binsize = np.mean(np.diff(self.frame_basiscenters))
+            xdiff = np.abs(np.expand_dims(self.frame_time, axis=1) - self.frame_basiscenters)
+            self.frame_tents = np.maximum(1-xdiff/self.frame_binsize , 0)
+            
         # setup cropping
         if cropidx:
             self.cropidx = cropidx
@@ -128,7 +146,7 @@ class PixelDataset(Dataset):
                 print("%d/%d" %(i+1,nsteps))
                 inds = np.arange(i*chunk_size, np.minimum(i*chunk_size + chunk_size, n))
                 sample = self.__getitem__(inds)
-                self.x[inds,:,:,:] = sample['stim'].detach().clone()
+                self.x[inds,:,:,:] = sample['stim'].squeeze().detach().clone()
                 self.y[inds,:] = sample['robs'].detach().clone()
                 self.eyepos[inds,0] = sample['eyepos'][:,0].detach().clone()
                 self.eyepos[inds,1] = sample['eyepos'][:,1].detach().clone()
@@ -141,7 +159,19 @@ class PixelDataset(Dataset):
         """            
         
         if self.preload:
-            return {'stim': self.x[index,:,:,:], 'robs': self.y[index,:], 'eyepos': self.eyepos[index,:]}
+            if self.temporal:
+                if type(index)==int:
+                    stim = self.x[index,:,:,:].unsqueeze(0)
+                else:
+                    stim = self.x[index,:,:,:].unsqueeze(1)
+            else:
+                stim = self.x[index,:,:,:]
+            
+            out = {'stim': stim, 'robs': self.y[index,:], 'eyepos': self.eyepos[index,:]}
+            if self.include_frametime>1:
+                out['frametime'] = self.frame_tents[index,:]
+
+            return out
         else:  
 
             if type(index)==int: # special case where a single instance is indexed
@@ -232,7 +262,16 @@ class PixelDataset(Dataset):
                     if self.include_eyepos:
                         ep = torch.cat( (ep, torch.tensor(eyepos.astype('float32'))), dim=0)
 
-            return {'stim': S, 'robs': Robs, 'eyepos': ep}
+            if self.temporal:
+                if inisint:
+                    S = S.unsqueeze(0) # add channel dimension
+                else:
+                    S = S.unsqueeze(1) # add channel dimension
+
+            out = {'stim': S, 'robs': Robs, 'eyepos': ep}
+            if self.include_frametime>1:
+                out['frametime'] = self.frame_tents[index,:]
+            return out
 
     def __len__(self):
         return sum(self.lens)
@@ -379,10 +418,10 @@ class PixelDataset(Dataset):
         return LLspace
     
     def get_null_adjusted_ll(self, model, sample=None, bits=False, use_shifter=True):
-    '''
-    get null-adjusted log likelihood
-    bits=True will return in units of bits/spike
-    '''
+        '''
+        get null-adjusted log likelihood
+        bits=True will return in units of bits/spike
+        '''
         m0 = model.cpu()
         loss = torch.nn.PoissonNLLLoss(log_input=False, reduction='none')
         if sample is None:
