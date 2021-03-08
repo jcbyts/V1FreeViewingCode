@@ -38,12 +38,12 @@ def resample_time(data, torig, tout):
     dout = f(tout)
     return dout
 
-def bin_at_frames(times, btimes, maxbsize=np.inf, padding=0):
+def bin_at_frames(times, btimes, maxbsize=1, padding=0):
     ''' bin time points (times) at btimes'''
     breaks = np.where(np.diff(btimes)>maxbsize)[0]
     
     # add extra bin edge
-    btimes = np.append(btimes, btimes[-1]+.1)
+    btimes = np.append(btimes, btimes[-1]+maxbsize)
 
     out,_ = np.histogram(times, bins=btimes)
     out = out.astype('float32')

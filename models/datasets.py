@@ -51,15 +51,27 @@ class PixelDataset(Dataset):
         shifter=None,
         preload=False,
         include_eyepos=False,
-        include_saccades=0,
-        include_frametime=0,
+        include_saccades=None, # must be a dict that says how to implement the saccade basis
+        include_frametime=None,
         temporal=False):
         
+        
+        
+        # check if a specific spike sorting is requested
+        chk = [i for i,j in zip(range(len(id)), id) if '_'==j ]
+
+        if len(chk)==0:
+            sessname = id
+            spike_sorting is None
+        else:
+            sessname = id[:chk[0]]
+            spike_sorting = id[chk[0]+1:]
+
         # load data
         self.dirname = dirname
         self.id = id
         self.cropidx = cropidx
-        self.fname = get_stim_list(id)
+        self.fname = get_stim_list(sessname)
         self.sdnorm = 15 # scale stimuli (puts model in better range??)
         self.stimset = stimset
         self.fhandle = h5py.File(self.dirname + self.fname, "r")
@@ -75,6 +87,7 @@ class PixelDataset(Dataset):
         self.valid_eye_ctr = valid_eye_ctr
         self.shifter=shifter
         self.temporal = temporal
+        self.spike_sorting = spike_sorting
 
         # sanity check stimuli (all requested stimuli must be keys in the file)
         newstims = []
@@ -92,6 +105,7 @@ class PixelDataset(Dataset):
         self.ppd = ppd
         self.NY = int(sz[0]//self.downsample_s)
         self.NX = int(sz[1]//self.downsample_s)
+        self.frate = self.fhandle[self.stims[0]]['Test']['Stim'].attrs['frate'][0]
 
         # get valid indices
         self.valid = [self.get_valid_indices(stim) for stim in self.stims]
@@ -99,18 +113,73 @@ class PixelDataset(Dataset):
         indices = [[i] * v for i, v in enumerate(self.lens)]
         self.stim_indices = np.asarray(sum(indices, []))
         self.indices_hack = np.arange(0,len(self.stim_indices)) # stupid conversion from slice/int/range to numpy array
+
+        # pre-load frame times        
         self.frame_time = np.zeros(len(self.stim_indices))
-        if self.include_frametime>1:
-            print("reading frame times")
-            for ii,stim in zip(range(len(self.stims)), self.stims):
-                print("%d) %s" %(ii,stim))
-                inds = self.stim_indices==ii
-                self.frame_time[inds] = self.fhandle[stim][self.stimset]['frameTimesOe'][0,self.valid[ii]]
-            self.frame_basiscenters = np.linspace(np.min(self.frame_time), np.max(self.frame_time), self.include_frametime)
+        
+        for ii,stim in zip(range(len(self.stims)), self.stims):
+            inds = self.stim_indices==ii
+            self.frame_time[inds] = self.fhandle[stim][self.stimset]['frameTimesOe'][0,self.valid[ii]]
+        """
+        LOAD FRAME TIMES AS TENT BASIS
+        We want to represent time in the experiment as a smoothly varying parameter so we can fit up-and-down states, excitability, artifacts, etc.
+        """
+        if self.include_frametime is not None:
+            print("Loading frame times on basis")
+            assert type(self.include_frametime)==dict, "include_frametime must be a dict with keys: 'num_basis', 'full_experiment'"
+            
+            assert not self.include_frametime['full_experiment'], "full_experiment = True is not implemented yet"
+            self.frame_basiscenters = np.linspace(np.min(self.frame_time), np.max(self.frame_time), self.include_frametime['num_basis'])
             self.frame_binsize = np.mean(np.diff(self.frame_basiscenters))
             xdiff = np.abs(np.expand_dims(self.frame_time, axis=1) - self.frame_basiscenters)
             self.frame_tents = np.maximum(1-xdiff/self.frame_binsize , 0)
-            
+        
+        """
+        INCLUDE SACCADES
+        Build design matrix for saccade lags
+        
+        include_saccades is a list of dicts. Each dict has arguments for how to construct the basis
+        {
+            'name': name of the variable
+            'basis': actual basis (at the time resolution of the stimulus)
+        }
+        """
+        if self.include_saccades is not None:
+            assert type(self.include_saccades)==list, "include_saccades must be a list of dicts with keys: 'name', 'offset', 'basis'"
+            from scipy.signal import fftconvolve
+            print("Loading saccade times on basis")
+            self.saccade_times = []
+            for isacfeature in range(len(self.include_saccades)):
+                self.saccade_times.append( np.zeros( (len(self.stim_indices), self.include_saccades[isacfeature]['basis'].shape[1])))
+
+            for ii,stim in zip(range(len(self.stims)), self.stims):
+                print("%d) %s" %(ii,stim))
+                labels = self.fhandle[stim][self.stimset]['labels'][0,:]
+                sactimes = np.diff((labels==2).astype('float32'))
+                for isacfeature in range(len(self.include_saccades)):
+                    if self.include_saccades[isacfeature]['name']=="sacon":
+                        sacstim = (sactimes==1).astype('float32')
+                    elif self.include_saccades[isacfeature]['name']=="sacoff":
+                        sacstim = (sactimes==-1).astype('float32')
+
+                    # shift forward or backward to make acasual or delayed lags
+                    off = self.include_saccades[isacfeature]['offset']
+                    sacstim = np.roll(sacstim, off)
+                    # zero out invalid after shift
+                    if off < 0:
+                        sacstim[off:] = 0
+                    elif off > 0:
+                        sacstim[:off] = 0
+                    
+                    # convolve with basis
+                    sacfull = fftconvolve(np.expand_dims(sacstim, axis=1), self.include_saccades[isacfeature]['basis'], axes=0)
+
+                    # index into valid times
+                    inds = self.stim_indices==ii
+                    self.saccade_times[isacfeature][inds,:] = sacfull[self.valid[ii],:]
+
+
+
         # setup cropping
         if cropidx:
             self.cropidx = cropidx
@@ -120,8 +189,12 @@ class PixelDataset(Dataset):
             self.cropidx = None
 
         # spike meta data / specify clusters
-        self.cluster_ids = self.fhandle[self.stims[0]]['Test']['Robs'].attrs['cids']
-        cgs = self.fhandle['Neurons']['cgs'][:][0]
+        if self.spike_sorting is not None:
+            self.cluster_ids = self.fhandle['Neurons'][self.spike_sorting]['cids'][0,:]
+            cgs = self.fhandle['Neurons'][self.spike_sorting]['cgs'][0,:]
+        else:
+            self.cluster_ids = self.fhandle[self.stims[0]]['Test']['Robs'].attrs['cids']
+            cgs = self.fhandle['Neurons']['cgs'][:][0]
         
         self.NC = len(self.cluster_ids)
         if cids is not None:
@@ -132,13 +205,31 @@ class PixelDataset(Dataset):
             self.cids = list(range(0,self.NC-1))
         
         self.single_unit = [int(cgs[c])==2 for c in self.cids]
+
+        if self.spike_sorting is not None:
+            from V1FreeViewingCode.Analysis.notebooks.Utils import bin_at_frames
+            """
+            HANDLE specific spike sorting
+            """
+            st = self.fhandle['Neurons'][spike_sorting]['times'][0,:]
+            clu = self.fhandle['Neurons'][spike_sorting]['cluster'][0,:]
+            cids = self.cluster_ids
+
+            Robs = np.zeros((len(self.frame_time), self.NC))
+            inds = np.argsort(self.frame_time)
+            ft = self.frame_time[inds]
+            for cc in range(self.NC):
+                cnt = bin_at_frames(st[clu==cids[cc]], ft, maxbsize=1.2/self.frate)
+                Robs[inds,cc] = cnt
+            self.y = torch.tensor(Robs.astype('float32'))
         
         if preload: # preload data if it will fit in memory
             self.preload=False
             print("Preload True. Loading ")
             n = len(self)
             self.x = torch.ones((n,self.num_lags,self.NY, self.NX))
-            self.y = torch.ones((n,self.NC))
+            if self.spike_sorting is None:
+                self.y = torch.ones((n,self.NC))
             self.eyepos = torch.ones( (n,2))
             chunk_size = 10000
             nsteps = n//chunk_size+1
@@ -147,7 +238,8 @@ class PixelDataset(Dataset):
                 inds = np.arange(i*chunk_size, np.minimum(i*chunk_size + chunk_size, n))
                 sample = self.__getitem__(inds)
                 self.x[inds,:,:,:] = sample['stim'].squeeze().detach().clone()
-                self.y[inds,:] = sample['robs'].detach().clone()
+                if self.spike_sorting is None:
+                    self.y[inds,:] = sample['robs'].detach().clone()
                 self.eyepos[inds,0] = sample['eyepos'][:,0].detach().clone()
                 self.eyepos[inds,1] = sample['eyepos'][:,1].detach().clone()
             print("Done")
@@ -168,8 +260,12 @@ class PixelDataset(Dataset):
                 stim = self.x[index,:,:,:]
             
             out = {'stim': stim, 'robs': self.y[index,:], 'eyepos': self.eyepos[index,:]}
-            if self.include_frametime>1:
-                out['frametime'] = self.frame_tents[index,:]
+            if self.include_frametime is not None:
+                out['frametime'] = torch.tensor(self.frame_tents[index,:].astype('float32'))
+
+            if self.include_saccades is not None:
+                for ii in range(len(self.saccade_times)):
+                    out[self.include_saccades[ii]['name']] = torch.tensor(self.saccade_times[ii][index,:].astype('float32'))
 
             return out
         else:  
@@ -213,8 +309,11 @@ class PixelDataset(Dataset):
                     I = self.shift_stim(I, eyepos)
                     if self.cropidx:
                         I = I[self.cropidx[1][0]:self.cropidx[1][1],self.cropidx[0][0]:self.cropidx[0][1],:]
+                
+                if self.spike_sorting is None:
+                    R = self.fhandle[self.stims[istim]][self.stimset]["Robs"][:,valid_inds]
+                    R = R.T
 
-                R = self.fhandle[self.stims[istim]][self.stimset]["Robs"][:,valid_inds]
                 if self.include_eyepos:
                     eyepos = self.fhandle[self.stims[istim]][self.stimset]["eyeAtFrame"][1:3,valid_inds].T
                     if inisint:
@@ -230,22 +329,25 @@ class PixelDataset(Dataset):
                     I = np.expand_dims(I, axis=3)
                 
                 I = I[:,:,ufinverse].reshape(sz[0],sz[1],-1, self.num_lags*self.downsample_t).transpose((2,3,0,1))
-                R = R.T
-                if inisint:
-                    NumC = len(R)
-                else:
-                    NumC = R.shape[1]
-
-                if self.NC != NumC:
+                
+                if self.spike_sorting is None:
                     if inisint:
-                        R = R[np.asarray(self.cids)]
+                        NumC = len(R)
                     else:
-                        R = R[:,np.asarray(self.cids)]
+                        NumC = R.shape[1]
+
+                    if self.NC != NumC:
+                        if inisint:
+                            R = R[np.asarray(self.cids)]
+                        else:
+                            R = R[:,np.asarray(self.cids)]
 
                 # concatentate if necessary
                 if ss ==0:
                     S = torch.tensor(self.transform_stim(I))
-                    Robs = torch.tensor(R.astype('float32'))
+                    if self.spike_sorting is None:
+                        Robs = torch.tensor(R.astype('float32'))
+
                     if self.include_eyepos:
                         ep = torch.tensor(eyepos.astype('float32'))
                     else:
@@ -258,7 +360,8 @@ class PixelDataset(Dataset):
 
                 else:
                     S = torch.cat( (S, torch.tensor(self.transform_stim(I))), dim=0)
-                    Robs = torch.cat( (Robs, torch.tensor(R.astype('float32'))), dim=0)
+                    if self.spike_sorting is None:
+                        Robs = torch.cat( (Robs, torch.tensor(R.astype('float32'))), dim=0)
                     if self.include_eyepos:
                         ep = torch.cat( (ep, torch.tensor(eyepos.astype('float32'))), dim=0)
 
@@ -268,9 +371,18 @@ class PixelDataset(Dataset):
                 else:
                     S = S.unsqueeze(1) # add channel dimension
 
+            if self.spike_sorting is not None:
+                Robs = self.y[index,:]
+
             out = {'stim': S, 'robs': Robs, 'eyepos': ep}
-            if self.include_frametime>1:
-                out['frametime'] = self.frame_tents[index,:]
+
+            if self.include_frametime is not None:
+                out['frametime'] = torch.tensor(self.frame_tents[index,:].astype('float32'))
+            
+            if self.include_saccades is not None:
+                for ii in range(len(self.saccade_times)):
+                    out[self.include_saccades[ii]['name']] = torch.tensor(self.saccade_times[ii][index,:].astype('float32'))
+
             return out
 
     def __len__(self):
@@ -352,13 +464,15 @@ class PixelDataset(Dataset):
         """
         Get raw and null log-likelihood for all time points
         """
-        loss = torch.nn.PoissonNLLLoss(log_input=False, reduction='none')
         import torch
+        loss = torch.nn.PoissonNLLLoss(log_input=False, reduction='none')
+        
 
         nt = len(self)
         llneuron = np.zeros((nt, self.NC))
         llnull = np.zeros((nt, self.NC))
         robs = np.zeros((nt,self.NC))
+        robshat = np.zeros((nt,self.NC))
         eyepos = np.zeros((nt,2))
 
         nsteps = nt//batch_size + 1
@@ -367,19 +481,23 @@ class PixelDataset(Dataset):
 
         print("Getting log-likelihood for all time bins")
         for istep in tqdm(range(nsteps)):
-    
-            index = (istep-1)*batch_size + np.arange(0, batch_size)
-            index = index[index < nt]
 
+            if nsteps==1:   
+                index = np.arange(0,nt)
+            else:
+                index = (istep-1)*batch_size + np.arange(0, batch_size)
+                index = index[index < nt]
+                
             sample = self[index]
     
-            yhat = model(sample['stim'], shifter=sample['eyepos'])
+            yhat = model(sample['stim'], shifter=sample['eyepos'], sample=sample)
             llneuron[index,:] = -loss(yhat,sample['robs']).detach().cpu().numpy()
             llnull[index,:] = -loss(torch.ones(sample['robs'].shape)*sample['robs'].mean(axis=0), sample['robs']).detach().cpu().numpy()
             robs[index,:] = sample['robs']
+            robshat[index,:] = yhat.detach()
             eyepos[index,:] = sample['eyepos']
         
-        return {'llraw': llneuron, 'llnull': llnull, 'robs': robs, 'eyepos': eyepos}
+        return {'llraw': llneuron, 'llnull': llnull, 'robshat': robshat, 'robs': robs, 'eyepos': eyepos}
 
     def get_ll_by_eyepos(self, model, lldict=None, nbins=20, binsize=.5, bounds=[-5,5],
         batch_size=5000, plot=True, use_stim=None):

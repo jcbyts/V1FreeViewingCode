@@ -38,7 +38,9 @@ class Core(LightningModule):
         # w = model.features.weight.detach().cpu().numpy()
         w = w.reshape(sz[0], sz[1], sz[2]*sz[3])
         nfilt = w.shape[0]
-        if sort:
+        if type(sort) is np.ndarray:
+            cinds = sort
+        elif sort:
             n = np.asarray([w[i,:].abs().max().detach().numpy() for i in range(nfilt)])
             cinds = np.argsort(n)[::-1][-len(n):]
         else:
@@ -236,8 +238,8 @@ class NimCore(Core):
 
         input_kern = input_size[-2:]
 
-        
-        regularizer_config = {'dims': [input_size[0], input_kern,input_kern],
+        # [input_size[0], input_kern,input_kern]
+        regularizer_config = {'dims': input_size,
                             'type': input_reg_types, 'amount': input_reg_amt}
         self._input_weights_regularizer = regularizers.__dict__["RegMats"](**regularizer_config)
 
@@ -260,7 +262,10 @@ class NimCore(Core):
         # self.hidden_channels = hidden_channels
         self.skip = skip
         self.use_avg_reg = use_avg_reg
-        # self.ei_split = ei_split
+        self.ei_split = ei_split
+        if self.ei_split is None:
+            self.ei_split = [0 for i in range(self.layers)]
+        
 
         if use_avg_reg:
             warnings.warn("The averaged value of regularizer will be used.", UserWarning)
@@ -292,10 +297,12 @@ class NimCore(Core):
         if layers > 1 or final_nonlinearity:
             layer["nonlin"] = AdaptiveELU(elu_xshift, elu_yshift)
 
-        if ei_split > 0 and layers > 1:
-            ni = ei_split
-            ne = hidden_channels - ni
-            layer["eimask"] = EiMask(ni, ne)
+        
+
+        if self.ei_split[0] > 0:
+            ninh = int(np.ceil(self.ei_split[0]*hidden_channels))
+            nexc = hidden_channels - ninh
+            layer["eimask"] = EiMask(ninh, nexc)
 
         self.features.add_module("layer0", nn.Sequential(layer))
 
@@ -370,49 +377,77 @@ class NimCore(Core):
     def outchannels(self):
         return (len(self.features)) * self.hparams.hidden_channels
     
-    def plot_filters(self, sort=False):
+    def plot_filters(self, sort=False, cmaps=None):
         import numpy as np
         import matplotlib.pyplot as plt  # plotting
-        ei_mask = self.features.layer0.eimask.ei_mask.detach().cpu().numpy()
+        
         w = self.features.layer0.conv.weight.detach().cpu().numpy()
         sz = w.shape
+
+        if sz[3]==1:
+            is1D = True
+        else:
+            is1D = False
+
+        if cmaps is None:
+            cmaps = [plt.cm.PuOr, plt.cm.RdBu]
         # w = model.features.weight.detach().cpu().numpy()
         w = w.reshape(sz[0], sz[1], sz[2]*sz[3])
         nfilt = w.shape[0]
-        if sort:
+
+        if self.ei_split[0] > 0:
+            ei_mask = self.features.layer0.eimask.ei_mask.detach().cpu().numpy()
+        else:
+            ei_mask = np.ones(nfilt)
+
+        if type(sort) is np.ndarray:
+            cinds = sort
+        elif sort:
             n = np.asarray([w[i,:].abs().max().detach().numpy() for i in range(nfilt)])
             cinds = np.argsort(n)[::-1][-len(n):]
         else:
             cinds = np.arange(0, nfilt)
 
-        sx = np.ceil(np.sqrt(nfilt*2))
-        sy = np.round(np.sqrt(nfilt*2))
-        # sx,sy = U.get_subplot_dims(nfilt*2)
-        mod2 = sy % 2
-        sy += mod2
-        sx -= mod2
+        if is1D:
+            sx = np.ceil(np.sqrt(nfilt))
+            sy = np.round(np.sqrt(nfilt))    
+        else:
+            sx = np.ceil(np.sqrt(nfilt*2))
+            sy = np.round(np.sqrt(nfilt*2))
+            mod2 = sy % 2
+            sy += mod2
+            sx -= mod2
+        
 
         plt.figure(figsize=(10,10))
         for cc,jj in zip(cinds, range(nfilt)):
-            plt.subplot(sx,sy,jj*2+1)
             wtmp = np.squeeze(w[cc,:])
-            bestlag = np.argmax(np.std(wtmp, axis=1))
-            plt.imshow(np.reshape(wtmp[bestlag,:], (sz[2], sz[3])), interpolation=None, )
-            wmax = np.argmax(wtmp[bestlag,:])
-            wmin = np.argmin(wtmp[bestlag,:])
-            plt.axis("off")
-
-            plt.subplot(sx,sy,jj*2+2)
-            if ei_mask[cc]>0:
-                plt.plot(wtmp[:,wmax], 'b-')
-                plt.plot(wtmp[:,wmin], 'b--')
+            if is1D:
+                plt.subplot(sx, sy, jj+1)
+                if ei_mask[cc]>0:
+                    plt.imshow(wtmp, cmap=cmaps[0])
+                else:
+                    plt.imshow(wtmp, cmap=cmaps[1])
             else:
-                plt.plot(wtmp[:,wmax], 'r-')
-                plt.plot(wtmp[:,wmin], 'r--')
+                plt.subplot(sx,sy,jj*2+1)
+                
+                bestlag = np.argmax(np.std(wtmp, axis=1))
+                plt.imshow(np.reshape(wtmp[bestlag,:], (sz[2], sz[3])), interpolation=None, )
+                wmax = np.argmax(wtmp[bestlag,:])
+                wmin = np.argmin(wtmp[bestlag,:])
+                plt.axis("off")
 
-            plt.axhline(0, color='k')
-            plt.axvline(bestlag, color=(.5, .5, .5))
-            plt.axis("off")
+                plt.subplot(sx,sy,jj*2+2)
+                if ei_mask[cc]>0:
+                    plt.plot(wtmp[:,wmax], 'b-')
+                    plt.plot(wtmp[:,wmin], 'b--')
+                else:
+                    plt.plot(wtmp[:,wmax], 'r-')
+                    plt.plot(wtmp[:,wmin], 'r--')
+
+                plt.axhline(0, color='k')
+                plt.axvline(bestlag, color=(.5, .5, .5))
+                plt.axis("off")
 
 
 
@@ -546,7 +581,9 @@ class Stacked2dCore(Core2d):
         # w = model.features.weight.detach().cpu().numpy()
         w = w.reshape(sz[0], sz[1], sz[2]*sz[3])
         nfilt = w.shape[0]
-        if sort:
+        if type(sort) is np.ndarray:
+            cinds = sort
+        elif sort:
             n = np.asarray([w[i,:].abs().max().detach().numpy() for i in range(nfilt)])
             cinds = np.argsort(n)[::-1][-len(n):]
         else:
@@ -1131,7 +1168,9 @@ class Stacked3dCore(Core3d):
         # w = model.features.weight.detach().cpu().numpy()
         w = w.reshape(sz[0], sz[1], sz[2]*sz[3])
         nfilt = w.shape[0]
-        if sort:
+        if type(sort) is np.ndarray:
+            cinds = sort
+        elif sort:
             n = np.asarray([w[i,:].abs().max().detach().numpy() for i in range(nfilt)])
             cinds = np.argsort(n)[::-1][-len(n):]
         else:

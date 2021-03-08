@@ -279,7 +279,7 @@ class RegMats(nn.Module):
         self.register_buffer("reg_mat", torch.tensor(reg_mat.astype('float32')))
         self.flatten = nn.Flatten()
 
-    def forward(self, x):
+    def forward(self, x, avg=None):
         x = self.flatten(x.permute((0,2,3,1))) # reorder because regmats have lags at end TODO: fix this
         pen = x@self.reg_mat@x.T
 

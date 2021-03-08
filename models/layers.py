@@ -101,7 +101,7 @@ class ShapeLinear(nn.Module):
         super(ShapeLinear, self).__init__()
 
         self.in_features = in_features
-        self.flatten = nn.Flatten()
+        # self.flatten = nn.Flatten()
         
         self.shape = tuple([out_features] + list(in_features))
         self.positive_constraint = positive

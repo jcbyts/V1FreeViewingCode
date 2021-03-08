@@ -7,6 +7,7 @@ def get_trainer(dataset,
         name='jnkname',
         auto_lr=False,
         batchsize=1000,
+        earlystopping=True,
         seed=None):
     """
     Returns a pytorch lightning trainer and splits the training set into "train" and "valid"
@@ -39,16 +40,26 @@ def get_trainer(dataset,
     )
 
     # ckpt_folder = save_dir / sessid / 'version_{}'.format(version) / 'checkpoints'
-
-    trainer = Trainer(gpus=1, callbacks=[early_stop_callback],
-        checkpoint_callback=checkpoint_callback,
-        logger=logger,
-        deterministic=False,
-        gradient_clip_val=0,
-        accumulate_grad_batches=1,
-        progress_bar_refresh_rate=20,
-        max_epochs=1000,
-        auto_lr_find=auto_lr)
+    if earlystopping:
+        trainer = Trainer(gpus=1, callbacks=[early_stop_callback],
+            checkpoint_callback=checkpoint_callback,
+            logger=logger,
+            deterministic=False,
+            gradient_clip_val=0,
+            accumulate_grad_batches=1,
+            progress_bar_refresh_rate=20,
+            max_epochs=1000,
+            auto_lr_find=auto_lr)
+    else:
+        trainer = Trainer(gpus=1,
+            checkpoint_callback=checkpoint_callback,
+            logger=logger,
+            deterministic=False,
+            gradient_clip_val=0,
+            accumulate_grad_batches=1,
+            progress_bar_refresh_rate=20,
+            max_epochs=300,
+            auto_lr_find=auto_lr)
 
     if seed:
         seed_everything(seed)

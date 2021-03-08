@@ -379,7 +379,7 @@ for version in range(32,34): # range of version numbers
     # if not trainpath.exists():
     trainer.fit(model, train_dl, valid_dl)
 
-#%%
+    #%%
 #% Train
 trainer, train_dl, valid_dl = ut.get_trainer(gd_shift, version=version,
             save_dir=save_dir2,
@@ -395,7 +395,7 @@ trainer.fit(model, train_dl, valid_dl)
 
 
 
-w = model.core.features[1].conv.weight.detach().cpu().numpy()
+w = model.core.features[0].conv.weight.detach().cpu().numpy()
 num_lags = w.shape[2]
 nch = w.shape[1]
 for cc in range(w.shape[0]):
