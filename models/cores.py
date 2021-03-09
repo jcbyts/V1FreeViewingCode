@@ -178,28 +178,25 @@ class GLM(Core):
         return self.input_reg()
 
 
-
+"""
+NIM old
+"""
 class NimCore(Core):
     def __init__(
         self,
         input_size,
-        hidden_channels,
-        layers=1,
-        ei_split=0,
-        weight_norm=True,
-        weight_norm_dim=0,
-        gamma_hidden=0,
-        gamma_input=1,
-        elu_xshift=0.0,
-        elu_yshift=0.0,
-        group_norm=False,
-        group_norm_num=4,
-        skip=0,
-        final_nonlinearity=True,
-        bias=True,
-        input_regularizer="RegMats",
-        input_reg_types=["d2xt", "local","center"],
-        input_reg_amt=[.25,.25,.5],
+        num_channels,
+        ei_split=None,
+        weight_norm=None,
+        gamma_group=0, # group sparsity penalty
+        act_funcs=None,
+        divnorm=None,
+        group_norm=None,
+        group_norm_num=None,
+        bias=None,
+        weight_regularizer="RegMats",
+        weight_reg_types=None,
+        weight_reg_amt=None,
         stack=None,
         laplace_padding=0,
         use_avg_reg=True,
@@ -236,146 +233,188 @@ class NimCore(Core):
 
         super().__init__()
 
-        input_kern = input_size[-2:]
-
-        # [input_size[0], input_kern,input_kern]
-        regularizer_config = {'dims': input_size,
-                            'type': input_reg_types, 'amount': input_reg_amt}
-        self._input_weights_regularizer = regularizers.__dict__["RegMats"](**regularizer_config)
-
-
-        # regularizer_config = (
-        #     dict(padding=laplace_padding, kernel=input_kern)
-        #     if input_regularizer == "GaussianLaplaceL2"
-        #     else dict(padding=laplace_padding)
-        # )
-        # self._input_weights_regularizer = regularizers.__dict__[input_regularizer](**regularizer_config)
+        
         
         self.save_hyperparameters()
         self.input_channels = np.prod(input_size)
+        self.num_channels = num_channels
+        self.layers = len(num_channels)
 
-        self.layers = layers
-        self.gamma_input = gamma_input
-        self.gamma_hidden = gamma_hidden
+        self.gamma_group = gamma_group
         self.input_size = input_size
-        # self.input_channels = np.prod(input_size)
-        # self.hidden_channels = hidden_channels
-        self.skip = skip
-        self.use_avg_reg = use_avg_reg
         self.ei_split = ei_split
+        self.act_funcs = act_funcs
+        self.divnorm = divnorm
+        self.group_norm = group_norm
+        self.weight_norm = weight_norm
+        self.bias = bias
+
+        self.use_avg_reg = use_avg_reg
+
+        # check arguments and set them up
+        # setup regularization (using reg mats)
+        if weight_reg_types is None:
+            weight_reg_types = []
+            reg_amt = []
+            for l in range(self.layers):
+                reg_amt.append([.25,.25,.5])
+                weight_reg_types.append(["d2xt", "local","center"])
+
+        self._weights_regularizer = nn.ModuleList() # modules list is a list of pytorch modules
+        
+        # first layer regularizer
+        regularizer_config = {'dims': input_size,
+                                'type': weight_reg_types[0], 'amount': weight_reg_amt[0]}
+
+        self._weights_regularizer.append(regularizers.__dict__[weight_regularizer](**regularizer_config))
+
+        for l in range(1,self.layers):
+            regularizer_config = {'dims': list(num_channels[l-1]),
+                                'type': weight_reg_types[l], 'amount': weight_reg_amt[l]}
+            self._weights_regularizer.append(regularizers.__dict__[weight_regularizer](**regularizer_config))
+        
         if self.ei_split is None:
             self.ei_split = [0 for i in range(self.layers)]
         
+        if self.divnorm is None:
+            self.divnorm = [0 for i in range(self.layers)]
 
-        if use_avg_reg:
-            warnings.warn("The averaged value of regularizer will be used.", UserWarning)
+        if self.weight_norm is None:
+            self.weight_norm = [0 for i in range(self.layers)]
+        
+        if self.group_norm is None:
+            self.group_norm = [0 for i in range(self.layers)]
 
+        if self.act_funcs is None:
+            self.act_funcs = ["relu" for i in range(self.layers)]
+        
+        if self.bias is None:
+            self.bias = [0 for i in range(self.layers)]
         
         # dictates how to concatenate outputs
         if stack is None:
-            self.stack = list(range(self.hparams.layers))
+            self.stack = list(range(self.layers)) # output all layers --> full scaffold
         else:
-            self.stack = [*range(self.hparams.layers)[stack:]] if isinstance(stack, int) else stack
-
+            self.stack = [*range(self.layers)[stack:]] if isinstance(stack, int) else stack
 
         # initialize network
         self.features = nn.Sequential()
 
         # --- first layer
         layer = OrderedDict()
-        if weight_norm:
+        if self.weight_norm[0]:
+            # TODO: i've been calling all first operations "conv" for plotting, but this should be changed
             layer["conv"] = nn.utils.weight_norm( # call Shape linear looks like conv for regularization
-                    ShapeLinear(input_size, hidden_channels,
-                    bias=bias),
-                    dim=weight_norm_dim,
+                    ShapeLinear(input_size, num_channels[0],
+                    bias=self.bias[0]),
+                    dim=0,
                     name='weight')
         else:
             layer["conv"] = ShapeLinear(input_size,
-                hidden_channels,
-                bias=bias)
+                num_channels[0],
+                bias=self.bias[0])
 
-        if layers > 1 or final_nonlinearity:
-            layer["nonlin"] = AdaptiveELU(elu_xshift, elu_yshift)
+        # specify Exc / Inh split
+        l = 0
+        ninh = int(np.ceil(self.ei_split[l]*self.num_channels[l]))
+        nexc = self.num_channels[l] - ninh
 
-        
+        # add activation
+        if self.act_funcs[l]=="elu":
+            layer["nonlin"] = AdaptiveELU(0.0,1.0)
+        elif self.act_funcs[l]=="relu":
+            layer["nonlin"] = nn.ReLU()
+        elif self.act_funcs[l]=="pow":
+            layer["nonlin"] = powNL(1.5)
 
-        if self.ei_split[0] > 0:
-            ninh = int(np.ceil(self.ei_split[0]*hidden_channels))
-            nexc = hidden_channels - ninh
+        if ninh > 0:
             layer["eimask"] = EiMask(ninh, nexc)
+
+        if self.divnorm[l]:
+            layer["norm"] = divNorm(self.num_channels[l])
+        elif self.group_norm[l]:
+            layer["norm"] = nn.GroupNorm(2, self.num_channels[l])
 
         self.features.add_module("layer0", nn.Sequential(layer))
 
         # --- other layers
-        for l in range(1, self.hparams.layers):
+        for l in range(1, self.layers):
             layer = OrderedDict()
 
-            if ei_split>0:
-                if weight_norm:
-                    layer["linear"] = nn.utils.weight_norm(
-                        PosLinear(
-                            hidden_channels, hidden_channels,
-                            bias=bias),
-                            dim=weight_norm_dim,
-                            name='weight')
-                else:
-                    layer["linear"] = PosLinear(
-                        hidden_channels,
-                        hidden_channels,
-                        bias=bias)
+            if self.ei_split[l-1]>0: # previous layer has inhibitory subunitss
+                Linear = posLinear
             else:
-                if weight_norm:
-                    layer["linear"] = nn.utils.weight_norm(
-                        nn.Linear(
-                            self.input_channels, hidden_channels,
-                            bias=bias),
-                            dim=weight_norm_dim,
-                            name='weight')
-                else:
-                    layer["linear"] = nn.Linear(
-                        self.input_channels,
-                        hidden_channels,
-                        bias=bias)
+                Linear = nn.Linear
 
+            if self.weight_norm[l]:
+                layer["conv"] = nn.utils.weight_norm(Linear(
+                    self.num_channels[l-1],
+                    self.num_channels[l],
+                    bias=self.bias[l]),
+                    dim=0)
 
-            if group_norm:
-                layer["norm"] = nn.GroupNorm(group_norm_num, hidden_channels)
+            else:
+                layer["conv"] = Linear(
+                    self.num_channels[l-1],
+                    self.num_channels[l],
+                    bias=self.bias[l])
 
-            if final_nonlinearity or l < self.layers - 1:
-                layer["nonlin"] = AdaptiveELU(elu_xshift, elu_yshift)
+            # specify Exc / Inh split
+            ninh = int(np.ceil(self.ei_split[l]*self.num_channels[l]))
+            nexc = self.num_channels[l] - ninh
 
-            if ei_split>0: # and l < self.layers - 1:
-                layer["eimask"] = EiMask(ni, ne)
+            # add activation
+            if self.act_funcs[l]=="elu":
+                layer["nonlin"] = AdaptiveELU(0.0,1.0)
+            elif self.act_funcs[l]=="relu":
+                layer["nonlin"] = nn.ReLU()
+            elif self.act_funcs[l]=="pow":
+                layer["nonlin"] = powNL(1.5)
+
+            if ninh > 0:
+                layer["eimask"] = EiMask(ninh, nexc)
+
+            if self.divnorm[l]:
+                layer["norm"] = divNorm(self.num_channels[l])
+            elif self.group_norm[l]:
+                layer["norm"] = nn.GroupNorm(2, self.num_channels[l])
 
             self.features.add_module("layer{}".format(l), nn.Sequential(layer))
 
-        # self.apply(self.init_conv)
 
     def forward(self, input_):
         ret = []
         for l, feat in enumerate(self.features):
-            do_skip = l >= 1 and self.hparams.skip > 1
-            input_ = feat(input_ if not do_skip else torch.cat(ret[-min(self.hparams.skip, l) :], dim=1))
+            input_ = feat(input_)
             ret.append(input_)
 
         return torch.cat([ret[ind] for ind in self.stack], dim=1)
 
-    def input_reg(self):
-        return self._input_weights_regularizer(self.features[0].conv.weight, avg=self.use_avg_reg)
+    def weight_reg(self):
+        ret = 0
+        for l in range(self.layers):
+            ret = ret + self._weights_regularizer[l](self.features[l].conv.weight)
+        return ret
 
     def group_sparsity(self):
         ret = 0
-        for l in range(1, self.hparams.layers):
-            ret = ret + self.features[l].linear.weight.pow(2).sqrt().mean()
-            # ret = ret + self.features[l].linear.weight.pow(2).sum(3, keepdim=True).sum(2, keepdim=True).sqrt().mean()
-        return ret / ((self.hparams.layers - 1) if self.hparams.layers > 1 else 1)
+        for l in range(1, self.layers):
+            ret = ret + self.features[l].conv.weight.pow(2).sum().sqrt()
+        return ret / ((self.layers - 1) if self.layers > 1 else 1)
 
     def regularizer(self):
-        return self.group_sparsity() * self.hparams.gamma_hidden + self.hparams.gamma_input * self.input_reg()
+        return self.weight_reg() + self.gamma_group * self.group_sparsity()
 
     @property
     def outchannels(self):
-        return (len(self.features)) * self.hparams.hidden_channels
+        ret = 0
+        if self.stack:
+            for l in self.stack:
+                ret += self.features[l].conv.weight.shape[0]
+        else:
+            for l in range(self.layers):
+                ret += self.features[l].conv.weight.shape[0]
+        return ret
     
     def plot_filters(self, sort=False, cmaps=None):
         import numpy as np
