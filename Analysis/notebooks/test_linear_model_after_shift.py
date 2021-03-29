@@ -41,12 +41,11 @@ num_lags = 12
 t_downsample = 2 # temporal downsampling
 sessid = '20200304_kilowf'
 # sessid = '20191231'
-gd = dd.PixelDataset(sessid, stims=["Gabor", "BackImage"],
+gd = dd.PixelDataset(sessid, stims=["Gabor"],
     stimset="Train", num_lags=num_lags,
     downsample_t=t_downsample,
     downsample_s=1,
     valid_eye_rad=5.2,
-    cids=cids,
     include_eyepos=True,
     include_frametime={'num_basis':40, 'full_experiment':False},
     preload=True)
@@ -75,6 +74,9 @@ mod2 = sy % 2
 sy += mod2
 sx -= mod2
 
+tdiff = np.zeros((num_lags, NC))
+blag = np.zeros(NC)
+
 plt.figure(figsize=(sx*2,sy*2))
 for cc in range(NC):
     w = sta[:,:,:,cc]
@@ -93,6 +95,7 @@ for cc in range(NC):
     w = (w -np.mean(w) )/ np.std(w)
 
     bestlag = np.argmax(np.std(w.reshape( (gd.num_lags, -1)), axis=1))
+    blag[cc] = bestlag
     plt.subplot(sx,sy, cc*2 + 1)
     v = np.max(np.abs(w))
     plt.imshow(w[bestlag,:,:], aspect='auto', interpolation=None, vmin=-v, vmax=v, cmap="coolwarm", extent=(-1,1,-1,1))
@@ -100,10 +103,41 @@ for cc in range(NC):
     plt.title(cc)
     plt.subplot(sx,sy, cc*2 + 2)
     i,j=np.where(w[bestlag,:,:]==np.max(w[bestlag,:,:]))
-    plt.plot(w[:,i[0], j[0]], '-ob')
+    t1 = w[:,i[0], j[0]]
+    plt.plot(t1, '-ob')
     i,j=np.where(w[bestlag,:,:]==np.min(w[bestlag,:,:]))
-    plt.plot(w[:,i[0], j[0]], '-or')
+    t2 = w[:,i[0], j[0]]
+    plt.plot(t2, '-or')
     yd = plt.ylim()
+    tdiff[:,cc] = t1 - t2
+
+#%%
+
+# ids = [cc for cc in range(NC) if np.argmax(np.std(( (sta[:,:,cc] - np.mean(sta[:,:,cc])) / np.std(sta[:,:,cc]) ).reshape( (num_lags, -1)), axis=1))>1]
+ids = [cc for cc in range(NC) if np.argmax(np.std(sta[:,:,:,cc].reshape( (num_lags, -1)), axis=1))>1]
+# x = [ for cc in range(cc)]
+# plt.plot(np.asarray(x))
+
+
+# cc += 1
+# a = np.std(( (sta[:,:,,:,cc] - np.mean(sta[:,:,cc])) / np.std(sta[:,:,cc]) ).reshape( (num_lags, -1)), axis=1)
+# plt.plot(a)
+
+
+plt.figure()
+plt.imshow(tdiff)
+
+plt.figure()
+spow = np.mean(tdiff[2:5,:], axis=0)
+# spow = np.zeros(NC)
+# for cc in range(NC):
+#     spow[cc] = np.var(sta[2:,:,:,cc])
+
+plt.plot(blag, '-o')
+plt.plot(np.asarray(cids), blag[np.asarray(cids)], 'o')
+# ids = np.where(blag > 1)[0]
+ids = np.asarray(ids)
+plt.plot(ids, blag[ids], 'o')
 
 #%% import models
 from V1FreeViewingCode.models.encoders import Encoder
