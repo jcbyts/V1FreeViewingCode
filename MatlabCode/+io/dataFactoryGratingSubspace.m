@@ -44,8 +44,8 @@ if isnumeric(sessionId)
 end
     
 
-S.Latency = 8.3e-3; % delay from PTB time to actual monitor refresh
-S.rect = [-10 -10 100 100]; % default gaze-centered ROI (pixels)
+S.Latency = 8.3e-3; % delay from PTB time to actual monitor refresh (even at 240Hz there's about an 8ms latency)
+S.rect = [-20 -60 50 10];; % default gaze-centered ROI (pixels)
 
 S.processedFileName = [thisSession.Tag{1} '.mat'];
 

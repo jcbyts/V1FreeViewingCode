@@ -1,4 +1,4 @@
-function lambda = parametric_rf(params, X, logGauss)
+function lambda = parametric_rf(params, X, logGauss, vm01)
 % parametric receptive field for grating stimulus
 % rate = prf.parametric_rf(params, X, logGauss)
 % Inputs:
@@ -16,7 +16,11 @@ function lambda = parametric_rf(params, X, logGauss)
 %   5. Gain
 %   6. Offset
 
-if nargin < 3
+if nargin  < 4
+    vm01 = true; % backwards compatibility
+end
+
+if nargin < 3 || isempty(logGauss)
     logGauss = true;
 end
 
@@ -29,7 +33,11 @@ spatialFrequency = X(:,2);
 if params(1)==0
     orientationTuning = ones(size(orientation));
 else
-    orientationTuning = (exp(params(1)*cos(orientation - params(2)).^2) - 1) / (exp(params(1)) - 1);
+    if vm01
+        orientationTuning = (exp(params(1)*cos(orientation - params(2)).^2) - 1) / (exp(params(1)) - 1);
+    else
+        orientationTuning = (exp(params(1)*cos(orientation - params(2)).^2) - params(1));
+    end
 end
 
 if logGauss == 1

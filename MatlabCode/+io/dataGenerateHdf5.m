@@ -70,10 +70,12 @@ if exist(h5name, 'file')
     
     stimexist = (arrayfun(@(x) strcmp(x.Name(2:end), ip.Results.stimulus), hinfo.Groups));
     
-    grp = hinfo.Groups(stimexist);
-    if any(arrayfun(@(x) strcmp(x.Name, h5path), grp.Groups)) && ~ip.Results.overwrite
-        fprintf('Stimulus already exported\n')
-        return
+    if any(stimexist)
+        grp = hinfo.Groups(stimexist);
+        if any(arrayfun(@(x) strcmp(x.Name, h5path), grp.Groups)) && ~ip.Results.overwrite
+            fprintf('Stimulus already exported\n')
+            return
+        end
     end
         
 end

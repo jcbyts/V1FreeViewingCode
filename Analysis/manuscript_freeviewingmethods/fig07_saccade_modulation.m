@@ -31,7 +31,7 @@ if exist(fftname, 'file')==2
     disp('Loading FFT RFs')
     load(fftname)
 else
-    
+    %% redo 24
     for iEx = 1:numel(sesslist)
         if isempty(fftrf{iEx})
             try
@@ -40,13 +40,11 @@ else
                     continue
                 end
                 
-                try % use JRCLUST sorts if they exist
-                    sorter = 'jrclustwf';
-                    Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
-                catch % otherwise, use Kilosort
-                    sorter = 'kilowf';
-                    Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
+                if sum(Srf{iEx}.sig & Sgt{iEx}.sig) == 0 % no significant RFs
+                    continue
                 end
+
+                Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Srf{iEx}.sorter);
                 
                 evalc('rf_pre = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, ''plot'', false, ''usestim'', ''pre'', ''alignto'', ''fixon'');');
                 evalc('rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, ''plot'', true, ''usestim'', ''post'', ''alignto'', ''fixon'');');
@@ -83,13 +81,13 @@ else
                     continue
                 end
                 
-                try % use JRCLUST sorts if they exist
-                    sorter = 'jrclustwf';
-                    Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
-                catch % otherwise, use Kilosort
-                    sorter = 'kilowf';
-                    Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
-                end
+%                 try % use JRCLUST sorts if they exist
+%                     sorter = 'jrclustwf';
+%                     Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
+%                 catch % otherwise, use Kilosort
+                sorter = 'kilowf';
+                Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Srf{iEx}.sorter);
+%                 end
                 
                 evalc("stat = fixrate_by_stim(Exp, 'stimSets', {'Grating', 'BackImage'}, 'plot', false);");
                 
@@ -130,15 +128,15 @@ field = fields{1};
 cmap = lines;
 
 iEx = 56;
-% if ~exist('cc', 'var'), cc = 1; end
-% cc = cc + 1;
-% 
-% if cc > numel(fftrf{iEx}.(field)) 
-%     cc = 1;
-% end
+if ~exist('cc', 'var'), cc = 1; end
+cc = cc + 1;
+
+if cc > numel(fftrf{iEx}.(field)) 
+    cc = 1;
+end
 
 % 13, 17
-cc = 17; 
+% cc = 17; 
 figure(1); clf
 subplot(3,2,1) % spatial RF
 imagesc(Srf{iEx}.xax, Srf{iEx}.yax, Srf{iEx}.spatrf(:,:,cc)); axis xy
@@ -319,7 +317,7 @@ wfamp = arrayfun(@(x) x.peakval - x.troughval, wf);
 %% LOAD SESSION FOR EXAMPLES IN FIGURE
 iEx = 56;
 fprintf('Loading session [%s]\n', sesslist{iEx})
-Exp = io.dataFactory(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
+Exp = io.dataFactory(sesslist{iEx}, 'spike_sorting', Srf{iEx}.sorter);
 % run fftrf analysis with additional meta data
 [rf_post, plotmeta] = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', false, 'plot', false, 'usestim', 'post', 'alignto', 'fixon');
 % run fixrate analysis with additional meta data
@@ -336,7 +334,13 @@ layout1 = tiledlayout(m,n);
 layout1.TileSpacing = 'compact';
 layout1.Padding = 'compact';
 
-cc = 17;
+% cc = 17;
+cc = cc + 1;
+if cc > numel(rf_post)
+    cc = 1;
+end
+cc
+% cc = 23; 
 % -- RASTER
 ax = nexttile([2 2]);
 
@@ -374,7 +378,7 @@ for istim = 1:2
     plot.raster(lags(j(ix)), i(ix)+off, 2, 'Color', clrs(istim,:)); axis tight
     hold on
     cmap = lines;
-    plot.raster(fixdur(ind), (1:numel(ind))+off, 2, 'Color', 'k')
+    plot.raster(fixdur(ind), (1:numel(ind))+off, 2, 'Color', 'k');
 end
 
 ylabel('Flashed Gratings               Natural Images')
@@ -463,7 +467,7 @@ ax.TickDir = 'out';
 ax.TickLength = ax.TickLength*2;
 
 plot.fixfigure(fig, 8, [5 4], 'offsetAxes', false)
-saveas(gcf, fullfile(figDir, sprintf('stim_rate_%s_%d.pdf', sesslist{iEx}, cc)));
+% saveas(gcf, fullfile(figDir, sprintf('stim_rate_%s_%d.pdf', sesslist{iEx}, cc)));
 
 %%
 fig = figure(4); clf

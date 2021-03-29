@@ -6,43 +6,49 @@ figDir = 'Figures/manuscript_freeviewing/fig04';
 
 %% Loop over examples, get Srf
 
-BIGROI = [-14 -10 14 10];
+
 binSize = 0.3; % d.v.a.
+sorter = 'kilowf'; % id tag for using kilosort spike-sorting
 
 clear Srf
 
-sesslist = io.dataFactoryGratingSubspace;
-sesslist = sesslist(1:57); % exclude monash sessions
+sesslist = io.dataFactory;
+sesslist = sesslist(1:57);
 
 sfname = fullfile('Data', 'spatialrfs.mat');
 Srf = cell(numel(sesslist),1);
 
+%%
 if exist(sfname, 'file')==2
     disp('Loading Spatial RFs')
     load(sfname)
 else
-    
+    %%
     for iEx = 1:numel(sesslist)
-        if isempty(Srf{iEx})
-            try
-                try % use JRCLUST sorts if they exist
-                    sorter = 'jrclustwf';
-                    Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
-                catch % otherwise, use Kilosort
-                    sorter = 'kilowf';
-                    Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
+%         if isempty(Srf{iEx})
+            try % not all sessions 
+                switch sesslist{iEx}(1)
+                    case 'l' % foveal sessions
+                        BIGROI = [-4 -4 4 4];
+                    otherwise
+                        BIGROI = [-14 -10 14 10];     
                 end
+                Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
                 
-                evalc('tmp = spat_rf_helper(Exp, ''plot'', true, ''ROI'', BIGROI, ''binSize'', binSize, ''spikesmooth'', 0);');
-                drawnow
+                tmp = spat_rf_helper(Exp, 'plot', false, 'debug', false, ...
+                    'ROI', BIGROI, 'binSize', binSize, ...
+                    'spikesmooth', 1, 'boxfilt', 3);
+%                 evalc("tmp = spat_rf_helper(Exp, 'plot', true, 'debug', true, 'ROI', BIGROI, 'binSize', binSize, 'spikesmooth', 0);");
+%                 drawnow
                 tmp.sorter = sorter;
                 Srf{iEx} = tmp;
             catch me
                 disp(me.message)
                 disp('ERROR ERROR')
             end
-        end
+%         end
     end
+    
     save(sfname, '-v7.3', 'Srf')
 end
 
@@ -54,22 +60,12 @@ if exist(gfname, 'file')==2
     disp('Loading Grating RFs')
     load(gfname)
 else
-    
     for iEx = 1:numel(sesslist)
         if isempty(Sgt{iEx})
-            
             try
+                Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
                 
-                try % use JRCLUST sorts if they exist
-                    sorter = 'jrclustwf';
-                    Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
-                catch % otherwise, use Kilosort
-                    sorter = 'kilowf';
-                    Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', sorter);
-                end
-                
-                evalc("tmp = grat_rf_helper(Exp, 'plot', false, 'upsample', 2);");
-                
+                tmp = grat_rf_helper(Exp, 'plot', false, 'stat', Sgt{iEx}, 'debug', false, 'boxfilt', 1, 'sftuning', fittype, 'upsample', 2);
                 tmp.sorter = sorter;
                 Sgt{iEx} = tmp;
                 
@@ -108,15 +104,18 @@ D = struct();
 
 D.('ellie_20190107').flipx = 1;
 D.('ellie_20170731').flipx = 0;
+D.('ellie_20170728').flipx = 0;
 D.('logan_20200304').flipx = 0;
 
 D.('ellie_20190107').spike_sorting = 'kilowf';
-D.('ellie_20170731').spike_sorting = 'jrclustwf';
-D.('logan_20200304').spike_sorting = 'jrclustwf';
+D.('ellie_20170731').spike_sorting = 'kilowf';
+D.('ellie_20170728').spike_sorting = 'kilowf';
+D.('logan_20200304').spike_sorting = 'kilowf';
 
 D.('ellie_20190107').example_unit = 11;
 D.('ellie_20170731').example_unit = 5;
 D.('logan_20200304').example_unit = 9;
+D.('ellie_20170728').example_unit = 3;
 
 
 %% plot units
@@ -126,7 +125,7 @@ exnames = fieldnames(D);
 % D.('ellie_20170731').example_unit = D.('ellie_20170731').example_unit + 1; % 2, 11, 30
 % D.('logan_20200304').example_unit = D.('logan_20200304').example_unit + 1; %9; % 3, 16, 25
 
-ex = 2;
+ex = 3;
 
 iEx = find(strcmp(sesslist, exnames{ex}));
 cc = D.(sesslist{iEx}).example_unit;
@@ -135,6 +134,16 @@ if cc > numel(Srf{iEx}.rffit)
     D.(sesslist{iEx}).example_unit = 1;
 end
 
+figure(100); clf
+subplot(1,2,1)
+plot(Waveforms{iEx}(cc).wavelags, Waveforms{iEx}(cc).ctrChWaveform, 'k'); hold on
+plot(Waveforms{iEx}(cc).wavelags, Waveforms{iEx}(cc).ctrChWaveformCiHi, 'k--');
+plot(Waveforms{iEx}(cc).wavelags, Waveforms{iEx}(cc).ctrChWaveformCiLo, 'k--');
+title(Waveforms{iEx}(cc).ExtremityCiRatio)
+
+subplot(1,2,2)
+plot(Waveforms{iEx}(cc).lags, Waveforms{iEx}(cc).isi, 'k')
+title(Waveforms{iEx}(cc).isiRate)
 
 figure(iEx); clf
 t = tiledlayout(3,1);
@@ -147,9 +156,10 @@ Imap = Srf{iEx}.spatrf(:,:,cc);
 xax = Srf{iEx}.xax;
 yax = Srf{iEx}.yax;
 
-imagesc(xax, yax, Imap)
+imagesc(xax, yax, Imap); hold on
 hc = colorbar;
 colormap(plot.viridis);
+plot(0,0,'+w')
 axis xy
 hold on
 xlabel('Azimuth (d.v.a)')
@@ -178,7 +188,7 @@ if sigs % plot RF fit
 %     plot(xd, yd([1 1]), 'r')
 %     plot(xd, yd([2 2]), 'r')
     
-    plot.plotellipse(mu, C, 2, 'r', 'Linewidth', 2);
+    plot.plotellipse(mu, C, 2, 'r', 'Linewidth', 1);
     xlabel('Azimuth (d.v.a)')
     ylabel('Elevation (d.v.a)')
 end
@@ -193,11 +203,16 @@ if sigg && ~isempty(Sgt{iEx}.rffit(cc).srf)
     srfHat = [rot90(srfHat,2) srfHat(:,2:end)];
     
     xax = [-fliplr(Sgt{iEx}.xax(:)') Sgt{iEx}.xax(2:end)'];
+    imagesc([-5 5], [-5 5], ones(2)*min(srf(:))); hold on
+    
     contourf(xax, -Sgt{iEx}.yax, srf, 10, 'Linestyle', 'none'); hold on
-    contour(xax, -Sgt{iEx}.yax, srfHat, [1 .5], 'r', 'Linewidth', 2)
+    contour(xax, -Sgt{iEx}.yax, srfHat, [1 .5], 'r', 'Linewidth', 1)
+    
     axis xy
     xlabel('Frequency (cyc/deg)')
     ylabel('Frequency (cyc/deg)')
+    xlim([-5 5])
+    ylim([-5 5])
 %     title(Sgt{iEx}.rffit(cc).oriPref)
     hc = colorbar;
     
@@ -205,9 +220,9 @@ if sigg && ~isempty(Sgt{iEx}.rffit(cc).srf)
     [~, spmx] = max(reshape(Sgt{iEx}.rffit(cc).srf, [], 1));
     [~, spmn] = min(reshape(Sgt{iEx}.rffit(cc).srf, [], 1));
 
-    cmap = lines;
+    cmap = [0 0 0; .5 .5 .5];
     plot.errorbarFill(Sgt{iEx}.timeax, Sgt{iEx}.rf(:,spmx,cc)*Sgt{iEx}.fs_stim, Sgt{iEx}.rfsd(:,spmx,cc)*Sgt{iEx}.fs_stim, 'b', 'FaceColor', cmap(1,:), 'EdgeColor', cmap(1,:), 'FaceAlpha', .8); hold on
-    plot.errorbarFill(Sgt{iEx}.timeax, Sgt{iEx}.rf(:,spmn,cc)*Sgt{iEx}.fs_stim, Sgt{iEx}.rfsd(:,spmn,cc)*Sgt{iEx}.fs_stim, 'r', 'FaceColor', 'r', 'EdgeColor', 'r', 'FaceAlpha', .8);
+    plot.errorbarFill(Sgt{iEx}.timeax, Sgt{iEx}.rf(:,spmn,cc)*Sgt{iEx}.fs_stim, Sgt{iEx}.rfsd(:,spmn,cc)*Sgt{iEx}.fs_stim, 'r', 'FaceColor', cmap(2,:), 'EdgeColor', cmap(2,:), 'FaceAlpha', .8);
     
     ylabel('\Delta Firing Rate (sp s^{-1})')
     xlabel('Time Lag (ms)')
@@ -216,157 +231,36 @@ if sigg && ~isempty(Sgt{iEx}.rffit(cc).srf)
 end
 
 % plot.suplabel(sprintf('%s: %d', strrep(sesslist{iEx}, '_', ' '), cc), 't');
-plot.fixfigure(gcf, 10, [4 8], 'offsetAxes', false)
-
-% plot tuning
-
-figure(100+iEx); clf    
-% TIME (SPATIAL MAPPING)
-subplot(3,2,3)
-if ~isnan(Srf{iEx}.spmx(cc))
-    plot(Srf{iEx}.timeax, Srf{iEx}.rf(:,Srf{iEx}.spmx(cc),cc)*Srf{iEx}.fs_stim, 'b-o', 'Linewidth', 2); hold on
-    plot(Srf{iEx}.timeax, Srf{iEx}.rf(:,Srf{iEx}.spmn(cc),cc)*Srf{iEx}.fs_stim, 'r-o', 'Linewidth', 2);
-    plot(Srf{iEx}.peaklagt(cc)*[1 1], ylim, 'k', 'Linewidth', 2)
-    plot(Sgt{iEx}.peaklagt(cc)*[1 1], ylim, 'k--', 'Linewidth', 2)
-    
-    xlabel('Time Lag (ms)')
-    ylabel('Firing Rate')
-    
-    
-end
-
-if sigg
-% PLOTTING FIT
-[xx,yy] = meshgrid(Sgt{iEx}.rffit(cc).oriPref/180*pi, 0:.1:15);
-X = [xx(:) yy(:)];
+% plot.fixfigure(gcf, 10, [4 8], 'offsetAxes', false)
 
 
-
-
-
-% plot data RF tuning
-par = Sgt{iEx}.rffit(cc).pHat;
-
-lag = Sgt{iEx}.peaklag(cc);
-
-fs = Sgt{iEx}.fs_stim;
-srf = reshape(Sgt{iEx}.rf(lag,:,cc)*fs, Sgt{iEx}.dim);
-srfeb = reshape(Sgt{iEx}.rfsd(lag,:,cc)*fs, Sgt{iEx}.dim);
-
-if Sgt{iEx}.ishartley
-    
-    [kx,ky] = meshgrid(Sgt{iEx}.xax, Sgt{iEx}.yax);
-    sf = hypot(kx(:), ky(:));
-    sfs = min(sf):max(sf);
-    
-    ori0 = Sgt{iEx}.rffit(cc).oriPref/180*pi;
-    
-    [Yq, Xq] = pol2cart(ori0*ones(size(sfs)), sfs);
-    
-    r = interp2(Sgt{iEx}.xax, -Sgt{iEx}.yax, srf, Xq, Yq);
-    eb = interp2(Sgt{iEx}.xax, -Sgt{iEx}.yax, srfeb, Xq, Yq);
-    
-    subplot(3,2,6)
-    h = errorbar(sfs, r, eb, 'ok'); hold on
-    h.CapSize = 0;
-    h.MarkerSize = 2;
-    h.MarkerFaceColor = 'k';
-    h.LineWidth = 1.5;
-    xlabel('Spatial Frequency (cpd)')
-    xlim([0 8])
-    
-    oris = 0:(pi/10):pi;
-    sf0 = Sgt{iEx}.rffit(cc).sfPref;
-    [Yq, Xq] = pol2cart(oris, sf0*ones(size(oris)));
-    
-    r = interp2(Sgt{iEx}.xax, -Sgt{iEx}.yax, srf, Xq, Yq, 'linear');
-    eb = interp2(Sgt{iEx}.xax, -Sgt{iEx}.yax, srfeb, Xq, Yq);
-    
-    subplot(3,2,5)
-    h = errorbar(oris/pi*180, r, eb, 'ok'); hold on
-    h.CapSize = 0;
-    h.MarkerSize = 2;
-    h.MarkerFaceColor = 'k';
-    h.LineWidth = 1.5;
-    xlabel('Orientation (deg)')
-    ylabel('Firing Rate')
-    xlim([0 180])
-    
-else
-    %%
-    [i,j] = find(srf == max(srf(:)));
-    ori0 = Sgt{iEx}.xax(j)/180*pi;
-    sf0 = Sgt{iEx}.yax(i);
-    
-    subplot(3,2,5)
-    errorbar(Sgt{iEx}.xax, srf(i,:), srfeb(i,:), 'o-', 'Linewidth', 2); hold on
-    xlim([0 180])
-    xlabel('Orientation (deg)')
-    ylabel('Firing Rate')
-    
-    subplot(3,2,6)
-    errorbar(Sgt{iEx}.yax, srf(:,j), srfeb(:,j), 'o-', 'Linewidth', 2); hold on
-    xlabel('Spatial Frequency (cpd)')
-    
-end
-
-% if sigg % Only plot fits if it's "significant"
-    orientation = 0:.1:pi;
-    spatfreq = 0:.1:20;
-    
-    % plot tuning curves
-    orientationTuning = prf.parametric_rf(par, [orientation(:) ones(numel(orientation), 1)*sf0], strcmp(Sgt{iEx}.sftuning, 'loggauss'));
-    spatialFrequencyTuning = prf.parametric_rf(par, [ones(numel(spatfreq), 1)*ori0 spatfreq(:)], strcmp(Sgt{iEx}.sftuning, 'loggauss'));
-    
-    subplot(3,2,5)
-    plot(orientation/pi*180, orientationTuning, 'r', 'Linewidth', 2)
-    
-    
-    subplot(3,2,6)
-    plot(spatfreq, spatialFrequencyTuning, 'r', 'Linewidth', 2)
-%     plot(par(3)*[1 1], ylim, 'b')
-    
-    
-    % plot bandwidth
-    if strcmp(Sgt{iEx}.sftuning, 'loggauss')
-        a = sqrt(-log(.5) * par(4)^2 * 2);
-        b1 = (par(3) + 1) * exp(-a) - 1;
-        b2 = (par(3) + 1) * exp(a) - 1;
-    else
-        a = acos(.5);
-        logbase = log(par(4));
-        b1 = par(3)*exp(-a*logbase);
-        b2 = par(3)*exp(a*logbase);
-    end
-    
-%     plot(b2*[1 1], ylim, 'b')
-%     plot(b1*[1 1], ylim, 'k')
-%     plot( Sgt{iEx}.rffit(cc).sfPref*[1 1], ylim)
-end
-
-
-
+plot.fixfigure(gcf, 8, [2.5 6], 'offsetAxes', false)
+saveas(gcf, fullfile(figDir, sprintf('example_%s_%d.pdf', sesslist{iEx}, cc)))
 
 
 %% refit guassian on spatial map
-for iEx = 26:numel(Srf)
+for iEx = 21
+    fprintf('running session [%s]\n', sesslist{iEx})
     if isempty(Srf{iEx})
         continue
     end
     Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Srf{iEx}.sorter);
-    stat = spat_rf_helper(Exp, 'plot', false, 'stat', Srf{iEx}, 'debug', false);
+%     Srf{iEx}
+    stat = spat_rf_helper(Exp, 'plot', true, 'debug', true,...
+        'ROI', BIGROI, 'binSize', binSize, 'spikesmooth', 0);
+%     stat = spat_rf_helper(Exp, 'plot', false, 'stat', [], 'debug', true);
     Srf{iEx} = stat;
 end
 
-save(sfname, '-v7.3', 'Srf')
+% save(sfname, '-v7.3', 'Srf')
 
 %% refit grating parametric
-for iEx = 1:28%numel(Sgt)
+for iEx = 1:numel(Sgt)
     if isempty(Sgt{iEx})
         continue
     end
     Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
-    stat = grat_rf_helper(Exp, 'plot', false, 'stat', Sgt{iEx}, 'debug', false, 'boxfilt', 1, 'sftuning', fittype);
+    stat = grat_rf_helper(Exp, 'plot', true, 'stat', Sgt{iEx}, 'debug', false, 'boxfilt', 1, 'sftuning', fittype, 'upsample', 2);
     Sgt{iEx} = stat;
 end
 
@@ -399,6 +293,8 @@ sess = {};
 
 wf = [];
 
+exnum = [];
+
 zthresh = 8;
 for ex = 1:numel(Srf)
     
@@ -406,17 +302,24 @@ for ex = 1:numel(Srf)
         continue
     end
     
+    if sum(Srf{ex}.sig)<2 && sum(Sgt{ex}.sig)<2
+        continue
+    end
+        
     NC = numel(Srf{ex}.rffit);
     for cc = 1:NC
         if ~isfield(Srf{ex}.rffit(cc), 'mu')
+            fprintf('Skipping because no fit %s\n', sesslist{ex})
             continue
         end
+        
         
          mu = Srf{ex}.rffit(cc).mu;
          C = Srf{ex}.rffit(cc).C;
          maxV = [maxV; Srf{ex}.maxV(cc)];
          
          if isempty(Sgt{ex}.rffit(cc).r2) || isempty(Srf{ex}.rffit(cc).r2)
+             fprintf('Skipping because bad fit [%s] %d\n', sesslist{ex}, cc)
              wf = [wf; Waveforms{ex}(cc)];
              oriPref = [oriPref; nan];
              oriBw = [oriBw; nan];
@@ -434,6 +337,7 @@ for ex = 1:numel(Srf)
              cgs = [cgs; nan];
              mshift = [mshift; nan];
              sess = [sess; sesslist{ex}];
+             exnum = [exnum; ex];
              continue
          end
          
@@ -462,6 +366,8 @@ for ex = 1:numel(Srf)
          wf = [wf; Waveforms{ex}(cc)];
          sess = [sess; sesslist{ex}];
          
+         exnum = [exnum; ex];
+         
          if ctr(end,1) ~= ctr(end,2)
              keyboard
          end
@@ -483,9 +389,8 @@ wfamp = arrayfun(@(x) x.peakval - x.troughval, wf);
 figure(1); clf
 ix = sigs & sigg; %mshift./ecc < .25 & (maxV./ecc)>5;
 su = ecrl > 1 & ecru > 2;
-ix = ix & su; % wfamp > 40;
+ix = ix & wfamp > 40;
 plot(ecc(ix), sfPref(ix), '.'); hold on
-
 set(gca, 'xscale', 'log', 'yscale', 'log')
 xlabel('Eccentricity (d.v.a)')
 ylabel('Spatial Frequency Preference ')
@@ -502,11 +407,11 @@ cebus = exp( (-.56 + .25*log(eccx) + 0.06*log(eccx).^2 ) ).^2; %Gattas 8
 figure(2); clf
 cmap = lines;
 x = ecc(ix);
-scaleFactor = sqrt(-log(.5))*2; % scaling to convert from gaussian SD to FWHM
+scaleFactor = 1; %sqrt(-log(.5))*2; % scaling to convert from gaussian SD to FWHM
 y = ar(ix) * scaleFactor;
 
-plot(x, y, 'wo', 'MarkerFaceColor', cmap(1,:), 'MarkerSize', 5)
-
+plot(x, y, 'wo', 'MarkerFaceColor', .2*[1 1 1], 'MarkerSize', 2); hold on
+% plot(ecc(ix&su), ar(ix&su), 'o')
 b0 = [0.764, 0.495 ,0.050]; % initialize with Rosa fit
 fun = @(p,x) exp( -p(1) + p(2)*log(x) + p(3)*log(x).^2);
 evalc('bhat = lsqcurvefit(fun, b0, x, y);');
@@ -515,14 +420,14 @@ xlim([0 15])
 ylim([0 15])
 
 hold on
-plot(eccx, fun(bhat,eccx))
+% plot(eccx, fun(bhat,eccx))
 plot(eccx, rosa_fit)
 
 set(gca, 'xscale', 'log', 'yscale', 'log')
 xlabel('Eccentricity (d.v.a)')
 ylabel('RF size (d.v.a)')
 set(gcf, 'Color', 'w')
-legend({'Data', 'Fit', 'Rosa 1997'}, 'Box', 'off')
+legend({'Data', 'Rosa 1997'}, 'Box', 'off')
 set(gca, 'XTick', [.1 1 10], 'YTick', [.1 1 10])
 xt = get(gca, 'XTick');
 set(gca, 'XTickLabel', xt)
@@ -531,11 +436,16 @@ set(gca, 'YTickLabel', yt)
 
 text(1, 5, sprintf('n=%d', sum(ix)))
 
-plot.fixfigure(gcf, 7, [1.75 2.5], 'FontName', 'Arial', ...
-    'LineWidth',1, 'OffsetAxes', false);
+plot.fixfigure(gcf, 7, [2 2], 'FontName', 'Arial', ...
+    'LineWidth',.5, 'OffsetAxes', false);
 
 saveas(gcf, fullfile(figDir, 'fig04_ecc_vs_RFsize.pdf'))
 
+% figure
+% for ex = unique(exnum(:))'
+%     ii = ex==exnum(ix);
+%     plot(x(ii), y(ii), '.'); hold on; %'wo', 'MarkerFaceColor', .2*[1 1 1], 'MarkerSize', 2)
+% end
 
 %%
 mus(mus(:,1) < -5,1) = - mus(mus(:,1) < -5,1);
@@ -556,10 +466,11 @@ ylim([0 10])
 
 %%
 figure(1); clf
-gix = sigg==1 & oriBw < 90;% & su; % & sfBw./sfPref > .55 & oriBw > 32 & oriBw < 88;
+gix = sigg==1 & oriBw < 180;% & su; % & sfBw./sfPref > .55 & oriBw > 32 & oriBw < 88;
 % gix = ix;
 subplot(1,2,1)
 
+oriPref = real(oriPref);
 h = histogram(wrapTo180(oriPref(gix)), 'binEdges', 0:10:180); hold on
 text(160, .7*max(h.Values), sprintf('n=%d', sum(gix)))
 xlabel('Orientation Preference ')
@@ -577,15 +488,45 @@ plot((be + be2)/2, obw)
 
 figure(2); clf
 cmap = lines;
-plot(sfPref(gix), sfBw(gix), 'ow', 'MarkerFaceColor', cmap(1,:), 'MarkerSize', 4 ); hold on
+plot(sfPref(gix), sfBw(gix), 'ow', 'MarkerFaceColor', .2*[1 1 1], 'MarkerSize', 2 ); hold on
 x = 0:15;
-ylim([0 20])
+xlim([0 10])
+ylim([0 10])
 xlabel('Preferred Stim. (cpd)')
 ylabel('Bandwidth (cpd)')
-[B,STATS] = robustfit(sfPref(gix), sfBw(gix));
+
+gixx = gix & sfBw < 20 & sfPref > 0 & sfPref < 10;
+X = [sfPref(gixx), sfBw(gixx)];
+[u,s] = svd(cov(X));
+mu = mean(X);
+
+
+
+[B,STATS] = robustfit(sfPref(gixx), sfBw(gixx));
 plot(x, x*B(2) + B(1), 'k', 'Linewidth', 2)
+plot(xlim, xlim, 'k--')
 
+% plot(mu(1), mu(2), 'or')
+m = u(2,1)./u(1,1);
+b = mu(2) - mu(1)*m;
+plot(xlim, xlim*m + b, 'r')
 
+plot.fixfigure(gcf, 8, [2 2], 'OffsetAxes', false);
+plot.offsetAxes(gca, true, 4)
 
+saveas(gcf, fullfile(figDir, 'fig04_sf_vs_bw.pdf'))
 
 %%
+figure(10); clf
+cmap = lines(max(exnum));
+for ex = unique(exnum(:))'
+    ii = ex==exnum(:) & gix;
+    plot(sfPref(ii), sfBw(ii), '.', 'Color', cmap(ex,:)); hold on; %'wo', 'MarkerFaceColor', .2*[1 1 1], 'MarkerSize', 2)
+end
+xlim([0 10])
+ylim([0 10])
+
+%%
+clf
+plot(exnum(gix), sfPref(gix), '.')
+ylim([0 10])

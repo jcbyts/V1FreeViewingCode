@@ -308,7 +308,7 @@ for cc = 1:NC
     refrate = xc(lags==1);
     
     % expected rate using shoulders of the autocorrelation as a baseline
-    expectedminrate = mean(xc([1 end])) - mean(err([1 end]));
+    expectedminrate = mean(xc([1 end]));
     
     normrate = mu/mu0;
     

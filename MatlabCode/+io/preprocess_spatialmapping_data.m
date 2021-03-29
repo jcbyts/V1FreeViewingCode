@@ -44,12 +44,16 @@ verbose = ip.Results.verbose;
 % --- find valid trials
 if isempty(ip.Results.validTrials)
     validTrials = intersect(io.getValidTrials(Exp, 'BigDots'), io.getValidTrials(Exp, 'Ephys'));
+%     if isempty(validTrials)
+%         validTrials = intersect(io.getValidTrials(Exp, 'Gabor'), io.getValidTrials(Exp, 'Ephys'));
+%     end
 else
     validTrials = ip.Results.validTrials;
 end
 
 numValidTrials = numel(validTrials);
 if numValidTrials==0 % exit
+    fprintf('No valid dots trials in [%s]\n', Exp.FileTag)
     stimX = [];
     Robs = [];
     opts.frameTimes = nan;
@@ -74,12 +78,11 @@ binSize = ip.Results.binSize;
 spikeBinSize = ip.Results.spikeBinSize;
 
 
-% Eye calibration
-cx = mode(cellfun(@(x) x.c(1), Exp.D(validTrials)));
-cy = mode(cellfun(@(x) x.c(2), Exp.D(validTrials)));
-dx = mode(cellfun(@(x) x.dx, Exp.D(validTrials)));
-dy = mode(cellfun(@(x) x.dy, Exp.D(validTrials)));
-
+% % Eye calibration
+% cx = mode(cellfun(@(x) x.c(1), Exp.D(validTrials)));
+% cy = mode(cellfun(@(x) x.c(2), Exp.D(validTrials)));
+% dx = mode(cellfun(@(x) x.dx, Exp.D(validTrials)));
+% dy = mode(cellfun(@(x) x.dy, Exp.D(validTrials)));
 
 % Extract trial-specific values
 frameTimes = cellfun(@(x) x.PR.NoiseHistory(:,1), Exp.D(validTrials(:)), 'uni', 0);
@@ -145,23 +148,79 @@ valid = hypot(eyeAtFrame(:,1), eyeAtFrame(:,2)) < ip.Results.eyePosExclusion;
 xax = ROI(1):binSize:ROI(3);
 yax = ROI(2):binSize:ROI(4);
 
-[xx,yy] = meshgrid(xax, yax);
+% [xx,yy] = meshgrid(xax, yax);
 
 % bin stimulus on grid
-dims = [numel(yax) numel(xax)];
-stimX = zeros(sum(valid), prod(dims));
+% dims = [numel(yax) numel(xax)];
+% stimX = zeros(sum(valid), prod(dims));
+% tic
+% if verbose
+%     disp('Binning stimulus on grid')
+%     for i = 1:NX
+%         stimX = stimX + double(hypot(xPosition(valid,i) - xx(:)', yPosition(valid,i) - yy(:)') < binSize);
+%     end
+%     disp('Done')
+% end
+% toc
+%% try faster binning
 if verbose
     disp('Binning stimulus on grid')
-    for i = 1:NX
-        stimX = stimX + double(hypot(xPosition(valid,i) - xx(:)', yPosition(valid,i) - yy(:)') < binSize);
-    end
-    disp('Done')
 end
+tic
+xp = xPosition(valid,:);
+yp = yPosition(valid,:);
+
+NT = sum(valid);
+fr = repmat((1:NT)', 1,size(xp,2));
+
+xp(xp < ROI(1) | xp > ROI(3)) = nan;
+yp(yp < ROI(2) | yp > ROI(4)) = nan;
+
+x = ceil(xp./binSize);
+y = ceil(yp./binSize);
+
+x = x - min(x(:));
+y = y - min(y(:));
+
+good = ~(isnan(x) | isnan(y));
+good = good & x < numel(xax) & y<numel(yax) & x > 0 & y > 0;
+
+x = x(good);
+y = y(good);
+
+fr = fr(good);
+
+v = ones(size(fr));
+
+sz = [max(y(:)) max(x(:))];
+ind = sub2ind(sz, y(:), x(:));
+stimX = full(sparse(fr(:), ind, v(:), NT, prod(sz)));
+
+d = toc;
+if verbose
+    fprintf('Done [%02.2f]\n', d)
+end
+
+xax = xax(2:sz(2)+1); %edges
+yax = yax(2:sz(1)+1);  %+binSize/2;
+dims = sz;
+
+% %
+% figure(2); clf, 
+% plot(sum(stimX)); hold on; plot(xlim, .5*median(sum(stimX))*[1 1])
+% 
+% figure(3); clf
+% imagesc(reshape(sum(stimX), sz))
+% 
+% figure(4); clf
+% imagesc(reshape(sum(stimX), dims))
+% %%
 
 Robs = Robs(valid,:);
 
 t_downsample = ceil(Exp.S.frameRate / ip.Results.frate);
 if t_downsample > 1
+    fprintf('Downsampling by %d\n', t_downsample)
 	stimX = downsample_time(stimX, t_downsample) / t_downsample;
 	Robs = downsample_time(Robs, t_downsample);
     frameTimes = downsample_time(frameTimes(valid), t_downsample) / t_downsample;

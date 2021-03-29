@@ -2,37 +2,125 @@
 addpath Analysis/manuscript_freeviewingmethods/
 
 %% Load session
-sessid = 5;
+sessid = sessid + 1;
 
-try
-    sorter = 'jrclustwf';
-    Exp = io.dataFactoryGratingSubspace(sessid, 'spike_sorting', sorter);
-catch % otherwise, use Kilosort
-    sorter = 'kilowf';
-    Exp = io.dataFactoryGratingSubspace(sessid, 'spike_sorting', sorter);
+sorter = 'kilowf';
+Exp = io.dataFactoryGratingSubspace(sessid, 'spike_sorting', sorter);
+
+% spatial
+BIGROI = [-14 -8 14 8];
+% BIGROI = [-4 -4 4 4];
+stat = spat_rf_reg(Exp, 'stat', [], ...
+    'debug', true, 'plot', true, ...
+    'boxfilt', 3, 'ROI', BIGROI, ...
+    'binSize', 1, 'spikesmooth', 0, ...
+    'fitRF', false, ...
+    'win', [-5 8]);
+
+
+figure(3); clf
+mrf = mean(stat.srf,3);
+mrf = (mrf - min(mrf(:))) / (max(mrf(:)) - min(mrf(:)));
+
+bw = (mrf>.7);
+
+s = regionprops(bw);
+
+subplot(1,3,1)
+imagesc(mrf)
+
+subplot(1,3,2)
+imagesc(bw)
+
+subplot(1,3,3)
+imagesc(mrf); hold on
+
+[~, ind] = sort([s.Area], 'descend');
+
+for i = ind(1)
+    bb = s(i).BoundingBox;
+    sz = max(bb(3:4))*[2 2];
+    bb(1:2) = bb(1:2) - sz/4;
+    bb(3:4) = sz;
+    rectangle('Position', bb , 'EdgeColor', 'r', 'Linewidth', 2)
 end
-           
 
-%% spatial
-BIGROI = [-14 -10 14 10];
-stat = spat_rf_helper(Exp, 'sdthresh', 4, 'ROI', BIGROI, 'binSize', .3, 'spikesmooth', 1);
+roix = interp1(1:numel(stat.xax), stat.xax, [bb(1) bb(1) + bb(3)]);
+roiy = interp1(1:numel(stat.yax), stat.yax, [bb(2) bb(2) + bb(4)]);
 
+figure(4); clf
+imagesc(stat.xax, stat.yax, mrf); hold on
+plot(roix, roiy([1 1]), 'r')
+plot(roix, roiy([2 2]), 'r')
+plot(roix([1 1]), roiy, 'r')
+plot(roix([2 2]), roiy, 'r')
+
+NEWROI = [roix(1) roiy(1) roix(2) roiy(2)];
+
+if any(isnan(NEWROI))
+    disp('No Valid ROI')
+else
+    stat = spat_rf_reg(Exp, 'stat', [], ...
+        'plot', true, ...
+        'ROI', NEWROI, ...
+        'binSize', .3, 'spikesmooth', 0, ...
+        'r2thresh', 0.002,...
+        'win', [-5 8]);
+    
+    figure(10); clf, plot(max(stat.r2rf, 0), '-o')
+end
+%%
+a = max(stat.temporalPref(stat.timeax>0,:)) - max(stat.temporalNull(stat.timeax>0,:));
+b = max(stat.temporalPref(stat.timeax<0,:)) - max(stat.temporalNull(stat.timeax<0,:));
+
+% b = (sum(stat.temporalPref(stat.timeax<0,:)-stat.temporalNull(stat.timeax<0,:)));
+
+figure(1); clf
+plot(a, b, '.')
+hold on
+plot(xlim, xlim)
 
 %%
+cc = 0;
+
+%%
+cc = cc + 1;
+figure(1); clf
+subplot(1,2,1)
+plot.errorbarFill(stat.timeax, stat.temporalPref(:,cc), stat.temporalPrefSd(:,cc), 'b', 'EdgeColor', 'b'); hold on
+plot.errorbarFill(stat.timeax, stat.temporalNull(:,cc), stat.temporalNullSd(:,cc), 'r', 'EdgeColor', 'r');
+title(cc)
+subplot(1,2,2)
+imagesc(stat.xax, stat.yax, stat.srf(:,:,cc)); hold on
+title(stat.r2rf(cc))
+plot.plotellipse(stat.rffit(cc).mu, stat.rffit(cc).C, 1, 'r', 'Linewidth', 2);
+
+%%
+% stat = Srf{iEx}
 figure(1); clf
 NC = size(stat.rf, 3);
 sx = ceil(sqrt(NC));
-sy = round(sqrt(NC))*2;
+sy = round(sqrt(NC));
+t = tiledlayout(sx, sy);
+t.TileSpacing = 'Compact';
 
 for cc = 1:NC
-    subplot(sx, sy, (cc-1)*2 + 1)
-    plot.errorbarFill(stat.timeax, stat.rf(:,stat.spmx(cc),cc)*stat.fs_stim, stat.rfsd(:,stat.spmx(cc),cc)*stat.fs_stim, 'b', 'EdgeColor', 'b'); hold on
-    plot.errorbarFill(stat.timeax, stat.rf(:,stat.spmn(cc),cc)*stat.fs_stim, stat.rfsd(:,stat.spmn(cc),cc)*stat.fs_stim, 'r', 'EdgeColor', 'r');
+        nexttile
+        plot.errorbarFill(stat.timeax, stat.temporalPref(:,cc), stat.temporalPrefSd(:,cc), 'b', 'EdgeColor', 'b'); hold on
+        plot.errorbarFill(stat.timeax, stat.temporalNull(:,cc), stat.temporalNullSd(:,cc), 'r', 'EdgeColor', 'r');
+end
     
-    subplot(sx, sy, (cc-1)*2 + 2)
-    imagesc(stat.xax, stat.yax, stat.spatrf(:,:,cc)); hold on
-    plot.plotellipse(stat.rffit(cc).mu, stat.rffit(cc).C, 1, 'r');
-    axis xy
+figure(2); clf
+t = tiledlayout(sx, sy);
+t.TileSpacing = 'Compact';
+for cc = 1:NC
+    
+        nexttile
+        imagesc(stat.xax, stat.yax, stat.srf(:,:,cc)); hold on
+        try
+        plot.plotellipse(stat.rffit(cc).mu, stat.rffit(cc).C, 1, 'r');
+        end
+        axis xy
 end
 % stat
 
@@ -116,7 +204,6 @@ for cc = 1:NC
     mnI = min(I(:));
     mxI = max(I(:));
     par0 = [x0 y0 5 0 4];
-    
     
     gfun = @(params, X) params(5) + (mxI - params(5)) * exp(-.5 * sum(((X-[params(1) params(2)])*pinv([params(3) params(4); params(4) params(3)]'*[params(3) params(4); params(4) params(3)])).*(X-[params(1) params(2)]),2));
     

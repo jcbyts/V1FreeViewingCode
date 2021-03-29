@@ -4,22 +4,9 @@
 user = 'jakelaptop';
 addFreeViewingPaths(user);
 
-switch user
-    case 'jakework'
-        addpath C:\Users\Jake\Dropbox\MatlabCode\Repos\NIMclass
-        addpath C:\Users\Jake\Dropbox\MatlabCode\Repos\sNIMclass
-        addpath(genpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\L1General'))    
-        addpath(genpath('C:\Users\Jake\Dropbox\MatlabCode\Repos\minFunc_2012'))  
-    case 'jakelaptop'
-        addpath ~/Dropbox/MatlabCode/Repos/NIMclass/
-        addpath ~/Dropbox/MatlabCode/Repos/sNIMclass/
-        addpath(genpath('~/Dropbox/MatlabCode/Repos/L1General/'))    
-        addpath(genpath('~/Dropbox/MatlabCode/Repos/minFunc_2012/'))  
-end
-
 %% load data
-sessId = 57;
-[Exp, S] = io.dataFactoryGratingSubspace(sessId);
+sessId = 45;
+[Exp, S] = io.dataFactory(sessId);
 %%
 
 

@@ -49,43 +49,28 @@ if ~isempty(ip.Results.stat)
 else
     eyePos = Exp.vpx.smo(:,2:3);
     
-    [Xstim, RobsSpace, opts] = io.preprocess_spatialmapping_data(Exp, 'ROI', ip.Results.ROI*Exp.S.pixPerDeg, 'binSize', ip.Results.binSize*Exp.S.pixPerDeg, 'eyePos', eyePos);
+    [Xstim, RobsSpace, opts] = io.preprocess_spatialmapping_data(Exp, ...
+        'ROI', ip.Results.ROI*Exp.S.pixPerDeg, 'binSize', ip.Results.binSize*Exp.S.pixPerDeg, ...
+        'eyePos', eyePos, 'frate', 60);
     
-    %% do forward correlation
-    d = size(Xstim, 2);
-    NC = size(RobsSpace,2);
+    % use indices while fixating
+    ecc = hypot(opts.eyePosAtFrame(:,1), opts.eyePosAtFrame(:,2))/Exp.S.pixPerDeg;
+    ix = opts.eyeLabel==1 & ecc < 5.2;
+    
+    if ip.Results.spikesmooth > 0
+        RobsSpace = imgaussfilt(RobsSpace, [ip.Results.spikesmooth 0.001]);
+    end
+        
+    win = ip.Results.win;
+    stas = forwardCorrelation(Xstim, RobsSpace, win, find(ix));
+    
+    NC = size(stas,3);
     sx = ceil(sqrt(NC));
     sy = round(sqrt(NC));
     
-    win = ip.Results.win;
-    num_lags = diff(win)+1;
-    mrf = zeros(num_lags, d, NC);
-    srf = zeros(num_lags, d, NC);
+    num_lags = size(stas,1);
     
-    % smooth spike trains
-    if ip.Results.spikesmooth > 0
-        Rdelta = imgaussfilt(RobsSpace-mean(RobsSpace), [ip.Results.spikesmooth 0.001]); % Gaussian smoothing along the time dimension
-    else
-        Rdelta = RobsSpace-mean(RobsSpace);
-    end
-    
-    % loop over stimulus dimensions
-    disp('Running forward correlation...')
-    for k = 1:d
-        %     fprintf('%d/%d\n', k, d)
-        s = fliplr(makeStimRows(Xstim(:,k), num_lags)); % flip for forward time-embedded stimulus
-        s = circshift(s, win(1)); % shift back by the pre-stimulus lags
-        for cc = 1:NC
-            x = s.*Rdelta(:,cc);
-            mrf(:,k,cc) = sum(x)./sum(s);
-            srf(:,k,cc) = std(x)./sum(s);
-        end
-        
-    end
-    disp('Done')
-    
-    stat.rf = mrf;
-    stat.rfsd = srf;
+    stat.rf = stas;
     
     fs_stim = round(1/median(diff(opts.frameTimes)));
     tax = 1e3*(win(1):win(2))/fs_stim;
@@ -104,15 +89,15 @@ else
     stat.maxV = nan(NC, 1);
     stat.thresh = nan(NC, 1);
     
-    stat.spmx = nan(NC,1);
-    stat.spmn = nan(NC,1);
+    stat.spmx = ones(NC,1);
+    stat.spmn = ones(NC,1);
     stat.cgs = Exp.osp.cgs(:);
-    
 end
 
 for cc = 1:NC
     stat.rffit(cc).warning = 1;
 end
+
 %% compute cell-by cell quantities / plot (if true)
 
 if ip.Results.plot
@@ -127,12 +112,12 @@ X = [xx(:) yy(:)];
 
 for cc = 1:NC
     
-    if ip.Results.plot
+    rfflat = stat.rf(:,:,cc)*stat.fs_stim; % individual neuron STA
+    
+    if ip.Results.plot && ~ip.Results.debug
         figure(fig)
         ax = subplot(sx,sy,cc);
     end
-    
-    rfflat = stat.rf(:,:,cc)*stat.fs_stim; % individual neuron STA
     
     % smooth RF / calculate Median Absolute Deviations (MAD)
     rf3 = reshape(rfflat, [numel(stat.timeax), stat.dim]); % 3D spatiotemporal tensor
@@ -143,25 +128,63 @@ for cc = 1:NC
     
     rf = imboxfilt3(rf3, ip.Results.boxfilt*[1 1 1]); % average in space and time
     
+    nlags = size(rf,1);
+    
+    if ip.Results.debug
+        figure(2); clf
+        sx = ceil(sqrt(nlags));
+        sy = round(sqrt(nlags));
+        for ilag = 1:nlags
+            subplot(sx, sy, ilag)
+            imagesc(squeeze(rf(ilag,:,:)), [min(rf(:)) max(rf(:))])
+        end
+        
+        keyboard
+    end
+        
     adiff = abs(rf - median(rf(:))); % positive difference
     mad = median(adiff(:)); % median absolute deviation
     
     adiff = (rf - median(rf(:))) ./ mad; % normalized (units of MAD)
     
-    nlags = size(rf,1);
-    
     % compute threshold using pre-stimulus lags
-    thresh = max(max(adiff(stat.timeax<=0,:)))*1.25;
+    thresh = max(max(max(adiff(stat.timeax<=0,:))), .7*max(adiff(:))); %*1.25;
     
     % threshold and find the largest connected component
     bw = bwlabeln(adiff > thresh);
     s = regionprops3(bw);
+    
     if isempty(s)
+        disp('no RF. skipping.')
         % no connected components found (nothing crossed threshold)
         continue
     end
     
+    % constrain when the peak lag is viable
+    peaklagst = interp1(1:nlags, stat.timeax, s.Centroid(:,2));
+    s = s(peaklagst>=0 & peaklagst <= 100,:);
+    
+    if isempty(s) || size(s,1) > 2 % no valid clusters or too many valid clusters means it's noise
+        disp('no RF. skipping.')
+        % no connected components found (nothing crossed threshold)
+        continue
+    end
+    
+    if size(s,1) > 2 % no valid clusters or too many valid clusters means it's noise
+        disp('Too man valid centroids. skipping.')
+        % no connected components found (nothing crossed threshold)
+        continue
+    end
+       
     [maxV, bigg] = max(s.Volume); % largest connected component is the RF
+    
+    if maxV < ip.Results.boxfilt
+        disp('Centroid too small. skipping.')
+        % no connected components found (nothing crossed threshold)
+        continue
+    end
+    
+    
     ytx = s.Centroid(bigg,:); % location (in space / time)
     peaklagt = interp1(1:nlags, stat.timeax, ytx(2)); % peak lag using centroid
     
@@ -170,11 +193,11 @@ for cc = 1:NC
     peaklagc = min(ceil(ytx(2))+1, nlags);
     
     % spatial RF
-    srf = squeeze(mean(rf3(peaklagf:peaklagc,:,:), 1));
+    srf = squeeze(mean(rf(peaklagf:peaklagc,:,:), 1));
     stat.spatrf(:,:,cc) = srf;
     
     % fit gaussian    
-    I = abs(srf-mean(srf(:))); % change of variable name (why?)
+    I = srf; %abs(srf-mean(srf(:))); % change of variable name (why?)
     
     % initialize mean
     x0 = interp1(1:numel(stat.xax), stat.xax, ytx(3));
@@ -196,15 +219,17 @@ for cc = 1:NC
     
     % least-squares
     try
-%         evalc('[phat,RESNORM,RESIDUAL,EXITFLAG] = lsqcurvefit(gfun, par0, X, I(:), lb, ub);');
-        options = statset('RobustWgtFun', 'bisquare', 'Tune', 10, 'MaxIter', 1000);
-        cstr = evalc("[phat,R,~,COVB,~,minfo] = nlinfit(X, I(:), gfun, par0, options);");
-        if contains(cstr, 'Warning:')
-            warningFlag = true;
-        else
-            warningFlag = false;
-        end
-        CI = nlparci(phat, R, 'covar', COVB);
+        evalc('[phat,RESNORM,RESIDUAL,EXITFLAG] = lsqcurvefit(gfun, par0, X, I(:), lb, ub);');
+%         options = statset('RobustWgtFun', 'bisquare', 'Tune', 10, 'MaxIter', 1000);
+%         cstr = evalc("[phat,R,~,COVB,~,minfo] = nlinfit(X, I(:), gfun, par0, options);");
+%         if contains(cstr, 'Warning:')
+%             warningFlag = true;
+%         else
+%             warningFlag = false;
+%         end
+%         CI = nlparci(phat, R, 'covar', COVB);
+        CI = nan(numel(phat), 2);
+        warningFlag = false;
     catch
         phat = nan(size(par0));
         CI = nan(numel(phat), 2);
@@ -237,7 +262,7 @@ for cc = 1:NC
     ecc = hypot(mu(1), mu(2));
     fprintf('%d) ecc: %02.2f, area: %02.2f, r^2:%02.2f\n', cc, ecc, ar, r2)
     
-    if ip.Results.plot
+    if ip.Results.plot && ~ip.Results.debug
         set(fig, 'currentaxes', ax)
         imagesc(stat.xax, stat.yax, srf); hold on
         colormap(plot.viridis)
@@ -263,6 +288,15 @@ for cc = 1:NC
         imagesc(stat.xax, stat.yax, srf); hold on
         plot(x0, y0, '+r')
         plot.plotellipse(mu, C, 1, 'r');
+        
+        figure(2); clf
+        sx = ceil(sqrt(nlags));
+        sy = round(sqrt(nlags));
+        for ilag = 1:nlags
+            subplot(sx, sy, ilag)
+            imagesc(squeeze(rf(ilag,:,:)), [min(rf(:)) max(rf(:))])
+        end
+        
         keyboard
        
     end
@@ -273,18 +307,6 @@ for cc = 1:NC
     Ihat = gfun(phat, X);
     r2 = rsquared(I(:), Ihat(:));
     
-    % convert multivariate gaussian to ellipse
-    trm1 = (C(1) + C(4))/2;
-    trm2 = sqrt( ((C(1) - C(4))/2)^2 + C(2)^2);
-    
-    % half widths
-    l1 =  trm1 + trm2;
-    l2 = trm1 - trm2;
-    
-    % convert to sqrt of area to match Rosa et al., 1997
-    ar = sqrt(2 * l1 * l2);
-    ecc = hypot(mu(1), mu(2));
-    fprintf('%d) ecc: %02.2f, area: %02.2f, r^2:%02.2f\n', cc, ecc, ar, r2)
     stat.rffit(cc).amp = mxI;
     stat.rffit(cc).C = C;
     stat.rffit(cc).mu = mu;

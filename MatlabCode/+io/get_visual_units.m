@@ -7,6 +7,7 @@ ip.addParameter('visStimField', 'BackImage')
 ip.addParameter('ROI', [-100 -100 100 100])
 ip.addParameter('binSize', 10)
 ip.addParameter('waveforms', [])
+ip.addParameter('numTemporalBasis', 5)
 ip.parse(varargin{:});
 
 % get waveforms
@@ -44,6 +45,11 @@ end
 eyePos = Exp.vpx.smo(:,2:3);
 
 [Xstim, RobsSpace, opts] = io.preprocess_spatialmapping_data(Exp, 'ROI', ip.Results.ROI, 'binSize', ip.Results.binSize, 'eyePos', eyePos);
+
+nlags = 15;
+% find(opts.eyeLabel==1)
+    
+stas = forwardCorrelation(Xstim, RobsSpace-mean(RobsSpace), [0 nlags-1], [], ip.Results.numTemporalBasis);
 
 stimSets = {'Grating', 'Dots', 'BackImage', 'FixRsvpStim'};
 
@@ -143,8 +149,9 @@ for cc = 1:NC
     end
     
     if ~isempty(Xstim)
-        nlags = 15;
-        sta = simpleRevcorr(Xstim, RobsSpace(:,cc)-mean(RobsSpace(:,cc)), nlags);
+        
+        sta = stas(:,:,cc);
+%         sta = simpleRevcorr(Xstim, RobsSpace(:,cc)-mean(RobsSpace(:,cc)), nlags);
         thresh = sqrt(robustcov(sta(:)))*4;
         
         [sm,la] = bounds(sta(:));

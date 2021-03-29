@@ -14,14 +14,21 @@ function plotWaveforms(W, scale, varargin)
     ip = inputParser();
     ip.addParameter('cmap',lines(NC))
     ip.addParameter('overloadSU', false)
+    ip.addParameter('cids', []);
     ip.parse(varargin{:})
     
     cmap = ip.Results.cmap;
     
+    if isempty(ip.Results.cids)
+        cids = 1:NC;
+    else
+        cids = ip.Results.cids;
+        NC = numel(cids);
+    end
     
     SU = false(NC,1);
     
-    for cc = 1:NC
+    for cc = cids(:)'
         nw = norm(W(cc).waveform(:,3));
 %         SU(cc) = nw > 20 & W(cc).isiL > .1 & W(cc).isiL < 1 & W(cc).uQ > 5 & W(cc).isi(200) < 0;
         if ip.Results.overloadSU

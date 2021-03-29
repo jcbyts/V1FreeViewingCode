@@ -17,35 +17,42 @@ load(gfname)
 fftname = fullfile('Data', 'fftrf.mat');
 load(fftname)
 
+% Waveforms
+wname = fullfile('Data', 'waveforms.mat');
+load(wname)
+
+
 %% Explore
 
 iEx = 1;
 fprintf('Loading session [%s]\n', sesslist{iEx})
 
 %% Refit space?
-Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Srf{iEx}.sorter);
+Exp = io.dataFactory(sesslist{iEx}, 'spike_sorting', Srf{iEx}.sorter);
 stat = spat_rf_helper(Exp, 'plot', true, 'stat', Srf{iEx}, 'debug', true, 'boxfilt', 5);
 Srf{iEx} = stat;
 
 %% refit grating?
-Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
+Exp = io.dataFactory(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
 stat = grat_rf_helper(Exp, 'plot', true, 'stat', Sgt{iEx}, 'debug', true, 'boxfilt', 1, 'sftuning', 'loggauss', 'upsample', 2);
 Sgt{iEx} = stat;
 
 %% refit fftrf?
-Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
+Exp = io.dataFactory(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
 rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', true, 'plot', true, 'usestim', 'post', 'alignto', 'fixon');
 fftrf{iEx}.rfs_post = rf_post;
 
 
 %% step through units
-
+iEx = 1;
+cc = 0;
+%%
 cc = cc + 1;
 % 
 if cc > numel(Srf{iEx}.rffit)
     cc = 1;
 end
-
+% cc = 1
 fields = {'rfs_post', 'rfs_pre'};
 field = fields{1};
 cmap = lines;
@@ -96,7 +103,7 @@ plot.suplabel(strrep(sesslist{iEx}, '_', ' '), 't');
 % end
 
 
-figure(iEx); clf
+figure(2); clf
 subplot(321, 'align')
 Imap = Srf{iEx}.spatrf(:,:,cc);
 
@@ -272,13 +279,14 @@ else
     
 end
 
+vm01 = false;
 % if sigg % Only plot fits if it's "significant"
     orientation = 0:.1:pi;
     spatfreq = 0:.1:20;
     
     % plot tuning curves
-    orientationTuning = prf.parametric_rf(par, [orientation(:) ones(numel(orientation), 1)*sf0], strcmp(Sgt{iEx}.sftuning, 'loggauss'));
-    spatialFrequencyTuning = prf.parametric_rf(par, [ones(numel(spatfreq), 1)*ori0 spatfreq(:)], strcmp(Sgt{iEx}.sftuning, 'loggauss'));
+    orientationTuning = prf.parametric_rf(par, [orientation(:) ones(numel(orientation), 1)*sf0], strcmp(Sgt{iEx}.sftuning, 'loggauss'), vm01);
+    spatialFrequencyTuning = prf.parametric_rf(par, [ones(numel(spatfreq), 1)*ori0 spatfreq(:)], strcmp(Sgt{iEx}.sftuning, 'loggauss'), vm01);
     
     subplot(3,2,5)
     plot(orientation/pi*180, orientationTuning, 'r', 'Linewidth', 2)
@@ -309,3 +317,17 @@ end
 
 plot.suplabel(sprintf('%s: %d', strrep(sesslist{iEx}, '_', ' '), cc), 't');
 plot.fixfigure(gcf, 10, [4 8], 'offsetAxes', false)
+
+figure(3); clf
+subplot(1,2,1)
+plot(Waveforms{iEx}(cc).wavelags, Waveforms{iEx}(cc).waveform + Waveforms{iEx}(cc).spacing)
+axis tight
+subplot(2,2,2)
+plot(Waveforms{iEx}(cc).wavelags, Waveforms{iEx}(cc).ctrChWaveform, 'k'); hold on
+plot(Waveforms{iEx}(cc).wavelags, Waveforms{iEx}(cc).ctrChWaveformCiHi, 'k--');
+plot(Waveforms{iEx}(cc).wavelags, Waveforms{iEx}(cc).ctrChWaveformCiLo, 'k--');
+axis tight
+subplot(2,2,4)
+plot(Waveforms{iEx}(cc).lags, Waveforms{iEx}(cc).isi, 'k'); hold on
+title(Waveforms{iEx}(cc).isiV)
+xlim([0 20])
