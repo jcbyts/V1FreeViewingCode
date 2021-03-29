@@ -24,13 +24,13 @@ import NDN3.Utils.DanUtils as DU
 # %% load example sessions
 sesslist = ['ellie_20190107', 'ellie_20170731', 'logan_20200304']
 
-ROIs = {'ellie_20190107': np.array([-14.0, -3.5, -6.5, 3.5]),
-    'ellie_20170731': np.array([-1, -3, 3, .5]), #np.array([0.0, -2.5, 2, 0])
-    'logan_20200304': np.array([-.5, -1.5, 1.5, 0.5])}
+ROIs = {'ellie_20190107': np.array([-14.0, -10.0, 14.0, 10]),
+    'ellie_20170731': np.array([-14.0, -10.0, 14.0, 10]), #np.array([-1, -3, 3, .5]), #np.array([0.0, -2.5, 2, 0])
+    'logan_20200304': np.array([-14.0, -10.0, 14.0, 10])} #np.array([-.5, -1.5, 1.5, 0.5])}
 
-binSizes = {'ellie_20190107': .5,
-    'ellie_20170731': .1,
-    'logan_20200304': .05}
+binSizes = {'ellie_20190107': .3,
+    'ellie_20170731': .3,
+    'logan_20200304': .3}
 
 pixperdeg = {'ellie_20190107': 43.8059,
     'ellie_20170731': 37.4400,
@@ -48,7 +48,6 @@ matdat = gt.load_data(sesslist[isess])
 sacboxcar,valid,eyepos = gt.get_eyepos_at_frames(matdat['eyepos'], matdat['dots']['frameTime'], slist=matdat['slist'])
 
 # process data
-
 print("Preprocess spatial mapping data")
 defopts = {'frate': 120}
 eyePos = matdat['dots']['eyePosAtFrame']
@@ -122,66 +121,76 @@ if t_downsample > 1:
 
 print('Done')
 
-import neureye as ne
+#%% get STAs
+Robs = deepcopy(RobsAll)
+Robs = Robs - np.mean(Robs, axis=0)
 
-print("Creating Time Embedding for stimulus shape (%d,%d)" %(NT,NX*NY))
-num_lags = 12
-Xstim, rinds = ne.create_time_embedding_valid(stim, [num_lags, NY, NX], valid)
-# Xstim = NDNutils.create_time_embedding( stim, [num_lags, NX, NY], tent_spacing=1 )
+from tqdm import tqdm
+from scipy.signal import fftconvolve
+num_lags = 15
+stas = np.zeros((num_lags, NX*NY, NC))
+I = np.eye(num_lags)
 print("Computing STA")
+for idim in tqdm(range(NX*NY)):
+    X = fftconvolve(np.expand_dims(stim[:,idim], axis=1), I, 'full')
+    X = X[:-num_lags+1,:]
+    stas[:,idim,:] = X[valid,:].T @ Robs[valid,:]
+cc = 0
+#%% plot stas
+if cc >= NC:
+    cc = 0
+plt.figure(figsize=(15,5))
 
-Y = RobsAll[rinds,:] - np.mean(RobsAll[rinds,:], axis=0)
-cid = example_unit[matdat['exname']]
+sta = stas[:,:,cc]
+spmx = np.where(sta==np.max(sta))[1][0]
+tkern = sta[:,spmx]
+sta = sta.reshape( (num_lags, NY, NX))
 
-sta = Xstim.T @ Y
+for ilag in range(num_lags):    
+    plt.subplot(2, np.ceil(num_lags/2), ilag+1)
+    plt.imshow(sta[ilag,:,:], vmin=np.min(sta), vmax=np.max(sta))
 
-print("Done")
+plt.figure()
+plt.plot(tkern)
+cc += 1
 
-# # plot STAS
-# from scipy.stats import median_absolute_deviation
+#%% get temporal kernels
+from scipy.linalg import svd, norm
+tkern = np.zeros((num_lags,NC))
+for cc in range(NC):
+    sta = stas[:,:,cc]
+    spmx = np.where(sta==np.max(sta))[1][0]
+    tkern[:,cc] = sta[:,spmx]
 
-# NC = RobsAll.shape[1]
-# sx = np.ceil(np.sqrt(NC)).astype(int)
-# sy = np.round(np.sqrt(NC)).astype(int)
-# plt.figure(figsize=(10,10))
+plt.figure()
+plt.imshow(tkern)
 
-# mthresh = np.zeros(NC)
-# for cc in range(NC):
-#     plt.subplot(sx,sy,cc+1)
-#     I = np.reshape(sta[:,cc], [NX*NY, num_lags])
-#     thresh = median_absolute_deviation(I.flatten())
-    
-#     plt.plot(I.T, color='k')
-#     plt.axhline(thresh*5, color='r')
-#     plt.title(cc)
-#     mthresh[cc] = np.mean(I.flatten() > thresh*5)
+plt.figure()
+C = np.cov(tkern)
+plt.imshow(C)
+usv = svd(C)
+
+tkerns = usv[0][:,:2]*np.sign(np.sum(usv[0][:,:2], axis=0))
+plt.figure()
+f = plt.plot(tkerns)
+
+spatstas = np.zeros( (NX*NY, 2, NC))
+for ikern in range(2):
+    fstim = fftconvolve(stim, np.expand_dims(tkerns[:,ikern], axis=1))
+    fstim = fstim[:-num_lags+1,:]
+    spatstas[:,ikern,:] = fstim[valid,:].T @ Robs[valid,:]
+
+#%% plot spatial RFs
+plt.figure(figsize=(4,NC*2))
+for cc in range(NC):
+    plt.subplot(NC, 2, cc*2 + 1)
+    plt.imshow(spatstas[:,0,cc].reshape((NY, NX)))
+    plt.subplot(NC, 2, cc*2 + 2)
+    plt.imshow(spatstas[:,1,cc].reshape((NY, NX)))
 
 
-# plot STA for target neuron
-from scipy.stats import median_absolute_deviation
 
-Robs = deepcopy(RobsAll[rinds,:])
-Robs = Robs[:,cid]
-
-sta = Xstim.T @ (Robs - np.mean(Robs, axis=0))
-
-plt.figure(figsize=(4,2))
-
-plt.subplot(1, 2, 1)
-I = np.reshape(sta, [NX*NY, num_lags])
-tpower = np.std(I, axis=0)
-peaklag = np.argmax(tpower)
-
-spk = I[:,peaklag]
-mx = np.argmax(spk)
-mn = np.argmin(spk)
-
-plt.plot(I[mx,:], color='b')
-plt.plot(I[mn,:], color='r')
-
-plt.subplot(1, 2, 2)
-plt.imshow(np.reshape(spk, (NY, NX)), aspect='auto', interpolation='none', extent=ROI[np.array([0,2,1,3])]/ppd)
-
+#%%
 # set optimization parmeters
 adam_params = NDN.NDN.optimizer_defaults(opt_params={'use_gpu': True}, learning_alg='adam')
 
@@ -189,20 +198,24 @@ lbfgs_params = NDN.NDN.optimizer_defaults(opt_params={'use_gpu': True, 'display'
 lbfgs_params['maxiter'] = 1000
 
 # setup training indices
-NT = Xstim.shape[0]
+NT = stim.shape[0]
 valdata = np.arange(0,NT,1)
 
-NC = 1
+NC = Robs.shape[1]
 Ui, Xi = NDNutils.generate_xv_folds(NT, num_blocks=2)
+Ui = np.intersect1d(Ui, valid)
+Xi = np.intersect1d(Xi, valid)
 
 # GLM
-
+numbasis = 5
 # NDN parameters for processing the stimulus
 par = NDNutils.ffnetwork_params( 
-    input_dims=[1,NX,NY,num_lags], layer_sizes=[NC],
-    layer_types=['normal'], normalization=[0],
-    act_funcs=['softplus'], verbose=True,
-    reg_list={'d2x':[0.01], 'glocal':[0.1]})
+    input_dims=[1,NX,NY], time_expand=[num_lags],
+    layer_sizes=[2, NC],
+    layer_types=['temporal', 'normal'], normalization=[1, 0],
+    act_funcs=['lin', 'softplus'], verbose=True,
+    reg_list={'d2t': [0], 'd2x':[None, 1e-5], 'l1':[None, 1e-5]})
+
 
 # initialize GLM
 glm0 = NDN.NDN([par],  noise_dist='poisson')
@@ -211,42 +224,62 @@ glm0 = NDN.NDN([par],  noise_dist='poisson')
 # sta = (sta - np.min(sta)) / (np.max(sta) - np.min(sta))
 # glm0.networks[0].layers[0].weights[:,0]=deepcopy((sta - np.min(sta)) / (np.max(sta) - np.min(sta)))
 
-v2f0 = glm0.fit_variables(fit_biases=True)
+v2f0 = glm0.fit_variables(fit_biases=False)
+
+glm0.networks[0].layers[0].weights[:,:] = tkerns.astype('float32')
+glm0.networks[0].layers[1].weights[:,:] = spatstas.reshape((-1, NC)).astype('float32')
+#%%
+v2f0[-1][0]['weights'] = False
+v2f0[-1][-1]['biases'] = True
 
 # train initial model
-_ = glm0.train(input_data=[Xstim], output_data=Robs,
+_ = glm0.train(input_data=[stim], output_data=RobsAll,
     train_indxs=Ui, test_indxs=Xi,
     learning_alg='lbfgs', opt_params=lbfgs_params,
      fit_variables=v2f0)
 
+#%%
 # plot filters
 DU.plot_3dfilters(glm0)
 
-
+#%%
+LLx0 = glm0.eval_models(input_data=[stim], output_data=RobsAll, data_indxs=Xi, nulladjusted=True)
+LLx0
+#%%
 # Find best regularization
 
 glmbest = glm0.copy_model()
 
-
-[LLpath, glms] = NDNutils.reg_path(glmbest, input_data=[Xstim],
-    output_data=Robs, train_indxs=Ui, test_indxs=Xi,
-    reg_type='glocal', reg_vals=[1e-6, 1e-4, 1e-3, 1e-2, 0.1, 1],
-    layer_target=0, ffnet_target=0,
+[LLpath, glms] = NDNutils.reg_path(glmbest, input_data=[stim],
+    output_data=RobsAll, train_indxs=Ui, test_indxs=Xi,
+    reg_type='d2x', reg_vals=[1e-6, 1e-4, 1e-3, 1e-2, 0.1, 1],
+    layer_target=1, ffnet_target=0, fit_variables=v2f0,
     learning_alg='lbfgs', opt_params=lbfgs_params,
     silent=True)
 
+glmbest = glms[np.argmin(LLpath)-1].copy_model()
+
+[LLpath, glms] = NDNutils.reg_path(glmbest, input_data=[stim],
+    output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+    reg_type='l1', reg_vals=[1e-6, 1e-4, 1e-3, 1e-2, 0.1, 1],
+    layer_target=1, ffnet_target=0, fit_variables=v2f0,
+    learning_alg='lbfgs', opt_params=lbfgs_params,
+    silent=True)
 
 glmbest = glms[np.argmin(LLpath)].copy_model()
 
-[LLpath, glms] = NDNutils.reg_path(glmbest, input_data=[Xstim],
-    output_data=Robs, train_indxs=Ui, test_indxs=Xi,
-    reg_type='d2x', reg_vals=[1e-6, 1e-4, 1e-3, 1e-2, 0.1, 1],
-    layer_target=0, ffnet_target=0,
-    learning_alg='lbfgs', opt_params=lbfgs_params,
-    silent=True)
+#%%
+
+LLx0 = glmbest.eval_models(input_data=[stim], output_data=RobsAll, data_indxs=Xi, nulladjusted=True)
+LLx0
+#%%
+# plt.plot(LLx0, '-o')
+LLx0
+#%%
 
 
-glmbest = glms[np.argmin(LLpath)-1].copy_model()
+
+# glmbest = glms[np.argmin(LLpath)-1].copy_model()
 
 
 DU.plot_3dfilters(glmbest)
