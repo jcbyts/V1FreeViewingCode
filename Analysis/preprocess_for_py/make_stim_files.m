@@ -12,8 +12,9 @@ RoiS.('logan_20191231') = [-20 -60 50 10];
 %% load data
 
 close all
-sessId = 45;
-[Exp, S] = io.dataFactoryGratingSubspace(sessId, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
+sessId = 'logan_20200304';
+spike_sorting = 'kilowf';
+[Exp, S] = io.dataFactory(sessId, 'spike_sorting', spike_sorting, 'cleanup_spikes', 0);
 
 eyePosOrig = Exp.vpx.smo(:,2:3);
 
@@ -73,7 +74,6 @@ close all
 S.rect = RoiS.(strrep(Exp.FileTag, '.mat', ''));
 % pixels run down (where do we want to enforce this?)
 S.rect([2 4]) = sort(-S.rect([2 4]));
-fname = {};
 
 eyesmoothing = 19;
 
@@ -127,7 +127,33 @@ io.dataGenerateHdf5(Exp, S, options{:});
 %% Add Neuron meta data
 h5create(fname,'/Neurons/cgs', size(Exp.osp.cgs))
 h5write(fname, '/Neurons/cgs', Exp.osp.cgs)
-% TODO: include CSD depths / burstiness index
+% TODO: include CSD depths / burstiness index / different spike sorting
+
+%% add spike sorting
+
+goodspikes = ismember(Exp.osp.clu, Exp.osp.cids);
+
+h5create(fname, ['/Neurons/' spike_sorting '/cids'], size(Exp.osp.cids))
+h5write(fname, ['/Neurons/' spike_sorting '/cids'], Exp.osp.cids)
+
+h5create(fname, ['/Neurons/' spike_sorting '/times'], size(Exp.osp.st(goodspikes)))
+h5write(fname, ['/Neurons/' spike_sorting '/times'], Exp.osp.st(goodspikes))
+
+h5create(fname, ['/Neurons/' spike_sorting '/cluster'], size(Exp.osp.clu(goodspikes)))
+h5write(fname, ['/Neurons/' spike_sorting '/cluster'], Exp.osp.clu(goodspikes))
+
+h5create(fname, ['/Neurons/' spike_sorting '/cgs'], size(Exp.osp.cgs))
+h5write(fname, ['/Neurons/' spike_sorting '/cgs'], Exp.osp.cgs)
+
+h5create(fname, ['/Neurons/' spike_sorting '/peakval'], size([W.peakval]))
+h5write(fname, ['/Neurons/' spike_sorting '/peakval'], [W.peakval])
+
+h5create(fname, ['/Neurons/' spike_sorting '/troughval'], size([W.troughval]))
+h5write(fname, ['/Neurons/' spike_sorting '/troughval'], [W.troughval])
+
+exci = reshape([W.ExtremityCiRatio], 2, []);
+h5create(fname, ['/Neurons/' spike_sorting '/ciratio'], size(exci))
+h5write(fname, ['/Neurons/' spike_sorting '/ciratio'], exci)
 
 %% test that it worked
 id = 1;
@@ -156,6 +182,17 @@ colormap gray
 
 Stim = h5read(fname, ['/' stim '/' set '/Stim']);
 Robs = h5read(fname, ['/' stim '/' set '/Robs']);
+ftoe = h5read(fname, ['/' stim '/' set '/frameTimesOe']);
+frate = h5readatt(fname, ['/' stim '/' set '/Stim'], 'frate');
+st = h5read(fname, ['/Neurons/' spike_sorting '/times']);
+clu = h5read(fname, ['/Neurons/' spike_sorting '/cluster']);
+cids = h5read(fname, ['/Neurons/' spike_sorting '/cids']);
+sp.st = st;
+sp.clu = clu;
+sp.cids = cids;
+Robs = binNeuronSpikeTimesFast(sp, ftoe, 1/frate);
+
+% Robs = 
 eyeAtFrame = h5read(fname, ['/' stim '/' set '/eyeAtFrame']);
 labels = h5read(fname, ['/' stim '/' set '/labels']);
 NX = size(Stim,2);
@@ -167,29 +204,52 @@ Stim = reshape(Stim, size(Stim, 1), NX*NY);
 % reshape(Stim, 
 Stim = zscore(single(Stim));
 
-% only take central eye positions
-ecc = hypot(eyeAtFrame(:,2)-Exp.S.centerPix(1), eyeAtFrame(:,3)-Exp.S.centerPix(2))/Exp.S.pixPerDeg;
-ix = ecc > 5.1 | labels ~= 1;
-
+%% forward correlation
 NC = size(Robs,2);
-nlags = 10;
-NT = size(Stim,1);
-sx = ceil(sqrt(NC));
-sy = round(sqrt(NC));
+nlags = 20;
+Rdelta = Robs - mean(Robs);
+nstim = size(Stim,2);
+ecc = hypot(eyeAtFrame(:,2)-Exp.S.centerPix(1), eyeAtFrame(:,3)-Exp.S.centerPix(2))/Exp.S.pixPerDeg;
+ix = ecc < 5.2 & labels == 1;
 
-figure(1); clf
-stas = zeros(nlags, size(Stim,2), NC);
-
-for cc = 1:NC
-    rtmp = Robs(:,cc);
-    rtmp(ix) = 0; % remove spikes we don't want to analyze
-    sta = simpleSTC(Stim, rtmp, nlags);
-    subplot(sx, sy, cc, 'align')
-    plot(sta)
-    stas(:,:,cc) = sta;
-    drawnow
+stas = zeros(nlags, nstim, NC);
+for idim = 1:nstim
+    fprintf('%d/%d\n', idim, nstim)
+    Xstim = conv2(Stim(:,idim), eye(nlags), 'full');
+    Xstim = Xstim(1:end-nlags+1,:);
+    stas(:, idim, :) = Xstim(ix,:)'*Rdelta(ix,:);
 end
 
+% %%
+% % only take central eye positions
+% ecc = hypot(eyeAtFrame(:,2)-Exp.S.centerPix(1), eyeAtFrame(:,3)-Exp.S.centerPix(2))/Exp.S.pixPerDeg;
+% ix = ecc > 5.1 | labels ~= 1;
+% 
+% NC = size(Robs,2);
+% nlags = 10;
+% NT = size(Stim,1);
+% sx = ceil(sqrt(NC));
+% sy = round(sqrt(NC));
+% 
+% figure(1); clf
+% stas = zeros(nlags, size(Stim,2), NC);
+% 
+% for cc = 1:NC
+%     if sum(Robs(:,cc))==0
+%         continue
+%     end
+%     rtmp = Robs(:,cc);
+%     rtmp(ix) = 0; % remove spikes we don't want to analyze
+%     rtmp = rtmp - mean(rtmp);
+%     sta = simpleRevcorr(Stim, rtmp, nlags);
+%     subplot(sx, sy, cc, 'align')
+%     plot(sta)
+%     stas(:,:,cc) = sta;
+%     drawnow
+% end
+% 
+% %%
+% % clearvars -except Exp Stim Robs
 %%
 cc = 0;
 
