@@ -2,8 +2,8 @@
 import sys
 sys.path.insert(0, '/home/jake/Data/Repos/')
 # import deepdish as dd
-import Utils as U
-import gratings as gt
+import V1FreeViewingCode.Analysis.notebooks.Utils as U
+import V1FreeViewingCode.Analysis.notebooks.gratings as gt
 
 import warnings; warnings.simplefilter('ignore')
 import NDN3.NDNutils as NDNutils
@@ -1142,7 +1142,7 @@ cgs = np.asarray([N[cc]['cg'] for cc in range(len(N))])
 # convert from von Mises parameter to bandwidth
 val = 1/np.sqrt(2)
 oriHW = np.arccos(np.log(val)*oriBw + 1)/np.pi*180
-sfHW = convertSFsigmaToHW(sfPref, sfBw, val=1/np.sqrt(2))
+sfHW = convertSFsigmaToHW(sfPref, sfBw, val=val)
 #%% depth by session
 sessions = np.unique(sess)
 for s in sessions:
@@ -1192,7 +1192,7 @@ i = 1
 s = sessions[i]
 ix = sess==s
 snum = np.where(s==sessions)[0]
-ix = np.logical_and(ix, LLx0 > .05)
+ix = np.logical_and(ix, LLx0 > 0)
 ix = np.logical_and(ix, locality.flatten() < .5)
 # plt.hist(ori[ix])
 if np.sum(ix)>0:
@@ -1200,9 +1200,13 @@ if np.sum(ix)>0:
 plt.xlim([0, 180])
 
 clist = np.where(ix)[0]
-for cc in [clist[0]]:
+for cc in clist:
     gt.plot_RF_and_fit(N[cc]['RFfit'])
     plt.title("%d, %02.2f" %(cc, ori[cc]))
+    
+#%%
+plt.close("all")
+
 #%% sanity check colormap
 plt.figure()
 for i in range(numOri-1):
@@ -1318,6 +1322,8 @@ plt.xlabel('Suppressive post-trough')
 plt.axvline(0, color='k', linestyle='--')
 plt.text(0.75, 1000, 'n = %d' %len(ix))
 
+
+
 #%% plot latency with depth
 plt.figure(figsize=(10,5))
 
@@ -1362,7 +1368,7 @@ plt.xlabel('Ori Bandwidth')
 plt.ylabel('SF BandWidth')
 sns.despine()
 
-#%%
+#%% plot 
 plt.plot(rfEcc[ix], sfPref[ix], '.')
 plt.xscale("log")
 plt.xlabel("Eccentricy (d.v.a)")
