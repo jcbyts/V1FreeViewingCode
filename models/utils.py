@@ -8,6 +8,9 @@ def get_trainer(dataset,
         auto_lr=False,
         batchsize=1000,
         earlystopping=True,
+        earlystoppingpatience=10,
+        max_epochs=150,
+        num_workers=1,
         seed=None):
     """
     Returns a pytorch lightning trainer and splits the training set into "train" and "valid"
@@ -26,11 +29,11 @@ def get_trainer(dataset,
     gd_train, gd_val = random_split(dataset, lengths=[n_train, n_val])
 
     # build dataloaders
-    train_dl = DataLoader(gd_train, batch_size=batchsize)
-    valid_dl = DataLoader(gd_val, batch_size=batchsize)
+    train_dl = DataLoader(gd_train, batch_size=batchsize, num_workers=num_workers, pin_memory=True)
+    valid_dl = DataLoader(gd_val, batch_size=batchsize, num_workers=num_workers, pin_memory=True)
 
     # Train
-    early_stop_callback = EarlyStopping(monitor='val_loss', min_delta=0.0)
+    early_stop_callback = EarlyStopping(monitor='val_loss', min_delta=0.0, patience=earlystoppingpatience)
     checkpoint_callback = ModelCheckpoint(monitor='val_loss')
 
     logger = TestTubeLogger(
@@ -58,7 +61,7 @@ def get_trainer(dataset,
             gradient_clip_val=0,
             accumulate_grad_batches=1,
             progress_bar_refresh_rate=20,
-            max_epochs=300,
+            max_epochs=max_epochs,
             auto_lr_find=auto_lr)
 
     if seed:

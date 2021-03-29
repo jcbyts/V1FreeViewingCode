@@ -1905,7 +1905,7 @@ def polarRF(xy, amplitude, xo, yo, sigma_x, sigma_y, offset):
     x = x/180*np.pi
     xo = float(xo)/180.0*np.pi
     yo = float(yo)
-    oriRF = (np.cos(x-xo) - 1)/(sigma_x + 1e-10)
+    oriRF = (np.cos(x-xo)**2 - 1)/(sigma_x + 1e-10)
     # plt.figure()
     # plt.plot(x[:,0],np.exp(oriRF[:,0]))
     lpow = 10
@@ -1916,7 +1916,7 @@ def polarRF(xy, amplitude, xo, yo, sigma_x, sigma_y, offset):
     g = offset + amplitude*np.exp(sfRF+oriRF)
     return g.ravel()
 
-def fit_polar_rf(wts, basis, plotit=False, initial_guess=[]):
+def fit_polar_rf(wts, basis=None, plotit=False, initial_guess=[]):
     '''
     Fit a parametric model to the polar RF assuming that Orientation and Spatial-Frequency
     are separable
@@ -1934,14 +1934,19 @@ def fit_polar_rf(wts, basis, plotit=False, initial_guess=[]):
     plot_RF_and_fit(D)
     '''
     import scipy.optimize as opt
-    # Create x and y indices
-    xax = np.linspace(0, 180, basis['support'])
-    yax = np.linspace(0, 10, basis['support'])
+
+    if basis is not None:
+        # Create x and y indices
+        n = basis['support']
+        rf = (basis['B']@wts).reshape(n,n).T
+    else:
+        rf = wts
+        n = rf.shape[0]
+    
+    xax = np.linspace(0, 180, n)
+    yax = np.linspace(0, 10, n)
+
     rho, th = np.meshgrid(yax, xax)
-
-    # project RF on basis
-    rf = (basis['B']@wts).reshape(basis['support'],basis['support']).T
-
     # guess initial parameters
     id = np.argmax(rf)
     th0 = th.ravel()[id]
@@ -1970,7 +1975,7 @@ def fit_polar_rf(wts, basis, plotit=False, initial_guess=[]):
         ax = fig.add_subplot(122, polar=True)
 
         guess0 = polarRF((th,rho),initial_guess[0],initial_guess[1],initial_guess[2],initial_guess[3],initial_guess[4],initial_guess[5])
-        plt.contourf(th/180*np.pi,rho,guess0.reshape(basis['support'], basis['support']), cmap='coolwarm')
+        plt.contourf(th/180*np.pi,rho,guess0.reshape(n,n), cmap='coolwarm')
         ax.set_thetamin(0)
         ax.set_thetamax(180)
         ax.set_xticks(np.arange(0, np.pi+.1, np.pi/4))
@@ -1996,7 +2001,7 @@ def fit_polar_rf(wts, basis, plotit=False, initial_guess=[]):
 
         ax = fig.add_subplot(122, polar=True)
         guess0 = polarRF((th,rho),popt[0],popt[1],popt[2],popt[3],popt[4],popt[5])
-        plt.contourf(th/180*np.pi,rho,guess0.reshape(basis['support'], basis['support']), cmap='coolwarm')
+        plt.contourf(th/180*np.pi,rho,guess0.reshape(n,n), cmap='coolwarm')
         ax.set_thetamin(0)
         ax.set_thetamax(180)
         ax.set_xticks(np.arange(0, np.pi+.1, np.pi/4))
@@ -2005,7 +2010,7 @@ def fit_polar_rf(wts, basis, plotit=False, initial_guess=[]):
     D = {'RF': rf,
         'xax': xax,
         'yax': yax,
-        'fit': guess0.reshape(basis['support'], basis['support']),
+        'fit': guess0.reshape(n,n),
         'thPref': popt[1],
         'sfPref': popt[2],
         'Amp': popt[0],

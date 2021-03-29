@@ -90,12 +90,9 @@ class Encoder(LightningModule):
             self.logger.experiment.add_text('readout', str(dict(self.readout.hparams)))
 
         avg_val_loss = torch.tensor([x['loss'] for x in validation_step_outputs]).mean()
-        tqdm_dict = {'val_loss': avg_val_loss}
 
-        return {
-                'progress_bar': tqdm_dict,
-                'log': {'val_loss': avg_val_loss},
-        }
+        self.log('val_loss', avg_val_loss, on_step=False, on_epoch=True, prog_bar=True)
+        return
 
 
     def configure_optimizers(self):
@@ -149,6 +146,7 @@ class EncoderMod(LightningModule): # IN PROGRESS
         readout=Readout(),
         output_nl=nn.Softplus(),
         modifiers=None,
+        gamma_mod=.1,
         loss=nn.PoissonNLLLoss(log_input=False),
         val_loss=None,
         detach_core=False,
@@ -161,6 +159,7 @@ class EncoderMod(LightningModule): # IN PROGRESS
         amsgrad=False,
         betas=[.9,.999],
         max_iter=10000,
+        lrscheduler=True,
         **kwargs):
 
         super().__init__()
@@ -169,7 +168,7 @@ class EncoderMod(LightningModule): # IN PROGRESS
         self.detach_core = detach_core
         self.save_hyperparameters('learning_rate','batch_size',
             'num_workers', 'data_dir', 'optimizer', 'weight_decay', 'amsgrad', 'betas',
-            'max_iter','modifiers')
+            'max_iter','modifiers', 'gamma_mod', 'lrscheduler')
         
         # initialize variables for modifier: these all need to be here regardless of whether the modifiers are used so we can load the model checkpoints
         self.offsets = nn.ModuleList()
@@ -289,9 +288,16 @@ class EncoderMod(LightningModule): # IN PROGRESS
 
         loss = self.loss(y_hat, y)
         regularizers = int(not self.detach_core) * self.core.regularizer() + self.readout.regularizer()
+        # regularizers for modifiers
+        reg = 0
+        if self.modify:
+            for imod in range(len(self.offsets)):
+                reg += self.offsets[imod].weight.pow(2).sum().sqrt()
+            for imod in range(len(self.gains)):
+                reg += self.offsets[imod].weight.pow(2).sum().sqrt()
 
-        self.log('train_loss', loss + regularizers)
-        return {'loss': loss + regularizers}
+        self.log('train_loss', loss, 'reg_pen', regularizers + self.hparams.gamma_mod * reg)
+        return {'loss': loss + regularizers + self.hparams.gamma_mod * reg}
     
     def validation_step(self, batch, batch_idx):
 
@@ -319,12 +325,9 @@ class EncoderMod(LightningModule): # IN PROGRESS
             self.logger.experiment.add_text('readout', str(dict(self.readout.hparams)))
 
         avg_val_loss = torch.tensor([x['loss'] for x in validation_step_outputs]).mean()
-        tqdm_dict = {'val_loss': avg_val_loss}
 
-        return {
-                'progress_bar': tqdm_dict,
-                'log': {'val_loss': avg_val_loss},
-        }
+        self.log('val_loss', avg_val_loss, on_step=False, on_epoch=True, prog_bar=True)
+        return
 
 
     def configure_optimizers(self):
@@ -343,9 +346,13 @@ class EncoderMod(LightningModule): # IN PROGRESS
             optimizer = torch.optim.Adam(self.parameters(),
             lr=self.hparams.learning_rate)
         
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+        if self.hparams.lrscheduler:
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+            out = {'optimizer': optimizer, 'lr_scheduler': scheduler, 'monitor': 'val_loss'}
+        else:
+            out = optimizer
         
-        return {'optimizer': optimizer, 'lr_scheduler': scheduler, 'monitor': 'val_loss'}
+        return out
     
     def on_save_checkpoint(self, checkpoint):
         # track the core, readout, shifter class and state_dicts
@@ -451,12 +458,8 @@ class GLM(LightningModule):
     def validation_epoch_end(self, validation_step_outputs):
         # logging
         avg_val_loss = torch.tensor([x['loss'] for x in validation_step_outputs]).mean()
-        tqdm_dict = {'val_loss': avg_val_loss}
-
-        return {
-                'progress_bar': tqdm_dict,
-                'log': {'val_loss': avg_val_loss},
-        }
+        self.log('val_loss', avg_val_loss, on_step=False, on_epoch=True, prog_bar=True)
+        return
 
 
     def configure_optimizers(self):

@@ -491,6 +491,83 @@ class NimCore(Core):
 
 
 """
+2D Convolutional Core With Linear Orthogonal Filters
+"""
+class LinearOrthBasis2D(Core2d):
+    def __init__(
+        self,
+        input_channels,
+        num_channels,
+        kernel_size=15,
+        regularizer="RegMats",
+        reg_types=["d2xt", "local","center"],
+        reg_amt=[.25,.25,.25],
+        weight_norm=True,
+        group_norm=True,
+        num_groups=4,
+        gamma_orth=1,
+        pad_input=True,
+        bias=False):
+
+        super().__init__()
+
+        regularizer_config = {'dims': [input_channels, kernel_size, kernel_size],
+                            'type': reg_types, 'amount': reg_amt}
+        self._weights_regularizer = regularizers.__dict__[regularizer](**regularizer_config)
+        self.save_hyperparameters()
+        self.gamma_orth = gamma_orth
+        self.num_channels = num_channels
+        self.flatten = nn.Flatten()
+        self.features = nn.Sequential()
+        self.register_buffer('I', torch.eye(num_channels))
+        # --- first layer
+        layer = OrderedDict()
+        if weight_norm:
+            layer["conv"] = nn.utils.weight_norm(nn.Conv2d(
+                input_channels,
+                num_channels,
+                kernel_size,
+                padding=kernel_size // 2 if pad_input else 0,
+                bias=bias and not group_norm),
+                dim=0, name='weight')
+        else:
+            layer["conv"] = nn.Conv2d(
+                input_channels,
+                num_channels,
+                kernel_size,
+                padding=kernel_size // 2 if pad_input else 0,
+                bias=bias and not group_norm,
+            )
+
+        if group_norm:
+            layer["norm"] = nn.GroupNorm(num_groups, num_channels)
+
+        self.features.add_module("layer0", nn.Sequential(layer))
+    
+    def forward(self, input_):
+        return self.features(input_)
+
+    def weight_reg(self):
+        return self._weights_regularizer(self.features[0].conv.weight)
+
+    def orth_reg(self):
+        w = self.features[0].conv.weight
+        w = self.flatten(w)
+        w = w.T/w.norm(dim=1)
+        offdiag = self.I - w.T@w
+
+        return offdiag.pow(2).sum().sqrt()
+
+    def regularizer(self):
+        return self.weight_reg() + self.gamma_orth * self.orth_reg()
+
+    @property
+    def outchannels(self):
+        return self.num_channels
+
+
+
+"""
 STACKED 2D Convolutional Core (based on Sinz lab code)
 """
 class Stacked2dCore(Core2d):
@@ -668,7 +745,7 @@ class Stacked2dEICore(Stacked2dCore):
         input_kern=9,
         hidden_kern=9,
         prop_inh=.5,
-        activation="elu",
+        activation="relu",
         final_nonlinearity=True,
         bias=False,
         pad_input=True,

@@ -156,6 +156,8 @@ class Point2DGaussian(Readout):
                 bias=True,
                 init_mu_range=0.1,
                 init_sigma=1,
+                gamma_l1=0.001,
+                gamma_l2=0.1,
                 batch_sample=True,
                 align_corners=True,
                 gauss_type='uncorrelated',
@@ -416,6 +418,8 @@ class Point2DGaussian(Readout):
         else:
             out = self.shifter(self.regvalplaceholder).abs().sum()*10
         # enforce the shifter to have 0 shift at 0,0 in
+        feat = self.features
+        out = out + self.hparams.gamma_l2 * feat.pow(2).mean().sqrt() + self.hparams.gamma_l1 * feat.abs().mean()
         return out
 
     def __repr__(self):
