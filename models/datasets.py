@@ -10,6 +10,8 @@ def get_stim_list(id):
             '20191120a':'logan_20191120a_-20_-10_50_60_0_19_0_1.hdf5',
             '20191121': 'logan_20191121_-20_-20_50_50_0_19_0_1.hdf5',
             '20191122': 'logan_20191122_-20_-10_50_60_0_19_0_1.hdf5',
+            '20191205': 'logan_20191205_-20_-10_50_60_0_19_0_1.hdf5',
+            '20191206': 'logan_20191206_-20_-10_50_60_0_19_0_1.hdf5',
             '20191231': 'logan_20191231_-20_-10_50_60_0_19_0_1.hdf5',
             '20200304': 'logan_20200304_-20_-10_50_60_0_19_0_1.hdf5',
             '20200306': 'logan_20200306_Gabor_-20_-10_40_60_2_2_0_9_0.mat'
@@ -459,7 +461,7 @@ class PixelDataset(Dataset):
         n = im.shape[0]
         grid = F.affine_grid(affine_trans, torch.Size((n, 1, sz[0], sz[1])), align_corners=True)
 
-        im2 = F.grid_sample(im, grid)
+        im2 = F.grid_sample(im, grid, align_corners=True)
         im2 = im2[:,0,:,:].permute((1,2,0)).detach().cpu().numpy()
 
         return im2

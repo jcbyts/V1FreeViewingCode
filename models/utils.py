@@ -80,8 +80,21 @@ def find_best_epoch(ckpt_folder):
     try:
         # ckpt_files = listdir(ckpt_folder)  # list of strings
         ckpt_files = list(ckpt_folder.glob('*.ckpt'))
-        epochs = [int(str(filename)[str(filename).find('=')+1:-5]) for filename in ckpt_files]  # 'epoch={int}.ckpt' filename format
+        epochs = []
+        fname = []
+        for f in ckpt_files:
+            n = f.name
+            fname.append(n)
+            start = n.find("=")
+            step = n.find("step")
+            if step < 0:
+                epochs.append(int(n[start+1:-5]))
+            else:
+                epochs.append(int(n[start+1:step-1]))
+
         out = max(epochs)
+        fn = [fname[i] for i in range(len(epochs)) if epochs[i]==out]
+        out = fn[0]
     except FileNotFoundError:
         out = None
     return out
