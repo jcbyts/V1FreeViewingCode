@@ -31,15 +31,17 @@ import pickle
 import pandas as pd
 
 from pathlib import Path
+
+from scipy.ndimage import gaussian_filter
+
+
+
 # %% Check that it was run and load the best models
 figDir = "/home/jake/Data/Repos/V1FreeViewingCode/Figures/2021_pytorchmodeling"
 
 # sessid = "20200304_kilowf"
 sessid = "20191119_kilowf"
 
-# make_figures(name=)
-# sessid = "20191120a_kilowf"
-# sessid = "20191122_kilowf"
 lengthscale = 1 # the default is 1
 save_dir='../../checkpoints/v1calibration_ls{}'.format(lengthscale)
 
@@ -58,12 +60,7 @@ else:
     print("foveal_stas: need to run fit_shifter for %s" %sessid)
 
 
-#%% LOAD ALL DATASETS
-
-# build tent basis for saccades
-n = 40
-num_basis = 15
-B = np.maximum(1 - np.abs(np.expand_dims(np.asarray(np.arange(0,n)), axis=1) - np.arange(0,n,n/num_basis))/n*num_basis, 0)
+#%% LOAD DATASETS with shifter
 
 import V1FreeViewingCode.models.datasets as dd
 import importlib
@@ -73,191 +70,137 @@ gd = dd.PixelDataset(sessid, stims=["Dots", "Gabor"], #, "BackImage", "Grating",
     downsample_t=t_downsample,
     downsample_s=1,
     valid_eye_rad=5.2,
-    include_frametime={'num_basis': 40, 'full_experiment': False},
-    include_saccades=[{'name':'sacon', 'basis':B, 'offset':-20}, {'name':'sacoff', 'basis':B, 'offset':0}],
+    shifter=shifter,
     include_eyepos=True,
     preload=True)
 
+
+#%% get sample
 sample = gd[:]
-
-# from V1FreeViewingCode.Analysis.manuscript_freeviewingmethods.v1_tracker_calibration import make_figures
-
-
-
-# %% Plot all shifters
-
-# build inputs for shifter plotting
-nspace = 100
-xax = np.linspace(-gd.valid_eye_rad, gd.valid_eye_rad,nspace)
-xx,yy = np.meshgrid(xax,xax)
-xgrid = torch.tensor( xx.astype('float32').reshape( (-1,1)))
-ygrid = torch.tensor( yy.astype('float32').reshape( (-1,1)))
-
-inputs = torch.cat( (xgrid,ygrid), dim=1)
-
-nshifters = len(shifters)
-
-fig = plt.figure(figsize=(7,nshifters*2))
-shiftX = []
-shiftY = []
-
-for i in range(nshifters):
-    y = shifters[i](inputs)
-
-    y2 = y.detach().cpu().numpy()
-    y2/=gd.valid_eye_rad/60 # convert to arcmin
-    vmin = np.min(y2)
-    vmax = np.max(y2)
-
-    plt.subplot(nshifters,2,i*2+1)
-    im = plt.contourf(xax, xax, y2[:,0].reshape((nspace,nspace)), vmin=vmin, vmax=vmax)
-
-    if i == 0:
-        plt.title("Horizontal")
-
-    plt.colorbar(im)
-
-    plt.subplot(nshifters,2,i*2+2)
-    im = plt.contourf(xax, xax, y2[:,1].reshape((nspace,nspace)), vmin=vmin, vmax=vmax) #, extent=(-gd.valid_eye_rad,gd.valid_eye_rad,-gd.valid_eye_rad,gd.valid_eye_rad), interpolation=None, vmin=vmin, vmax=vmax)
-    if i == 0:
-        plt.title("Vertical")
-
-    plt.colorbar(im)
-
-    shiftX.append(y2[:,0].reshape((nspace,nspace)))
-    shiftY.append(y2[:,1].reshape((nspace,nspace)))
-
-
-plt.savefig(figDir + "/shifters_" + gd.id + ".pdf", bbox_inches='tight')
-
-#%% calculate mean and standard deviation across shifters
-Xarray = np.asarray(shiftX)
-Yarray = np.asarray(shiftY)
-mux = Xarray.mean(axis=0)
-sdx = Xarray.std(axis=0)
-
-muy = Yarray.mean(axis=0)
-sdy = Yarray.std(axis=0)
-
-
-# plt.plot(mux.flatten(), sdx.flatten(), '.')
-# plt.plot(muy.flatten(), sdy.flatten(), '.')
-
-# %% shift stimulus
-def shift_stim(im, shift, gd):
-    import torch.nn.functional as F
-    affine_trans = torch.tensor([[[1., 0., 0.], [0., 1., 0.]]])
-    aff = torch.tensor([[1,0,0],[0,1,0]])
-
-    affine_trans = shift[:,:,None]+aff[None,:,:]
-    affine_trans[:,0,0] = 1
-    affine_trans[:,0,1] = 0
-    affine_trans[:,1,0] = 0
-    affine_trans[:,1,1] = 1
-
-    n = im.shape[0]
-    grid = F.affine_grid(affine_trans, torch.Size((n, gd.num_lags, gd.NY,gd.NX)), align_corners=True)
-
-    im2 = F.grid_sample(im, grid, mode='bilinear', align_corners=True)
-    return im2
-    
-
-# select stimulus
-if 'Dots' in gd.stims:
-    stimuse = [i for i,s in zip(range(len(gd.stims)), gd.stims) if 'Dots' == s][0]
-elif 'Gabor' in gd.stims:
-    stimuse = [i for i,s in zip(range(len(gd.stims)), gd.stims) if 'Gabor' == s][0]
-
-
-index = np.where(gd.stim_indices==stimuse)[0]
-sample = gd[index] # load sample 
-
-# # use average shift
-# shift = 0
-# for i in range(nshifters):
-#     shift = shift + shifters[i](sample['eyepos']).detach() # shifters[1](sample['eyepos']).detach()
-# shift = shift / nshifters
-
-# use best model
-bestver = np.argmin(valloss)
-shift = shifters[bestver](sample['eyepos']).detach()
-y = shifters[bestver](inputs)
-y2 = y.detach().cpu().numpy()
-
 im = sample['stim'].detach().clone()
-im2 = shift_stim(im, shift, gd)
-
-#%% plot shift
-plt.figure(figsize=(10,5))
-plt.subplot(1,3,1)
-plt.imshow(im[0,0,:,:])
-plt.subplot(1,3,2)
-plt.imshow(im2[0,0,:,:])
-plt.subplot(1,3,3)
-plt.imshow(im[0,0,:,:] - im2[0,0,:,:])
 
 #%% new STAs on shifted stimulus
-stas = torch.einsum('nlwh,nc->lwhc', im, sample['robs']-sample['robs'].mean(dim=0))
+crop = [20, 50, 0, 30]
+stas = torch.einsum('nlwh,nc->lwhc', im[:,:,crop[2]:crop[3], crop[0]:crop[1]], sample['robs']-sample['robs'].mean(dim=0))
 sta = stas.detach().cpu().numpy()
-stas = torch.einsum('nlwh,nc->lwhc', im2, sample['robs']-sample['robs'].mean(dim=0))
-sta2 = stas.detach().cpu().numpy()
-# plt.close('all')
+
 #%%
 extent = np.round(gd.rect/gd.ppd*60)
 extent = np.asarray([extent[i] for i in [0,2,3,1]])
 
 # plotting
 NC = sta.shape[3]
-# plt.figure(figsize=(8,NC*2))
+sx = np.ceil(np.sqrt(NC))
+sy = np.round(np.sqrt(NC))
+
+plt.figure(figsize=(sx*2, sy*4))
+
+Ispat = 0
 for cc in range(NC):
-    plt.figure(figsize=(8,2))
+    plt.subplot(sx, sy, cc+1)
     
     w = sta[:,:,:,cc]    
-    w2 = sta2[:,:,:,cc]
 
-    bestlag = np.argmax(np.std(w2.reshape( (gd.num_lags, -1)), axis=1))
+    bestlag = np.argmax(np.std(w.reshape( (gd.num_lags, -1)), axis=1))
     
     w = (w -np.mean(w[bestlag,:,:]) )/ np.std(w)
-    w2 = (w2 -np.mean(w2[bestlag,:,:]) )/ np.std(w2)
 
-
-    plt.subplot(1,4,3)
-    # plt.subplot(NC,4, cc*4 + 1)
-    v = np.max(np.abs(w2))
-    plt.imshow(w2[bestlag,:,:], aspect='auto', interpolation=None, vmin=-v, vmax=v, cmap="coolwarm", extent=extent)
-    plt.title("After")
-    plt.xlabel("arcmin")
-    plt.ylabel("arcmin")
-    # plt.subplot(NC,4, cc*4 + 2)
-    plt.subplot(1,4,4)
-    i,j=np.where(w2[bestlag,:,:]==np.max(w2[bestlag,:,:]))
-    plt.plot(w2[:,i[0], j[0]], '-ob')
-    i,j=np.where(w2[bestlag,:,:]==np.min(w2[bestlag,:,:]))
-    plt.plot(w2[:,i[0], j[0]], '-or')
-    yd = plt.ylim()
-    # sns.despine(offset=0, trim=True)
-    plt.xlabel("Lag (frame=8ms)")
-
-    # plt.subplot(NC,4, cc*4 + 3)
-    plt.subplot(1,4,1)
+    v = np.max(np.abs(w))
     plt.imshow(w[bestlag,:,:], aspect='auto', interpolation=None, vmin=-v, vmax=v, cmap="coolwarm", extent=extent)
-    plt.title("Before")
+    plt.title("%d" %cc)
     plt.xlabel("arcmin")
     plt.ylabel("arcmin")
 
-    plt.subplot(1,4,2)
-    # plt.subplot(NC,4, cc*4 + 4)
-    i,j=np.where(w[bestlag,:,:]==np.max(w[bestlag,:,:]))
-    plt.plot(w[:,i[0], j[0]], '-ob')
-    i,j=np.where(w[bestlag,:,:]==np.min(w[bestlag,:,:]))
-    plt.plot(w[:,i[0], j[0]], '-or')
-    plt.axvline(bestlag, color='k', linestyle='--')
-    plt.ylim(yd)
-    # sns.despine(offset=0, trim=True)
-    plt.xlabel("Lag (frame=8ms)")
-    # plt.show()
-    plt.savefig(figDir + "/sta_shift" + gd.id + "_" + str(cc) + ".pdf", bbox_inches='tight')
-    plt.close('all')
+    Ispat += np.abs(w[bestlag,:,:])
+
+    # plt.subplot(sx, sy, cc*2+2)
+    # i,j=np.where(w[bestlag,:,:]==np.max(w[bestlag,:,:]))
+    # plt.plot(w[:,i[0], j[0]], '-ob')
+    # i,j=np.where(w[bestlag,:,:]==np.min(w[bestlag,:,:]))
+    # plt.plot(w[:,i[0], j[0]], '-or')
+    # yd = plt.ylim()
+    # plt.xlabel("Lag (frame=8ms)")
+
+#%%
+plt.figure()
+plt.imshow(Ispat)
+
+
+
+#%% get data for fitting
+f = nn.Flatten()
+dt = 1/gd.frate
+dims = sample['stim'][:,:,crop[2]:crop[3], crop[0]:crop[1]].shape[1:]
+df = [i - 2 for i in dims]
+stim = f(sample['stim'][:,0,crop[2]:crop[3], crop[0]:crop[1]]).detach().cpu().clone().numpy()
+robs = sample['robs'].detach().cpu().numpy()
+del gd
+
+
+# dims = [25, 20, 15]
+
+#%%
+from rfest import ALD
+#%%
+robs.shape
+#%%
+# stim.shape
+
+X = build_design_matrix(stim, dims[0])
+X.shape
+#%%
+import copy
+dt = 1/240
+
+df = [5, 15, 15]
+sigma0 = [1.]
+rho0 = [1.]
+params_t0 = [3., 20., 1., 1.] # taus, nus, tauf, nuf
+params_y0 = [3., 20., 1., 1.]
+params_x0 = [3., 20., 1., 1.]
+p0 = sigma0 + rho0 + params_t0 + params_y0 + params_x0
+
+
+lsgs = []
+for cc in [13]:
+    
+    
+    y = robs[:,cc]
+    y = gaussian_filter(y, sigma=2, truncate=0.25)
+    # (X_train, y_train), (X_dev, y_dev), (X_test, y_test) = split_data(X[:10000,:], y[:10000], dt, frac_train=0.8, frac_dev=0.1)
+    
+    #%%
+    # lnp = splineLNP(X_train, y_train, dims, df, dt=dt, nonlinearity='exponential')
+    # lg = splineLG(X_train, y_train, dims=dims, dt=dt, df=df)
+    # lg = splineLG(X, y, dims=dims, dt=dt, df=df)
+    # lg.fit(metric='corrcoef',
+    #       num_iters=3000, verbose=0, tolerance=10,
+    #       beta=0.01)
+
+    # lgs.append(copy.deepcopy(lg))
+    # lnp.fit(extra={'X': X_dev, 'y': y_dev}, metric='corrcoef',
+    #     num_iters=300, verbose=300, tolerance=10,
+    #     beta=0.01)
+
+    ald = ALD(X[:5000], y[:5000], dims=dims)
+    ald.fit(p0=p0, num_iters=30, verbose=10)
+    lgs.append(copy.deepcopy(ald))
+#%%
+plot3d(lg, X,y, len_time=1, response_type='spike')
+
+
+#%%
+
+# select stimulus
+# if 'Dots' in gd.stims:
+#     stimuse = [i for i,s in zip(range(len(gd.stims)), gd.stims) if 'Dots' == s][0]
+# elif 'Gabor' in gd.stims:
+#     stimuse = [i for i,s in zip(range(len(gd.stims)), gd.stims) if 'Gabor' == s][0]
+
+
+# index = np.where(gd.stim_indices==stimuse)[0]
+sample = gd[:] # load sample 
+
 
 # %% save everything out for matlab
 import scipy.io as sio
