@@ -10,11 +10,14 @@ addpath Analysis/manuscript_freeviewingmethods/
 
 % everything reconstructed within an ROI: This is set
 RoiS = struct();
-RoiS.('logan_20200304') = [-20 -60 50 10];
-RoiS.('logan_20200306') = [-20 -60 50 10];
+
 RoiS.('logan_20191231') = [-20 -60 50 10];
 RoiS.('logan_20191119') = [-20 -60 50 10];
 RoiS.('logan_20191121') = [-20 -50 50 20];
+
+RoiS.('logan_20200304') = [-20 -60 50 10];
+RoiS.('logan_20200304') = [-20 -60 50 10];
+RoiS.('logan_20200306') = [-20 -60 50 10];
 
 %% load data
 sesslist = io.dataFactory();
@@ -37,11 +40,11 @@ eyePosOrig = Exp.vpx.smo(:,2:3);
 % end
 
 
-%% get visually driven units
+% get visually driven units
 BIGROI = [-14   -10    14    10]*Exp.S.pixPerDeg;
 [spkS, W] = io.get_visual_units(Exp, 'plotit', true, 'numTemporalBasis', 10); %, 'ROI', BIGROI);
 
-%% plot spatial RFs to try to select a ROI
+% plot spatial RFs to try to select a ROI
 unit_mask = 0;
 NC = numel(spkS);
 hasrf = find(~isnan(arrayfun(@(x) x.x0, spkS)));
@@ -103,25 +106,58 @@ ylabel('Elevation (pixels)')
 
 
 %% regenerate data with the following parameters
-close all
 
-% pixels run down so enforce this here
-S.rect([2 4]) = sort(-S.rect([2 4]));
-fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'Dots', 'Gabor', 'BackImage', 'Grating', 'FixRsvpStim'}, 'overwrite', false);
+%% load data
+sesslist = io.dataFactory();
 
+%%
+sessnums = 31; %[35:40 42 44:57]; % foveal sessions
+flist = cell(numel(sessnums),1);
+for ii = 1:numel(sessnums)
+    sessId = sesslist{sessnums(ii)}; %'logan_20200304';
+    fprintf('Running session %s\n', sessId);
+    
+    close all
+    
+    spike_sorting = 'kilowf';
+    [Exp, S] = io.dataFactory(sessId, 'spike_sorting', spike_sorting, 'cleanup_spikes', 0);
+    
+    try
+        eyePosOrig = Exp.vpx.smo(:,2:3);
+        
+        % correct eye-position offline using the eye position measurements on the
+        eyePos = io.getCorrectedEyePos(Exp, 'plot', true, 'usebilinear', false);
+        
+        lam = .5; % mixing between original eye pos and corrected eye pos
+        Exp.vpx.smo(:,2:3) = lam*eyePos + (1-lam)*Exp.vpx.smo(:,2:3);
+    end
+    
+    close all
+    if isfield(RoiS, sessId)
+        S.rect = RoiS.(sessId);
+    end
+    
+    % pixels run down so enforce this here
+    S.rect([2 4]) = sort(-S.rect([2 4]));
+    fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'Dots', 'Gabor', 'BackImage', 'Grating', 'FixRsvpStim'}, 'overwrite', false);
+    
+    flist{ii} = fname;
+end
 %% copy to server
-server_string = 'jake@bancanus'; %'jcbyts@sigurros';
-output_dir = '/home/jake/Data/Datasets/MitchellV1FreeViewing/stim_movies/'; %/home/jcbyts/Data/MitchellV1FreeViewing/stim_movies/';
-
-data_dir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
-command = 'scp ';
-command = [command fname ' '];
-command = [command server_string ':' output_dir];
-
-system(command)
-
-fprintf('%s\n', fname)
-
+for i = 1:numel(flist)
+    fname = flist{i};
+    server_string = 'jake@bancanus'; %'jcbyts@sigurros';
+    output_dir = '/home/jake/Data/Datasets/MitchellV1FreeViewing/stim_movies/'; %/home/jcbyts/Data/MitchellV1FreeViewing/stim_movies/';
+    
+    data_dir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
+    command = 'scp ';
+    command = [command fname ' '];
+    command = [command server_string ':' output_dir];
+    
+    system(command)
+    
+    fprintf('%s\n', fname)
+end
 %% test that it worked
 id = 1;
 stim = 'Dots';

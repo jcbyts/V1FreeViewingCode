@@ -101,7 +101,7 @@ CpriorInv = CpriorInv + .5*eye(size(CpriorInv,2));
 lambdas = [1 10 100 1000 5000 10000 50000 100000]; % ridge parameter
 
 nValid = numel(valid);
-rng(1234)
+rng(1234) % fix random seed for reproducibility
 test = randsample(valid, floor(nValid/10));
 train = setdiff(valid, test);
 
@@ -319,7 +319,8 @@ for cc = 1:NC
         c = cond(C);
         if c > 15, c = 1; end
         ws = max(diff(stat.xax([1 end])), diff(stat.yax([1 end])));
-        stat.sig(cc) = ar > binsize^2 & c > 1 & ar < ws & b0 < 2;
+        mushift = sqrt( sum((mu - [x0 y0]).^2));
+        stat.sig(cc) = ar > binsize^2 & c > 1 & ar < ws & b0 < 2 & mushift < 1.25;
         
         
         if ip.Results.plot && stat.sig(cc)
@@ -336,7 +337,7 @@ for cc = 1:NC
         stat.rffit(cc).beta = phat;
         stat.rffit(cc).resids = resids;
 %         stat.rffit(cc).betaCi = CI;
-        stat.rffit(cc).mushift = sqrt( sum((mu - [x0 y0]).^2));
+        stat.rffit(cc).mushift = mushift;
         
         rfLocations(cc,:) = mu;
     else

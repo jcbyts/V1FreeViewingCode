@@ -14,11 +14,17 @@ RoiS.('logan_20200304') = [-20 -60 50 10];
 RoiS.('logan_20200306') = [-20 -60 50 10];
 RoiS.('logan_20191231') = [-20 -60 50 10];
 RoiS.('logan_20191119') = [-20 -60 50 10];
+RoiS.('logan_20191120') = [-20 -50 50 20];
+RoiS.('logan_20191120a') = [-20 -50 50 20];
 RoiS.('logan_20191121') = [-20 -50 50 20];
+RoiS.('logan_20191122') = [-20 -50 50 20];
 
-%% load data
+
+%%
+
 sesslist = io.dataFactory();
 
+%% load session
 close all
 sessId = sesslist{56}; %'logan_20200304';
 spike_sorting = 'kilowf';
@@ -44,6 +50,8 @@ eyePosOrig = Exp.vpx.smo(:,2:3);
 
 fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'Dots', 'Gabor', 'BackImage'}, 'overwrite', false);
 
+
+%%
 sid = regexp(sessId, '_', 'split');
 
 fname2 = ['Figures/2021_pytorchmodeling/rfs_' sid{2} '_' spike_sorting '.mat'];
@@ -63,6 +71,29 @@ subplot(1,2,2)
 contourf(tmp.xspace, tmp.yspace, tmp.shifty*60/5.2, 'w'); colorbar
 
 
+%%
+amp = zeros(NC, 2);
+for cc = 1:NC
+    sta = tmp.stas_pre(:,:,:,cc);
+    sd = std(sta(:));
+    sta2 = tmp.stas_post(:,:,:,cc);
+    
+    sta = sta./sd;
+    sta2 = sta2./sd;
+    amp(cc,1) = max(sta(:));
+    amp(cc,2) = max(sta2(:));
+end
+
+figure(1); clf
+plot(amp(:,1), amp(:,2), 'o')
+hold on
+xd = xlim;
+plot(xd, xd, 'k')
+plot(xd, 1.5*xd, 'k--')
+
+figure(2); clf
+plot(abs(tmp.mushiftx(:)), tmp.sdshiftx(:), 'o'); hold on
+plot(abs(tmp.mushifty(:)), tmp.sdshifty(:), 'o');
 %%
 sta = tmp.stas_post(:,:,:,1);
     NX = size(sta,3);
@@ -255,28 +286,35 @@ shiftY = interp2(tmp.xspace, tmp.yspace, tmp.shifty, eyeX, eyeY, 'linear', 0);
 % title("Shift")
 % 
 % % Shift stimulus
-% dims = size(Stim);
-% NT = dims(1);
-% dims(1) = [];
+dims = size(Stim);
+NT = dims(1);
+dims(1) = [];
 % 
-% xax = linspace(-1,1,dims(2));
-% yax = linspace(-1,1,dims(1));
-% [xgrid,ygrid] = meshgrid(xax(1:dims(2)), yax(1:dims(1)));
-% iFrame = iFrame + 1;
-% xsample = xgrid+shiftX;
-% ysample = ygrid+shiftY;
-% I = interp2(xgrid, ygrid, single(squeeze(Stim(iFrame,:,:)))', xsample, ysample, 'linear', 0);
-% StimS(iFrame,:,:) = I;
-% 
-% I0 = single(squeeze(Stim(iFrame,:,:)));
-% figure(1); clf
-% subplot(1,3,1)
-% imagesc(I0)
-% subplot(1,3,2)
-% imagesc(I)
-% subplot(1,3,3)
-% imagesc(I0-I)
-% drawnow
+xax = linspace(-1,1,dims(2));
+yax = linspace(-1,1,dims(1));
+[xgrid,ygrid] = meshgrid(xax(1:dims(2)), yax(1:dims(1)));
+
+
+%%
+figure(1); clf
+set(gcf, 'Color', 'w')
+iFrame = 100%iFrame + 1;
+xsample = xgrid+0;%shiftX(iFrame);
+ysample = ygrid+0;%shiftY(iFrame);
+I = interp2(xgrid, ygrid, single(squeeze(Stim(iFrame,:,:)))', xsample, ysample, 'linear', 0);
+StimS(iFrame,:,:) = I;
+
+I0 = single(squeeze(Stim(iFrame,:,:)));
+figure(1); clf
+subplot(1,3,1)
+imagesc(I0', [-1 1]*127); colormap gray
+axis off
+subplot(1,3,2)
+imagesc(I, [-1 1]*127); axis off
+subplot(1,3,3)
+imagesc(I0-I)
+drawnow
+%%
 
 
 disp("shift correcting stimulus...")
