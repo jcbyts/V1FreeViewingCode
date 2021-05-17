@@ -98,7 +98,7 @@ class FullReadout(Readout):
                     input_size, output_size,
                     bias=bias)
 
-    def forward(self, x):        
+    def forward(self, x, shift=None):        
         return self.features(x)
 
     def feature_l1(self, average=True):

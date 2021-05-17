@@ -59,10 +59,13 @@ class PixelDataset(Dataset):
         include_eyepos=False,
         include_saccades=None, # must be a dict that says how to implement the saccade basis
         include_frametime=None,
+        optics=None,
         temporal=False):
         
         
-        
+        if optics is None:
+            optics = {'type': 'none', 'sigma': (0,0,0)}
+
         # check if a specific spike sorting is requested
         chk = [i for i,j in zip(range(len(id)), id) if '_'==j ]
 
@@ -94,6 +97,7 @@ class PixelDataset(Dataset):
         self.shifter=shifter
         self.temporal = temporal
         self.spike_sorting = spike_sorting
+        self.optics = optics
 
         # sanity check stimuli (all requested stimuli must be keys in the file)
         newstims = []
@@ -104,10 +108,10 @@ class PixelDataset(Dataset):
         self.stims = newstims
 
         # useful info to pull from meta data
-        sz = self.fhandle[self.stims[0]]['Test']['Stim'].attrs['size']
-        ppd = self.fhandle[self.stims[0]]['Test']['Stim'].attrs['ppd'][0]
-        self.centerpix = self.fhandle[self.stims[0]]['Test']['Stim'].attrs['center'][:]
-        self.rect = self.fhandle[self.stims[0]]['Test']['Stim'].attrs['rect'][:]
+        sz = self.fhandle[self.stims[0]]['Train']['Stim'].attrs['size']
+        ppd = self.fhandle[self.stims[0]]['Train']['Stim'].attrs['ppd'][0]
+        self.centerpix = self.fhandle[self.stims[0]]['Train']['Stim'].attrs['center'][:]
+        self.rect = self.fhandle[self.stims[0]]['Train']['Stim'].attrs['rect'][:]
         self.ppd = ppd
         self.NY = int(sz[0]//self.downsample_s)
         self.NX = int(sz[1]//self.downsample_s)
@@ -275,6 +279,8 @@ class PixelDataset(Dataset):
 
             return out
         else:  
+            if self.optics['type']=='gausspsf':
+                from scipy.ndimage import gaussian_filter
 
             if type(index)==int: # special case where a single instance is indexed
                 inisint = True
@@ -316,6 +322,9 @@ class PixelDataset(Dataset):
                     if self.cropidx:
                         I = I[self.cropidx[1][0]:self.cropidx[1][1],self.cropidx[0][0]:self.cropidx[0][1],:]
                 
+                if self.optics['type']=='gausspsf':
+                    I = gaussian_filter(I, self.optics['sigma'])
+
                 if self.spike_sorting is None:
                     R = self.fhandle[self.stims[istim]][self.stimset]["Robs"][:,valid_inds]
                     R = R.T
@@ -495,8 +504,11 @@ class PixelDataset(Dataset):
                 index = index[index < nt]
                 
             sample = self[index]
-    
-            yhat = model(sample['stim'], shifter=sample['eyepos'], sample=sample)
+            try:
+                yhat = model(sample['stim'], shifter=sample['eyepos'], sample=sample)
+            except TypeError:
+                yhat = model(sample['stim'], shifter=sample['eyepos'])
+
             llneuron[index,:] = -loss(yhat,sample['robs']).detach().cpu().numpy()
             llnull[index,:] = -loss(torch.ones(sample['robs'].shape)*sample['robs'].mean(axis=0), sample['robs']).detach().cpu().numpy()
             robs[index,:] = sample['robs']
@@ -555,7 +567,7 @@ class PixelDataset(Dataset):
         if use_shifter:
             yhat = m0(sample['stim'], shifter=sample['eyepos'])
         else:
-            yhat = m0(sample['stim'])
+            yhat = m0(sample['stim'], sample=sample)
         llneuron = -loss(yhat,sample['robs']).detach().cpu().numpy().sum(axis=0)
         rbar = sample['robs'].sum(axis=0).numpy()
         ll = (llneuron - lnull)/rbar

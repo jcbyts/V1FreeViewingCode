@@ -46,7 +46,7 @@ class Encoder(LightningModule):
         self.output_nl = output_nl
         self.loss = loss
 
-    def forward(self, x, shifter=None):
+    def forward(self, x, shifter=None, sample=None):
         x = self.core(x)
         if self.detach_core:
             x = x.detach()

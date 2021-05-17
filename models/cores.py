@@ -239,7 +239,7 @@ class NimCore(Core):
         self.input_channels = np.prod(input_size)
         self.num_channels = num_channels
         self.layers = len(num_channels)
-
+        print("%d layers" %self.layers)
         self.gamma_group = gamma_group
         self.input_size = input_size
         self.ei_split = ei_split
@@ -268,10 +268,10 @@ class NimCore(Core):
 
         self._weights_regularizer.append(regularizers.__dict__[weight_regularizer](**regularizer_config))
 
-        for l in range(1,self.layers):
-            regularizer_config = {'dims': list(num_channels[l-1]),
-                                'type': weight_reg_types[l], 'amount': weight_reg_amt[l]}
-            self._weights_regularizer.append(regularizers.__dict__[weight_regularizer](**regularizer_config))
+        # for l in range(1,self.layers):
+        #     regularizer_config = {'dims': [num_channels[l-1]],
+        #                     'type': weight_reg_types[l], 'amount': weight_reg_amt[l]}
+        #     self._weights_regularizer.append(regularizers.__dict__[weight_regularizer](**regularizer_config))
         
         if self.ei_split is None:
             self.ei_split = [0 for i in range(self.layers)]
@@ -326,6 +326,8 @@ class NimCore(Core):
             layer["nonlin"] = nn.ReLU()
         elif self.act_funcs[l]=="pow":
             layer["nonlin"] = powNL(1.5)
+        elif self.act_funcs[l]=="pow2":
+            layer["nonlin"] = powNL(2)
 
         if ninh > 0:
             layer["eimask"] = EiMask(ninh, nexc)
@@ -342,7 +344,7 @@ class NimCore(Core):
             layer = OrderedDict()
 
             if self.ei_split[l-1]>0: # previous layer has inhibitory subunitss
-                Linear = posLinear
+                Linear = PosLinear
             else:
                 Linear = nn.Linear
 
@@ -370,6 +372,8 @@ class NimCore(Core):
                 layer["nonlin"] = nn.ReLU()
             elif self.act_funcs[l]=="pow":
                 layer["nonlin"] = powNL(1.5)
+            elif self.act_funcs[l]=="pow2":
+                layer["nonlin"] = powNL(2)
 
             if ninh > 0:
                 layer["eimask"] = EiMask(ninh, nexc)
@@ -392,13 +396,13 @@ class NimCore(Core):
 
     def weight_reg(self):
         ret = 0
-        for l in range(self.layers):
+        for l in [0]:
             ret = ret + self._weights_regularizer[l](self.features[l].conv.weight)
         return ret
 
     def group_sparsity(self):
         ret = 0
-        for l in range(1, self.layers):
+        for l in range(0, self.layers):
             ret = ret + self.features[l].conv.weight.pow(2).sum().sqrt()
         return ret / ((self.layers - 1) if self.layers > 1 else 1)
 
@@ -429,7 +433,7 @@ class NimCore(Core):
             is1D = False
 
         if cmaps is None:
-            cmaps = [plt.cm.PuOr, plt.cm.RdBu]
+            cmaps = [plt.cm.coolwarm, plt.cm.RdBu]
         # w = model.features.weight.detach().cpu().numpy()
         w = w.reshape(sz[0], sz[1], sz[2]*sz[3])
         nfilt = w.shape[0]
@@ -458,7 +462,7 @@ class NimCore(Core):
             sx -= mod2
         
 
-        plt.figure(figsize=(10,10))
+        plt.figure(figsize=(sy*5,sx*5))
         for cc,jj in zip(cinds, range(nfilt)):
             wtmp = np.squeeze(w[cc,:])
             if is1D:
@@ -471,7 +475,7 @@ class NimCore(Core):
                 plt.subplot(sx,sy,jj*2+1)
                 
                 bestlag = np.argmax(np.std(wtmp, axis=1))
-                plt.imshow(np.reshape(wtmp[bestlag,:], (sz[2], sz[3])), interpolation=None, )
+                plt.imshow(np.reshape(wtmp[bestlag,:], (sz[2], sz[3])), interpolation=None, cmap=cmaps[0])
                 wmax = np.argmax(wtmp[bestlag,:])
                 wmin = np.argmin(wtmp[bestlag,:])
                 plt.axis("off")
