@@ -3,7 +3,7 @@
 
 %% Load dataset
 
-[Exp, S] = io.dataFactoryGratingSubspace(57, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
+[Exp, S] = io.dataFactoryGratingSubspace(56, 'spike_sorting', 'jrclustwf', 'cleanup_spikes', 0);
 
 
 

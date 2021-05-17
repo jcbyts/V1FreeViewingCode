@@ -17,9 +17,14 @@ for sess = imported(:)'
 end
 
 %% subset of sessions
-for sess = 1:57
+for sess=1:25 % Ellie sessions
+    io.gratingSubspaceExport(sess, 'spike_sorting', 'kilowf')
+end
+
+%%
+for sess = [32:33 45 56:57]
 %     try
-    io.gratingSubspaceExport(sess);
+    io.gratingSubspaceExport(sess, 'spike_sorting', 'jrclustwf');
 %     end
 end
 
@@ -33,6 +38,8 @@ output_dir = '/home/jake/Data/Datasets/MitchellV1FreeViewing/grating_subspace';
 data_dir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 data_dir = fullfile(data_dir, 'grating_subspace');
 flist = dir(fullfile(data_dir, '*gratingsubspace.mat'));
+
+%%
 fname = arrayfun(@(x) x.name, flist, 'uni', 0);
 
 command = 'scp ';

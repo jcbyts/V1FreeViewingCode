@@ -432,6 +432,24 @@ plot.fixfigure(gcf, 7, [2 2], 'FontName', 'Arial', ...
 
 saveas(gcf, fullfile(figDir, 'fig04_Orientation.pdf'))
 
+
+%% test for difference between cardinal and oblique
+fid = 1;
+bs = 45;
+bedges = -bs/2:bs:180+bs/2;
+[cnt, ~, id] = histcounts(op, bedges);
+obix = mod(id,2)==0;
+cardix = mod(id,2)~=0;
+figure(1); clf
+histogram(obw(obix), 'binEdges', 0:10:180); hold on
+histogram(obw(cardix), 'binEdges', 0:10:180); hold on
+
+fprintf(fid, 'Oblique median bandwidth: %02.3f [%02.3f, %02.3f]\n', median(obw(obix)), bootci(500, @median, obw(obix)))
+fprintf(fid, 'Cardinal median bandwidth: %02.3f [%02.3f, %02.3f]\n', median(obw(cardix)), bootci(500, @median, obw(cardix)))
+
+[pval, ~, stats] = ranksum(obw(obix), obw(cardix));
+fprintf(fid, 'Two-sided rank sum test: p=%d (%02.5f), ranksum=%d, zval=%d\n', pval, pval, stats.ranksum, stats.zval)
+
 %% plot spatial RF locations
 
 mus(mus(:,1) < -5,1) = - mus(mus(:,1) < -5,1);
@@ -444,12 +462,6 @@ end
 xlim([-14 14])
 ylim([-10 10])
 
-%%
-% mus(mus(:,1) < -5,1) = - mus(mus(:,1) < -5,1);
-figure(1); clf
-scatter3(mus(six,1), mus(six,2), mshift(six)*1,50*ar(six),  mshift(six)*1, 'filled')
-
-% plot3(mus(six,1), mus(six,2), mshift(six), 'o')
 %% plot session by session
 figure(10); clf
 cmap = lines(max(exnum));
@@ -464,3 +476,49 @@ ylim([0 10])
 clf
 plot(exnum(gix), sfPref(gix), '.')
 ylim([0 10])
+
+
+%% 
+
+for ex = 39:numel(sesslist)
+    
+    if isempty(Srf{ex}) || ~isfield(Srf{ex}, 'coarse')
+        continue
+    end
+    figure(1); clf
+    NC = numel(Srf{ex}.coarse.rffit);
+    sx = ceil(sqrt(NC));
+    sy = round(sqrt(NC));
+    ax = plot.tight_subplot(sx,sy, .01, 0.01);
+    for cc = 1:(sx*sy)
+        if cc > NC
+            axis(ax(cc), 'off')
+            continue
+        end
+        
+        set(gcf, 'currentaxes', ax(cc));
+        I = Srf{ex}.coarse.srf(:,:,cc);
+%         I = (I - min(I(:))) / (max(I(:)) - min(I(:)));
+        imagesc(Srf{ex}.coarse.xax, Srf{ex}.coarse.yax, I);
+        hold on
+        if isfield(Srf{ex}, 'fine')
+            I = Srf{ex}.fine.srf(:,:,cc);
+%             I = (I - min(I(:))) / (max(I(:)) - min(I(:)));
+            imagesc(Srf{ex}.fine.xax, Srf{ex}.fine.yax, I);
+        end
+        
+        [xx, yy] = meshgrid(-15:5:15);
+        clr = .2*[1 1 1];
+        plot(xx, yy, 'Color', clr)
+        plot(xx', yy', 'Color', clr)
+        axis xy
+        axis off
+        
+        text(-12, 7, sprintf('%d', cc))
+        
+    end
+    
+    colormap(plot.coolwarm)
+    plot.formatFig(gcf, [sx sy], 'default')
+    saveas(gcf, fullfile(figDir, sprintf('rfs_%s.pdf', sesslist{ex})))
+end

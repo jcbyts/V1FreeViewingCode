@@ -35,6 +35,10 @@ ip.parse(varargin{:})
 
 plotopts = ip.Results;
 
+if isfield(srf, 'fine')
+    srf = srf.fine;
+end
+
 %% Bin spikes and eye position
 sm = ip.Results.smoothing;
 win = ip.Results.win; % centered on fixation start
@@ -162,19 +166,20 @@ condition = false;
 thresh = 2;
 collapse = true;
 
-rfLocations = nan(NC,2);
-sig = false(NC,1);
-sz = nan(NC,1);
-ms = nan(NC,1);
-for cc = 1:NC
-    if ~isempty(srf.rffit(cc).mu)
-        rfLocations(cc,:) = srf.rffit(cc).mu;
-        ms(cc) = (srf.rffit(cc).mushift/srf.rffit(cc).ecc);
-        sz(cc) = (srf.maxV(cc)./(srf.rffit(cc).ecc));
-        fprintf('%d) %02.2f, %02.2f\n', cc, ms(cc), sz(cc))
-        sig(cc) = ms(cc) < .5 & sz(cc) > 5;% & sz(cc) < 60;
-    end
-end
+rfLocations = srf.rfLocations;
+sig = srf.sig;
+% sig = false(NC,1);
+% sz = nan(NC,1);
+% ms = nan(NC,1);
+% for cc = 1:NC
+%     if ~isempty(srf.rffit(cc).mu)
+%         rfLocations(cc,:) = srf.rffit(cc).mu;
+%         ms(cc) = (srf.rffit(cc).mushift/srf.rffit(cc).ecc);
+%         sz(cc) = (srf.maxV(cc)./(srf.rffit(cc).ecc));
+%         fprintf('%d) %02.2f, %02.2f\n', cc, ms(cc), sz(cc))
+%         sig(cc) = ms(cc) < .5 & sz(cc) > 5;% & sz(cc) < 60;
+%     end
+% end
 
 
 rfLocations = rfLocations * Exp.S.pixPerDeg;
@@ -350,7 +355,7 @@ for clustGroup = unique(clusts(:)')
         open(vidObj);
     end
     
-    iic = clusts==clustGroup & srf.maxV(:)>5;
+    iic = clusts(:)==clustGroup & srf.sig(:);
     if sum(iic) == 1
         rfCenter = rfLocations(iic,:);
     else
@@ -359,16 +364,25 @@ for clustGroup = unique(clusts(:)')
     
     rfwidth = hypot(rfCenter(1), rfCenter(2));
     rfwidth = max(rfwidth, 1);
+    rfwidth = min(rfwidth, 3);
     rect = [-1 -1 1 1]*ceil(ppd*rfwidth); % window centered on RF
     dims = [rect(4)-rect(2) rect(3)-rect(1)];
-    fixIms = zeros(dims(1), dims(2), nfix, 2);
-    fftIms = zeros(dims(1), dims(2), nfix, 2);
-    fixMeta = zeros(nfix, 4); % trial, x, y
+    
     
     hwin = hanning(dims(1))*hanning(dims(2))';
     
-    xax = -dims(1)/2:dims(1)/2;
-    xax = xax / dims(1) * ppd;
+    nxfft = 2^nextpow2(dims(2));
+    nyfft = 2^nextpow2(dims(1));
+    
+%     nxfft = dims(2);
+%     nyfft = dims(1);
+    
+    xax = -nxfft/2:nxfft/2;
+    xax = xax / nxfft * ppd;
+    
+    fixIms = zeros(dims(1), dims(2), nfix, 2);
+    fftIms = zeros(nyfft, nxfft, nfix, 2);
+    fixMeta = zeros(nfix, 4); % trial, x, y
     
     %% do fixation clipping and compute fft
     nTrials = numel(validTrials);
@@ -438,7 +452,9 @@ for clustGroup = unique(clusts(:)')
                 continue
             end
             
-            Iwin = (I - mean(I(:))).*hwin;
+%             Iwin = (I - mean(I(:))).*hwin;
+            % window
+            Iwin = I.*hwin;
             
             if ip.Results.makeMovie
                 subplot(132, 'align')
@@ -446,8 +462,8 @@ for clustGroup = unique(clusts(:)')
                 axis off
             end
             
-            
-            fIm = fftshift(fft2(Iwin));
+%             fIm = fftshift(fft2(Iwin));
+            fIm = fftshift(fft2(Iwin, nxfft, nyfft));
             
             
             if ip.Results.makeMovie
@@ -487,20 +503,46 @@ for clustGroup = unique(clusts(:)')
     
     %% Loop over units in group
     
+    % integration windows for spikes
+    Bearly = exp(- ((lags*1e3 - 80).^2/2/20^2));
+    Bearly = Bearly ./ sum(Bearly);
+    Blate = 1 ./ (1 + exp(- (lags*1e3 - 100) / 20));
+    Blate(lags>.3) = 0;
+    Blate = Blate ./ sum(Blate);
+    
+    % valid fixations are longer than
+    fixthresh = 0.25;
+        
+        
     clist = find(clusts==clustGroup);
     
     for cc = clist(:)'
+        
+
+%         cc = 1;
         [kx, ky] = meshgrid(xax(2:end), xax(2:end));
         [ori, cpd] = cart2pol(ky, kx);
         ori = wrapToPi(ori);
         
         params = grf.rffit(cc).pHat;
-        lg = strcmp(grf.sftuning, 'loggauss');
-        if ~isempty(params)
-            Ifit = prf.parametric_rf(params, [ori(:), cpd(:)], lg);
+        if isfield(grf.rffit(cc), 'fitfun')
+            fitfun = grf.rffit(cc).fitfun;
         else
-            Ifit = randn(size(ori));
+            fitfun = 'parametric_rf';
         end
+        
+        switch fitfun
+            case 'polarRF'
+                Ifit = prf.polarRF([ori(:)/pi*180 cpd(:)], params(1), params(2), params(3), params(4), params(5), params(6));
+            case 'parametric_rf'
+                lg = strcmp(grf.sftuning, 'loggauss');
+                if ~isempty(params)
+                    Ifit = prf.parametric_rf(params, [ori(:), cpd(:)], lg);
+                else
+                    Ifit = randn(size(ori));
+                end
+        end
+        
         
         oriPref = grf.rffit(cc).oriPref;
         if oriPref < 0
@@ -517,11 +559,12 @@ for clustGroup = unique(clusts(:)')
             xlabel('sf')
             ylabel('sf')
         end
-        freshape = abs(reshape(fftIms(:,:,:,2), [prod(dims) nfix]));
+        
+        freshape = abs(reshape(fftIms(:,:,:,2), [nxfft*nyfft nfix]));
         
         fproj = freshape'*rf(:);
         
-        good_trials= find(sum(freshape)~=0);
+        good_trials= find(sum(freshape)~=0 & fixdur' > fixthresh);
         if ip.Results.plot
             subplot(2,2,2)
             
@@ -549,6 +592,7 @@ for clustGroup = unique(clusts(:)')
             subplot(2,2,3)
         end
         
+        
         spksfilt = filter(ones(sm,1), 1, squeeze(spks(:,cc,:))')';
         
         psthhi = mean(spksfilt(hiix,:))/binsize/sm;
@@ -574,37 +618,139 @@ for clustGroup = unique(clusts(:)')
             ylabel('Ratio (pref / null)')
             
         end
+           
+       
+%         figure(2); clf
+%         plot(lags, Bearly); hold on
+%         plot(lags, Blate)
+
+        y = spksfilt(good_trials,:);
+        X = abs(reshape(fftIms(:,:,:,2), [nxfft*nyfft nfix]));
+        X = X(:,good_trials);
         
-        
-        y = spksfilt;
-        X = abs(reshape(fftIms(:,:,:,2), [prod(dims) nfix]));
-        
-        steps = -.1:.05:.2;
+        [rho, pval] = corr(fproj(good_trials,:), spksfilt(good_trials,:));
+
+        steps = [.5 .15];
         nsteps = numel(steps);
         frf = zeros([size(fIm) nsteps]);
         
-        for i = 1:nsteps
-            
-            win = [0 .1]+steps(i);
-            iix = lags > win(1) & lags < win(2);
-            ys = sum(y(:,iix),2);
-            ys = ys - mean(ys);
-            frf(:,:,i) = reshape(X*ys./sum(X,2), size(fIm));
-        end
+        ys = y*Bearly';
+        ysE = ys - mean(ys);
+        frf(:,:,1) = imgaussfilt(reshape(X*ysE./sum(X,2), size(fIm)));
 
-        figure(10); clf
-        clim = [min(frf(:)) max(frf(:))];
-        for i = 1:nsteps
-            subplot(1,nsteps+1, i)
-            imagesc(frf(:,:,i), clim)
-        end
-
-        subplot(1,nsteps+1,nsteps+1)
-        imagesc(xax, xax, rf)
-        colormap(viridis)
-        drawnow
+        ys = sum(y*Blate',2);
+        ysL = ys - mean(ys);
+        frf(:,:,2) = imgaussfilt(reshape(X*ysL./sum(X,2), size(fIm)), 1);
         
-        [rho, pval] = corr(fproj, spksfilt);
+        sfs = [1 2 4 8 10 16];
+        
+        switch fitfun
+            case 'polarRF'
+                sfbs = params(5)*[5 1 .5 .1 .5 1];
+                Ifits = nan(numel(ori), numel(sfs));
+                for i = 1:numel(sfs)
+                    Ifits(:,i) = prf.polarRF([ori(:)/pi*180 cpd(:)], params(1), params(2), sfs(i), params(4), sfbs(i), params(6));
+                end
+            case 'parametric_rf'
+                
+                
+                lg = strcmp(grf.sftuning, 'loggauss');
+                Ifits = nan(numel(ori), numel(sfs));
+                if ~isempty(params)
+                    sfbs = params(4)*[5 1 .5 .1 .5 1];
+                    for i = 1:numel(sfs)
+                        params(3) = sfs(i);
+                        params(4) = sfbs(i);
+                        Ifits(:,i) = reshape(prf.parametric_rf(params, [ori(:), cpd(:)], lg), [], 1);
+                    end
+                end
+        end
+
+        figure(2); clf
+        rhos = zeros(numel(lags), numel(sfs));
+        fprojs = freshape'*Ifits;
+        
+        vinds = double(lags <= fixdur(good_trials));
+        y = spksfilt(good_trials,:).*vinds;
+        for i = 1:numel(sfs)
+            subplot(1,numel(sfs), i)
+            imagesc(reshape(Ifits(:,i), size(ori)))
+            
+            [rhos(:,i), ~] = corr(fprojs(good_trials,i), y);
+        end
+        
+        %
+        figure(3); clf
+        cmap = jet(numel(sfs));
+        for i = 1:numel(sfs)
+            plot(lags, rhos(:,i), 'Color', cmap(i,:)); hold on
+        end
+        
+        
+        figure(4); clf
+        plot(sfs, rhos'*Bearly', '-o'); hold on
+        plot(sfs, rhos'*Blate', '-o')
+        
+        mxspks = max(psthhi)*1.1;
+        
+        
+        nsf = numel(sfs);
+        sfpsthhi = zeros(nlags, nsf);
+        sfpsthlow = zeros(nlags, nsf);
+        sfpstvhi = zeros(nlags, nsf);
+        sfpstvlow = zeros(nlags, nsf);
+        
+        if ip.Results.plot
+        figure(5); clf
+        end
+        
+        for i = 1:nsf
+            fproj = fprojs(:,i);
+            levels = prctile(fproj(good_trials), [10 90]);
+        
+            lowix = good_trials(fproj(good_trials) < levels(1));
+            hiix = good_trials(fproj(good_trials) > levels(2));
+        
+            sfpsthhi(:,i) = mean(spksfilt(hiix,:))/binsize/sm;
+            sfpsthlow(:,i) = mean(spksfilt(lowix, :))/binsize/sm;
+        
+            sfpstvhi(:,i) = std(spksfilt(hiix,:))/binsize/sm;
+            sfpstvlow(:,i) = std(spksfilt(lowix, :))/binsize/sm;
+            
+            if ip.Results.plot
+                try
+                subplot(1, numel(sfs), i)
+                plot.errorbarFill(lags, sfpsthhi(:,i), sfpstvhi(:,i)/sqrt(numel(hiix)), 'b', 'FaceColor', 'b'); hold on
+                plot.errorbarFill(lags, sfpsthlow(:,i), sfpstvlow(:,i)/sqrt(numel(lowix)), 'r', 'FaceColor', 'r');
+                ylim([0 mxspks(1)])
+                xlim([-0.05 .3])
+                end
+            end
+        end
+        
+        if ip.Results.plot
+            figure(10); clf
+            clim = [min(frf(:)) max(frf(:))];
+            for i = 1:nsteps
+                subplot(1,nsteps+1, i)
+                imagesc(frf(:,:,i), clim)
+            end
+            
+            subplot(1,nsteps+1,nsteps+1)
+            imagesc(xax, xax, rf)
+            colormap(viridis)
+            drawnow
+        end
+        
+        fftrf(cc).sftuning = struct();
+        fftrf(cc).sftuning.B = [Bearly(:) Blate(:)];
+        fftrf(cc).sftuning.sfs = sfs;
+        fftrf(cc).sftuning.sfbw = sfbs;
+        fftrf(cc).sftuning.rhos = rhos;
+        fftrf(cc).sftuning.sfpsthhi = sfpsthhi;
+        fftrf(cc).sftuning.sfpsthlow = sfpsthlow;
+        fftrf(cc).sftuning.sfpstvhi = sfpstvhi;
+        fftrf(cc).sftuning.sfpstvlow = sfpstvlow;
         
         fftrf(cc).frfsteps = steps;
         fftrf(cc).frf = frf;
@@ -642,7 +788,12 @@ for clustGroup = unique(clusts(:)')
             title('spatial sta')
             
             subplot(2,2,4)
-            imagesc(grf.rffit(cc).srf)
+            if isfield(grf.rffit(cc), 'srf')
+                imagesc(grf.rffit(cc).srf)
+            else
+                plot.polar_contourf(grf.xax, grf.yax, grf.srf(:,:,cc))
+            end
+                
             title('hartley sta')
             xlabel('time lags')
             
