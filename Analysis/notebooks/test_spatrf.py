@@ -34,13 +34,16 @@ from pathlib import Path
 
 from scipy.ndimage import gaussian_filter
 
-
-
 # %% Check that it was run and load the best models
 figDir = "/home/jake/Data/Repos/V1FreeViewingCode/Figures/2021_pytorchmodeling"
 
-# sessid = "20200304_kilowf"
-sessid = "20191119_kilowf"
+
+# sessid = "20191119_kilowf"
+# sessid = "20191120a_kilowf"
+# sessid = "20191121_kilowf"
+# sessid = "20191122_kilowf"
+# sessid = '20191205_kilowf'
+sessid = "20200304_kilowf"
 
 lengthscale = 1 # the default is 1
 save_dir='../../checkpoints/v1calibration_ls{}'.format(lengthscale)
@@ -62,17 +65,54 @@ else:
 
 #%% LOAD DATASETS with shifter
 
+cropidxs = {'20191119_kilowf': [[20,50],[0,30]],
+    '20191120a_kilowf': [[20,50],[20,50]],
+    '20191121_kilowf': [[20,50],[20,50]],
+    '20191122_kilowf': [[10,50],[20,50]],
+    '20191202_kilowf': [[10,50], [15,45]],
+    '20191205_kilowf': [[10,50],[15,45]],
+    '20191206_kilowf': [[10,50],[15,45]],
+    '20200304_kilowf': [[10,40],[15,50]]}
+
 import V1FreeViewingCode.models.datasets as dd
 import importlib
 importlib.reload(dd)
-gd = dd.PixelDataset(sessid, stims=["Dots", "Gabor"], #, "BackImage", "Grating", "FixRsvpStim"],
+
+cropidx = cropidxs[sessid]
+
+n = 40
+num_basis = 15
+B = np.maximum(1 - np.abs(np.expand_dims(np.asarray(np.arange(0,n)), axis=1) - np.arange(0,n,n/num_basis))/n*num_basis, 0)
+
+
+# Load Training / Evaluation
+gd = dd.PixelDataset(sessid, stims=["Dots", "Gabor", "BackImage", "Grating", "FixRsvpStim"],
     stimset="Train", num_lags=num_lags,
     downsample_t=t_downsample,
     downsample_s=1,
     valid_eye_rad=5.2,
-    shifter=shifter,
+    shifter=shifters[np.argmin(valloss)],
+    cropidx=cropidx,
+    include_frametime={'num_basis': 40, 'full_experiment': False},
+    include_saccades=[{'name':'sacon', 'basis':B, 'offset':-20}, {'name':'sacoff', 'basis':B, 'offset':0}],
     include_eyepos=True,
+    optics={'type': 'gausspsf', 'sigma': (0.7, 0.7, 0.0)},
     preload=True)
+
+#%% Load test set
+# print("Loading Test set")
+# gd_test = dd.PixelDataset(sessid, stims=["Dots", "Gabor", "BackImage"], #, "Grating", "FixRsvpStim"],
+#     stimset="Test", num_lags=num_lags,
+#     downsample_t=t_downsample,
+#     downsample_s=1,
+#     valid_eye_rad=5.2,
+#     cropidx=cropidx,
+#     shifter=shifter,
+#     include_frametime={'num_basis': 40, 'full_experiment': False},
+#     include_saccades=[{'name':'sacon', 'basis':B, 'offset':-20}, {'name':'sacoff', 'basis':B, 'offset':0}],
+#     include_eyepos=True,
+#     optics={'type': 'gausspsf', 'sigma': (0.7, 0.7, 0.0)},
+#     preload=True)
 
 
 #%% get sample
@@ -80,7 +120,8 @@ sample = gd[:]
 im = sample['stim'].detach().clone()
 
 #%% new STAs on shifted stimulus
-crop = [20, 50, 0, 30]
+crop = [0, gd.NX, 0, gd.NY]
+# crop = [10,50,20,50]
 stas = torch.einsum('nlwh,nc->lwhc', im[:,:,crop[2]:crop[3], crop[0]:crop[1]], sample['robs']-sample['robs'].mean(dim=0))
 sta = stas.detach().cpu().numpy()
 
@@ -106,7 +147,7 @@ for cc in range(NC):
     w = (w -np.mean(w[bestlag,:,:]) )/ np.std(w)
 
     v = np.max(np.abs(w))
-    plt.imshow(w[bestlag,:,:], aspect='auto', interpolation=None, vmin=-v, vmax=v, cmap="coolwarm", extent=extent)
+    plt.imshow(w[bestlag,:,:], aspect='auto', interpolation=None, vmin=-v, vmax=v, cmap="coolwarm")
     plt.title("%d" %cc)
     plt.xlabel("arcmin")
     plt.ylabel("arcmin")
@@ -125,426 +166,321 @@ for cc in range(NC):
 plt.figure()
 plt.imshow(Ispat)
 
+#%%
+import importlib
+importlib.reload(cores)
 
+# path to where checkpointing will occur
+iteration = 1
+save_dir='./checkpoints/test_v1fovea_nim{}'.format(iteration)
 
-#%% get data for fitting
-f = nn.Flatten()
-dt = 1/gd.frate
-dims = sample['stim'][:,:,crop[2]:crop[3], crop[0]:crop[1]].shape[1:]
-df = [i - 2 for i in dims]
-stim = f(sample['stim'][:,0,crop[2]:crop[3], crop[0]:crop[1]]).detach().cpu().clone().numpy()
-robs = sample['robs'].detach().cpu().numpy()
-del gd
+from pathlib import Path
 
-
-# dims = [25, 20, 15]
+importlib.reload(ut)
 
 #%%
-from rfest import ALD
-#%%
-robs.shape
-#%%
-# stim.shape
 
-X = build_design_matrix(stim, dims[0])
-X.shape
-#%%
-import copy
-dt = 1/240
+for version in range(10,12): #range(3): #[18]: # fit a few runs
+    input_size = [gd.num_lags, gd.NY, gd.NX]
+    num_channels = [NC//2 + (4 - NC//2 % 4)] # number of subunits in each layer
+    # num_channels = [15, 10] # number of subunits in each layer
 
-df = [5, 15, 15]
-sigma0 = [1.]
-rho0 = [1.]
-params_t0 = [3., 20., 1., 1.] # taus, nus, tauf, nuf
-params_y0 = [3., 20., 1., 1.]
-params_x0 = [3., 20., 1., 1.]
-p0 = sigma0 + rho0 + params_t0 + params_y0 + params_x0
+    # shared NIM core:
+    core = cores.NimCore(input_size,
+            num_channels, # this number of subunits
+            ei_split=[.1], # percent that are inhibitory
+            weight_norm=[True], # use weight norm when fitting
+            act_funcs=["relu"], # offset for ELU nonlinearity (TODO: change how we handle activations to be more like the 2D models)
+            gamma_group=0,
+            group_norm=[True],
+            group_norm_num=1, # if using groupnorm, number of groups
+            bias=[False], # include bias parameters
+            weight_regularizer="RegMats",
+            weight_reg_types=[["d2xt"]],
+            weight_reg_amt=[[10e-8]],
+            stack=None, # None outputs all layers, otherwise spedcify which layers you want (if making a scaffold)
+            use_avg_reg=False) # mean instead of sum when regularizing with group lasso
+
+    # full readout
+    readout = readouts.FullReadout(core.outchannels, NC,
+            bias=True,
+            constrain_positive=True, # this is a EI NIM
+            weight_norm=False,
+            gamma_readout=0.01) # group lasso reg?
+
+    modifiers = {'stimlist': ['frametime', 'sacoff'],
+                'gain': [sample['frametime'].shape[1], sample['sacoff'].shape[1]],
+                'offset':[sample['frametime'].shape[1],sample['sacoff'].shape[1]],
+                'stage': "readout",
+                'outdims': gd.NC}
+
+        # combine core and readout into model
+    model = encoders.EncoderMod(core, readout, modifiers=modifiers,
+        gamma_mod=0,
+        weight_decay=.1, optimizer='AdamW', learning_rate=.01, # high initial learning rate because we decay on plateau
+        betas=[.9, .999], amsgrad=False)
 
 
-lsgs = []
-for cc in [13]:
+    # check that the forward runs (for debugging)
+    # sample = gd[:10]
+    # out = model(sample['stim'])
+    # print(out.shape)
     
+    #% get trainer and train/valid data loaders (data loaders are iteratable datasets)
+    trainer, train_dl, valid_dl = ut.get_trainer(gd, version=version,
+            save_dir=save_dir,
+            num_workers=64,
+            name=gd.id,
+            auto_lr=False,
+            gradient_clip_val=0,
+            earlystopping=True,
+            earlystoppingpatience=50,
+            batchsize=1000)
+
+    trainpath = Path(save_dir) / gd.id / "version_{}".format(version)
+    if not trainpath.exists():
+        trainer.fit(model, train_dl, valid_dl)
+    # model.hparams.weight_decay = model.hparams.weight_decay/10
     
-    y = robs[:,cc]
-    y = gaussian_filter(y, sigma=2, truncate=0.25)
-    # (X_train, y_train), (X_dev, y_dev), (X_test, y_test) = split_data(X[:10000,:], y[:10000], dt, frac_train=0.8, frac_dev=0.1)
+    # model2.core.hparams.gamma_group = 1
+    # trainer.fit(model, train_dl, valid_dl)
+
+print("Done Fitting")
+
+
+#%% load best model
+
+import pandas as pd
+from pathlib import Path
+import seaborn as sns
+
+pth = Path(save_dir) / gd.id
+
+valloss = np.array([])
+ind = np.array([])
+for v in pth.rglob('version*'):
     
-    #%%
-    # lnp = splineLNP(X_train, y_train, dims, df, dt=dt, nonlinearity='exponential')
-    # lg = splineLG(X_train, y_train, dims=dims, dt=dt, df=df)
-    # lg = splineLG(X, y, dims=dims, dt=dt, df=df)
-    # lg.fit(metric='corrcoef',
-    #       num_iters=3000, verbose=0, tolerance=10,
-    #       beta=0.01)
+    try:
+        df = pd.read_csv(str(v / "metrics.csv"))
+        ind = np.append(ind, int(v.name.split('_')[1]))
+        valloss = np.append(valloss, np.nanmin(df.val_loss.to_numpy()))
+    except:
+        "skip"
 
-    # lgs.append(copy.deepcopy(lg))
-    # lnp.fit(extra={'X': X_dev, 'y': y_dev}, metric='corrcoef',
-    #     num_iters=300, verbose=300, tolerance=10,
-    #     beta=0.01)
+sortind = np.argsort(ind)
+ind = ind[sortind]
+valloss = valloss[sortind]
 
-    ald = ALD(X[:5000], y[:5000], dims=dims)
-    ald.fit(p0=p0, num_iters=30, verbose=10)
-    lgs.append(copy.deepcopy(ald))
+plt.plot(ind, valloss, '.')
+plt.xlabel("Version")
+plt.ylabel("Validation Loss")
+
+ver = ind[np.argmin(valloss)]
+print("Best version: %d" %ver)
+
+
+ver = "version_" + str(int(2))
+chkpath = pth / ver / 'checkpoints'
+best_epoch = ut.find_best_epoch(chkpath)
+
+
+model2 = encoders.EncoderMod.load_from_checkpoint(str(chkpath / best_epoch))
+
+# you have to remove weight norm after loading to have the filter weights in the "weights" variable
+# weight_norm works by splitting the weights into a unit vector and an amplitude.
+# these need to be recombined for plotting and whatnot
+for l in range(model2.core.layers):
+    if model2.core.weight_norm[l]:
+        nn.utils.remove_weight_norm(model2.core.features[l].conv)
+
+
+model2.core.plot_filters()
+#%% plot filters
+wsub = model2.core.features.layer0.conv.weight.detach().cpu().numpy()
+wreadout = model2.readout.features.weight.detach().cpu().numpy()
+f = plt.imshow(wreadout.T)
 #%%
-plot3d(lg, X,y, len_time=1, response_type='spike')
+# subs = np.where(np.sum(wreadout, axis=0)>2)[0]
+# model2.core.plot_filters(sort=subs, cmaps=[plt.cm.coolwarm, plt.cm.gray]) # plot filters and 
+
+#%% select stimulus
 
 
-#%%
+# %%
+def get_null_adjusted_ll(model, sample=None, bits=False, use_shifter=True):
+        '''
+        get null-adjusted log likelihood
+        bits=True will return in units of bits/spike
+        '''
+        m0 = model.cpu()
+        loss = torch.nn.PoissonNLLLoss(log_input=False, reduction='none')
 
-# select stimulus
+        lnull = -loss(torch.ones(sample['robs'].shape)*sample['robs'].mean(axis=0), sample['robs']).detach().cpu().numpy().sum(axis=0)
+        if use_shifter:
+            yhat = m0(sample['stim'], shifter=sample['eyepos'], sample=sample)
+        else:
+            yhat = m0(sample['stim'], sample=sample)
+        llneuron = -loss(yhat,sample['robs']).detach().cpu().numpy().sum(axis=0)
+        rbar = sample['robs'].sum(axis=0).numpy()
+        ll = (llneuron - lnull)/rbar
+        if bits:
+            ll/=np.log(2)
+        return ll
+
+
+
+#%% Evaluate test likelihood
+
+print("Select Stim")
+    # select stimulus
 # if 'Dots' in gd.stims:
 #     stimuse = [i for i,s in zip(range(len(gd.stims)), gd.stims) if 'Dots' == s][0]
 # elif 'Gabor' in gd.stims:
 #     stimuse = [i for i,s in zip(range(len(gd.stims)), gd.stims) if 'Gabor' == s][0]
 
-
-# index = np.where(gd.stim_indices==stimuse)[0]
-sample = gd[:] # load sample 
-
-
-# %% save everything out for matlab
-import scipy.io as sio
-fname = figDir + "/rfs_" + gd.id + ".mat"
-mdict = {'cids': cids, 'xspace': xx, 'yspace': yy, 'shiftx': y2[:,0].reshape((100,100)), 'shifty': y2[:,1].reshape((100,100)), 'stas_pre': sta, 'stas_post': sta2,
-    'valloss': valloss, 'mushiftx': mux, 'mushifty': muy, 'sdshiftx': sdx, 'sdshifty': sdy}
-
-sio.savemat(fname, mdict)
-
-
-#%% plot all STAs as one figure
-
-def plot_sta_fig(sta, gd):
-    # plot STAs / get RF centers
-    """
-    Plot space/time STAs 
-    """
-    NC = sta.shape[3]
-    mu = np.zeros((NC,2))
-    sx = np.ceil(np.sqrt(NC*2))
-    sy = np.round(np.sqrt(NC*2))
-
-    mod2 = sy % 2
-    sy += mod2
-    sx -= mod2
-
-    tdiff = np.zeros((num_lags, NC))
-    blag = np.zeros(NC)
-
-    plt.figure(figsize=(sx*2,sy*2))
-    for cc in range(NC):
-        w = sta[:,:,:,cc]
-
-        wt = np.std(w, axis=0)
-        wt /= np.max(np.abs(wt)) # normalize for numerical stability
-        # softmax
-        wt = wt**10
-        wt /= np.sum(wt)
-        sz = wt.shape
-        xx,yy = np.meshgrid(np.linspace(-1, 1, sz[1]), np.linspace(1, -1, sz[0]))
-
-        mu[cc,0] = np.minimum(np.maximum(np.sum(xx*wt), -.5), .5) # center of mass after softmax
-        mu[cc,1] = np.minimum(np.maximum(np.sum(yy*wt), -.5), .5) # center of mass after softmax
-
-        w = (w -np.mean(w) )/ np.std(w)
-
-        bestlag = np.argmax(np.std(w.reshape( (gd.num_lags, -1)), axis=1))
-        blag[cc] = bestlag
-        plt.subplot(sx,sy, cc*2 + 1)
-        v = np.max(np.abs(w))
-        plt.imshow(w[bestlag,:,:], aspect='auto', interpolation=None, vmin=-v, vmax=v, cmap="coolwarm", extent=(-1,1,-1,1))
-        # plt.plot(mu[cc,0], mu[cc,1], '.b')
-        plt.title(cc)
-        plt.subplot(sx,sy, cc*2 + 2)
-        i,j=np.where(w[bestlag,:,:]==np.max(w[bestlag,:,:]))
-        t1 = w[:,i[0], j[0]]
-        plt.plot(t1, '-ob')
-        i,j=np.where(w[bestlag,:,:]==np.min(w[bestlag,:,:]))
-        t2 = w[:,i[0], j[0]]
-        plt.plot(t2, '-or')
-        yd = plt.ylim()
-        tdiff[:,cc] = t1 - t2
-
-plot_sta_fig(sta, gd)
-plt.savefig(figDir + "/rawstas_" + gd.id + ".pdf", bbox_inches='tight')
-plot_sta_fig(sta2, gd)
-plt.savefig(figDir + "/shiftstas_" + gd.id + ".pdf", bbox_inches='tight')
-# plt.close('all')
-
-
-#%%
-# from V1FreeViewingCode.Analysis.manuscript_freeviewingmethods.v1_tracker_calibration import make_figures
-
-# make_figures(gd, tmp, figDir)
-
-#%%
-
-# #%% Refit DivNorm Model on all datasets
-# #% This is optional
-# import V1FreeViewingCode.models.encoders as encoders
-# importlib.reload(encoders)
-# importlib.reload(readouts)
-# importlib.reload(cores)
-
-# # #%%
-# # """
-# # Fit single layer DivNorm model with modulation
-# # """
-# # for version in range(5): # range of version numbers
+stimuse = [i for i,s in zip(range(len(gd.stims)), gd.stims) if 'Gabor' == s][0]    
     
 
-# #     #% Model: convolutional model
-# #     input_channels = gd.num_lags
-# #     hidden_channels = 16
-# #     input_kern = 19
-# #     hidden_kern = 5
-# #     core = cores.Stacked2dDivNorm(input_channels,
-# #             hidden_channels,
-# #             input_kern,
-# #             hidden_kern,
-# #             layers=1,
-# #             gamma_hidden=1e-6, # group sparsity
-# #             gamma_input=1,
-# #             gamma_center=0,
-# #             skip=0,
-# #             final_nonlinearity=True,
-# #             bias=False,
-# #             pad_input=True,
-# #             hidden_padding=hidden_kern//2,
-# #             group_norm=True,
-# #             num_groups=4,
-# #             weight_norm=True,
-# #             hidden_dilation=1,
-# #             input_regularizer="RegMats",
-# #             input_reg_types=["d2x", "center", "d2t"],
-# #             input_reg_amt=[.000005, .01, 0.00001],
-# #             hidden_reg_types=["d2x", "center"],
-# #             hidden_reg_amt=[.000005, .01],
-# #             stack=None,
-# #             use_avg_reg=True)
+ll0 = get_null_adjusted_ll(model2, sample=sample, bits=True)
+plt.plot(ll0)
+
+# sample = gd[:]
+index = np.where(gd.stim_indices==stimuse)[0]
+sample = gd[index]
+
+# NT = 10*gd.NY*gd.NX*gd.num_lags
+# X = np.random.randn(NT, gd.NY, gd.NX)*10
+# # X[np.abs(X)<5] = 0
+# inds = np.expand_dims(np.arange(gd.num_lags,NT), axis=1)-range(gd.num_lags)
+# X = torch.tensor(X[inds,:,:].astype('float32'))
+
+yhat = model2(sample['stim'], sample=sample)
+
+#%%
+gd = dd.PixelDataset(sessid, stims=["Gabor"],
+    stimset="Train", num_lags=num_lags,
+    downsample_t=t_downsample,
+    downsample_s=1,
+    valid_eye_rad=5.2,
+    shifter=shifters[np.argmin(valloss)],
+    include_eyepos=True,
+    optics={'type': 'gausspsf', 'sigma': (0.7, 0.7, 0.0)},
+    preload=True)
+
+#%%
+sample = gd[:]
+stas = torch.einsum('nlwh,nc->lwhc', sample['stim'], sample['robs']-sample['robs'].mean(dim=0))
+staHat = torch.einsum('nlwh,nc->lwhc', sample['stim'], yhat-yhat.mean(dim=0))
+
+#%%
+# reload sample
+sample = gd[:]
+yhat = model2(sample['stim'], sample=sample)
+gd.stims
+out = {'stas': stas.detach().cpu().numpy(),
+    'stasHat': staHat.detach().cpu().numpy(),
+    'yhat': yhat.detach().cpu().numpy(),
+    'stims': gd.stims,
+    'stimid': gd.stim_indices,
+    'frametime': gd.frame_time,
+    'eyepos': gd.eyepos,
+    'll0': ll0,
+    'wreadout': wreadout,
+    'wsubunits': wsub}
+
+from scipy.io import savemat
+fname = save_dir + '/' + gd.id  + '_model2.mat'
+print("Saving [%s]" %fname)
+savemat(fname, out)
+print("Done")
+
+#%%
+plt.figure(figsize=(10,10))
+plt.subplot(2,1,1)
+plt.imshow(wreadout.T)
+# plt.subplot(2,1,2)
+plt.plot(ll0*20, 'r')
+cc = 0
+# %%
+
+cc +=1
+if cc >= gd.NC:
+    cc = 0
+# cc = 13
 
 
-# #     # initialize input layer to be centered
-# #     regw = regularizers.gaussian2d(input_kern,sigma=input_kern//4)
-# #     core.features[0].conv.weight.data = torch.einsum('ijkm,km->ijkm', core.features[0].conv.weight.data, torch.tensor(regw))
+plt.figure(figsize=(5,2))
+plt.subplot(1,3,1)
+sta = stas[:,:,:,cc].detach().cpu().numpy()
+bestlag = np.argmax(np.std(sta.reshape((sta.shape[0], -1)), axis=1))
+plt.imshow(sta[bestlag, :,:], cmap=plt.cm.coolwarm)
+plt.subplot(1,3,2)
+plt.plot(wreadout[cc,:])
+plt.axhline(.1)
+subunits = np.where(wreadout[cc,:]>0.1)[0]
+plt.subplot(1,3,3)
+sta = staHat[:,:,:,cc].detach().cpu().numpy()
+bestlag = np.argmax(np.std(sta.reshape((sta.shape[0], -1)), axis=1))
+plt.imshow(sta[bestlag, :,:], cmap=plt.cm.coolwarm)
+plt.title(ll0[cc])
+n = len(subunits)
+print("%d subunits" %n)
+
+if n > 0:
+    scol = np.ceil(np.sqrt(n))
+    srows = np.round(np.sqrt(n))
+
+    plt.figure(figsize=(scol*1, srows*1))
+
+    vs = np.asarray([np.max(wsub[s,:,:,:]) for s in subunits])
+    v = np.max(vs*wreadout[cc,subunits])
+    rwts = wreadout[cc,subunits]
+    # wpow = np.std(wsub[subunits,:,:,:], axis=1)
+    # v = np.max(wpow)*np.max(rwts)
+    rf = 0
+    for isub in range(n):
+        sub = subunits[isub]
+        plt.subplot(srows, scol, isub + 1)
         
-# #     # Readout
-# #     in_shape = [core.outchannels, gd.NY, gd.NX]
-# #     bias = True
-# #     readout = readouts.Point2DGaussian(in_shape, gd.NC, bias, init_mu_range=0.1, init_sigma=1, batch_sample=True,
-# #                     gamma_l1=0,gamma_l2=0.00001,
-# #                     align_corners=True, gauss_type='uncorrelated',
-# #                     constrain_positive=False,
-# #                     shifter= {'hidden_features': 20,
-# #                             'hidden_layers': 1,
-# #                             'final_tanh': False,
-# #                             'activation': "softplus",
-# #                             'lengthscale': lengthscale}
-# #                             )
+        wtmp = np.std(wsub[sub,:], axis=0)*rwts[isub]
+        rf += wtmp
+        # plt.imshow(wtmp, vmin=-v, vmax=v)
+        wtmp = wsub[sub,:]*wreadout[cc,sub]
+        bestlag = np.argmax(np.std(wtmp.reshape((wtmp.shape[0], -1)), axis=1))
+        plt.imshow(wtmp[bestlag,:,:],vmin=-v, vmax=v, cmap=plt.cm.coolwarm, interpolation=None)
+        # plt.imshow(wtmp[bestlag,:,:], cmap=plt.cm.coolwarm, interpolation=None)
 
-    
-# #     modifiers = {'stimlist': ['frametime', 'sacoff'],
-# #             'gain': [sample['frametime'].shape[1], sample['sacoff'].shape[1]],
-# #             'offset':[sample['frametime'].shape[1],sample['sacoff'].shape[1]],
-# #             'stage': "readout",
-# #             'outdims': gd.NC}
+# wtmp = np.squeeze(wsub[sub,:])
+# plt.figure(figsize=(15,15))
+# rf = rf/np.max(rf)
+# rf[rf<.5]=0.0
+# plt.imshow(rf, interpolation='none', cmap=plt.cm.coolwarm)
+# plt.colorbar()
+# w[:,cc]
+# stas[:,:]
 
-# #     # combine core and readout into model
-# #     model = encoders.EncoderMod(core, readout, modifiers=modifiers,
-# #         gamma_mod=0,
-# #         weight_decay=.001, optimizer='AdamW', learning_rate=.01, # high initial learning rate because we decay on plateau
-# #         betas=[.9, .999], amsgrad=False)
+#%%
 
-# #     # initialize readout based on spike rate and STA centers
-# #     model.readout.bias.data = sample['robs'].mean(dim=0) # initialize readout bias helps
-# #     model.readout._mu.data[0,:,0,:] = torch.tensor(mu.astype('float32')) # initiaalize mus
-
-# #     #% check that the forward runs (for debugging)
-    
-
-# #     #% Train
-# #     trainer, train_dl, valid_dl = ut.get_trainer(gd, version=version,
-# #                 save_dir=save_dir,
-# #                 name=gd.id,
-# #                 auto_lr=False,
-# #                 batchsize=1000,
-# #                 num_workers=64,
-# #                 earlystopping=False)
-
-# #     trainpath = Path(save_dir) / gd.id / "version_{}".format(version)
-# #     if not trainpath.exists():
-# #         trainer.fit(model, train_dl, valid_dl)
-    
-# #%%
-# # Load best version
-# pth = Path(save_dir) / sessid
-
-# valloss = np.array([])
-# ind = np.array([])
-# for v in pth.rglob('version*'):
-
-#     try:
-#         df = pd.read_csv(str(v / "metrics.csv"))
-#         ind = np.append(ind, int(v.name.split('_')[1]))
-#         valloss = np.append(valloss, np.nanmin(df.val_loss.to_numpy()))
-#     except:
-#         "skip"
-
-# sortind = np.argsort(ind)
-# ind = ind[sortind]
-# valloss = valloss[sortind]
-# plt.plot(ind, valloss, '.')
-# plt.xlabel("Version #")
-# plt.ylabel("Loss")
+# import
+sub = 0
+wtmp = wsub[sub,:]*wreadout[cc,sub]
+bestlag = np.argmax(np.std(wtmp.reshape((wtmp.shape[0], -1)), axis=1))
 
 
-# shifters = nn.ModuleList()
-# for vernum in ind:
-#     # load linear model version
-#     ver = "version_" + str(int(vernum))
-#     chkpath = pth / ver / 'checkpoints'
-#     best_epoch = ut.find_best_epoch(chkpath)
-#     model2 = encoders.EncoderMod.load_from_checkpoint(str(chkpath / 'epoch={}.ckpt'.format(best_epoch)))
-#     shifters.append(model2.readout.shifter.cpu())
+#%%
+i += 1
+if i > wsub.shape[0]:
+    i = 0
+wtmp = wsub[i,:]
+plt.plot(wtmp[bestlag,:].flatten())
+
+#%%
+plt.imshow(wtmp[bestlag,:,:])
+
+# %%
 
 
 
-# #%% load best model
-# vernum = ind[np.argmin(valloss)]
-# print("Loading version %d" %vernum)
-# ver = "version_" + str(int(vernum))
-# chkpath = pth / ver / 'checkpoints'
-# best_epoch = ut.find_best_epoch(chkpath)
-# model = encoders.EncoderMod.load_from_checkpoint(str(chkpath / 'epoch={}.ckpt'.format(best_epoch)))
-# nn.utils.remove_weight_norm(model.core.features[0].conv)
-
-# model.core.plot_filters()
-# #%% load data
-# # path='/home/jake/Data/Datasets/MitchellV1FreeViewing/stim_movies/'
-
-# # # build tent basis for saccades
-# # n = 40
-# # num_basis = model.core.input_channels
-# # B = np.maximum(1 - np.abs(np.expand_dims(np.asarray(np.arange(0,n)), axis=1) - np.arange(0,n,n/num_basis))/n*num_basis, 0)
-# # num_lags = model.core.input_channels
-
-# # # re-load dataset to fit shifter
-# # gd = dd.PixelDataset(sessid, stims=["Gabor"],
-# #     stimset="Train", num_lags=num_lags,
-# #     downsample_t=2,
-# #     downsample_s=1,
-# #     valid_eye_rad=5.2,
-# #     cids=cids,
-# #     include_eyepos=True,
-# #     dirname=path,
-# #     include_frametime={'num_basis': 40, 'full_experiment': False},
-# #     include_saccades=[{'name':'sacon', 'basis':B, 'offset':-20}, {'name':'sacoff', 'basis':B, 'offset':0}],
-# #     preload=True)
-
-
-# # %%
-# # model.core.plot_filters()
-
-# # %% shift stimulus
-# def shift_stim(im, shift, gd):
-#     import torch.nn.functional as F
-#     affine_trans = torch.tensor([[[1., 0., 0.], [0., 1., 0.]]])
-#     aff = torch.tensor([[1,0,0],[0,1,0]])
-
-#     affine_trans = shift[:,:,None]+aff[None,:,:]
-#     affine_trans[:,0,0] = 1
-#     affine_trans[:,0,1] = 0
-#     affine_trans[:,1,0] = 0
-#     affine_trans[:,1,1] = 1
-
-#     n = im.shape[0]
-#     grid = F.affine_grid(affine_trans, torch.Size((n, gd.num_lags, gd.NY,gd.NX)), align_corners=True)
-
-#     im2 = F.grid_sample(im, grid, mode='bilinear', align_corners=True)
-#     return im2
-
-
-# if 'Dots' in gd.stims:
-#     stimuse = [i for i,s in zip(range(len(gd.stims)), gd.stims) if 'Dots' == s][0]
-# elif 'Gabor' in gd.stims:
-#     stimuse = [i for i,s in zip(range(len(gd.stims)), gd.stims) if 'Gabor' == s][0]
-
-# index = np.where(gd.stim_indices==stimuse)[0]
-# sample = gd[index] # load sample 
-
-# # run shifter
-# shift = model.readout.shifter(sample['eyepos']).detach() # shifters[1](sample['eyepos']).detach()
-
-# im = sample['stim'].detach().clone()
-
-
-# #%% new STAs on shifted stimulus
-# stas = torch.einsum('nlwh,nc->lwhc', im, sample['robs']-sample['robs'].mean(dim=0))
-# sta = stas.detach().cpu().numpy()
-# stas = torch.einsum('nlwh,nc->lwhc', im2, sample['robs']-sample['robs'].mean(dim=0))
-# sta2 = stas.detach().cpu().numpy()
-# # plt.close('all')
-# #%%
-# extent = np.round(gd.rect/gd.ppd*60)
-# extent = np.asarray([extent[i] for i in [0,2,3,1]])
-
-# # plotting
-# NC = sta.shape[3]
-# # plt.figure(figsize=(8,NC*2))
-# for cc in range(NC):
-#     plt.figure(figsize=(8,2))
-    
-#     w = sta[:,:,:,cc]    
-#     w2 = sta2[:,:,:,cc]
-
-#     bestlag = np.argmax(np.std(w2.reshape( (gd.num_lags, -1)), axis=1))
-    
-#     w = (w -np.mean(w[bestlag,:,:]) )/ np.std(w)
-#     w2 = (w2 -np.mean(w2[bestlag,:,:]) )/ np.std(w2)
-
-
-#     plt.subplot(1,4,3)
-#     # plt.subplot(NC,4, cc*4 + 1)
-#     v = np.max(np.abs(w2))
-#     plt.imshow(w2[bestlag,:,:], aspect='auto', interpolation=None, vmin=-v, vmax=v, cmap="coolwarm", extent=extent)
-#     plt.title("After")
-#     plt.xlabel("arcmin")
-#     plt.ylabel("arcmin")
-#     # plt.subplot(NC,4, cc*4 + 2)
-#     plt.subplot(1,4,4)
-#     i,j=np.where(w2[bestlag,:,:]==np.max(w2[bestlag,:,:]))
-#     plt.plot(w2[:,i[0], j[0]], '-ob')
-#     i,j=np.where(w2[bestlag,:,:]==np.min(w2[bestlag,:,:]))
-#     plt.plot(w2[:,i[0], j[0]], '-or')
-#     yd = plt.ylim()
-#     # sns.despine(offset=0, trim=True)
-#     plt.xlabel("Lag (frame=8ms)")
-
-#     # plt.subplot(NC,4, cc*4 + 3)
-#     plt.subplot(1,4,1)
-#     plt.imshow(w[bestlag,:,:], aspect='auto', interpolation=None, vmin=-v, vmax=v, cmap="coolwarm", extent=extent)
-#     plt.title("Before")
-#     plt.xlabel("arcmin")
-#     plt.ylabel("arcmin")
-
-#     plt.subplot(1,4,2)
-#     # plt.subplot(NC,4, cc*4 + 4)
-#     i,j=np.where(w[bestlag,:,:]==np.max(w[bestlag,:,:]))
-#     plt.plot(w[:,i[0], j[0]], '-ob')
-#     i,j=np.where(w[bestlag,:,:]==np.min(w[bestlag,:,:]))
-#     plt.plot(w[:,i[0], j[0]], '-or')
-#     plt.axvline(bestlag, color='k', linestyle='--')
-#     plt.ylim(yd)
-#     # sns.despine(offset=0, trim=True)
-#     plt.xlabel("Lag (frame=8ms)")
-#     # plt.show()
-#     plt.savefig(figDir + "/sta_shift" + gd.id + "_" + str(cc) + ".pdf", bbox_inches='tight')
-#     plt.close('all')
-# # %% save everything out for matlab
-# import scipy.io as sio
-# fname = figDir + "/rfs_" + gd.id + ".mat"
-# mdict = {'xspace': xx, 'yspace': yy, 'shiftx': y2[:,0].reshape((100,100)), 'shifty': y2[:,1].reshape((100,100)), 'stas_pre': sta, 'stas_post': sta2}
-# sio.savemat(fname, mdict)
-
-# # %%
+# %%
 
 # %%
