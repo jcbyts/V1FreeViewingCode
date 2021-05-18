@@ -23,7 +23,22 @@ if isempty(VpxFiles)
         %******** if not DDPI, then try to find .edf from EyeLink
         VpxFiles = dir([DataFolder,filesep,'*edf.mat']);
         if isempty(VpxFiles)
-            disp('Error finding raw eye data file');
+            warning('import_eye_position: Error finding raw eye data file');
+            disp('using online eye position')
+            
+            numTrials = numel(Exp.D);
+            Exp.vpx = struct();
+            Exp.vpx.raw = []; % time, x, y, pupil
+            for iTrial = 1:numTrials
+                ix = ~isnan(Exp.D{iTrial}.eyeData(:,1));
+                tmp = Exp.D{iTrial}.eyeData(:,1:4);
+                Exp.vpx.raw = [Exp.vpx.raw; tmp(ix,:)];
+            end
+            
+            badsamples = (diff(Exp.vpx.raw(:,1))==0);
+            Exp.vpx.raw(badsamples,:) = [];
+            Exp.vpx.smo = Exp.vpx.raw;
+            
             return
         else
             EDF = 1;

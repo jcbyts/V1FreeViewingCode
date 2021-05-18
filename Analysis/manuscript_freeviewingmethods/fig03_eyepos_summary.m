@@ -14,7 +14,7 @@ fprintf(fid, '******************************************************************
 fprintf(fid, '\t\tRUNNING EYE POSITION ANALYSIS ON All SESSIONS\n');
 fprintf(fid, '******************************************************************\n');
 fprintf(fid, '******************************************************************\n');
-
+clear S
 for sessId = 1:57
     fprintf(fid, '******************************************************************\n');
     fprintf(fid, 'Session %d\n', sessId)
@@ -84,8 +84,6 @@ C = log10(imgaussfilt(sum(X,3), .5));
 h = imagesc(bins, bins, C); axis xy
 colormap(plot.viridis(50))
 colorbar
-
-
 
 % plot screen width
 w = Exp.S.screenRect(3)/Exp.S.pixPerDeg;
@@ -255,13 +253,88 @@ plot.fixfigure(gcf, 10, [4 4])
 saveas(gcf, fullfile(figDir, 'Fig02d_usableFixationTime.pdf'))
 
 
-
-
-
-%%
-plot(nValidSamples ./ nTotalSamples, '-o')
+%% Percent time fixating by session
 
 figure(2); clf
-plot(nFixationSamples ./ nValidSamples, 'o')
+plot(nFixationSamples ./ nTotalSamples, 'o')
 ylabel('Percent Time Fixating')
 xlabel('Session')
+
+
+%% get cumulative fixation time
+
+good = 41:57; % sessions with fixRsvp paradigm
+Sc = repmat(struct('fixtime', struct('use', false)), 57, 1);
+for ex = good(:)'
+    Exp = io.dataFactory(ex);
+    Sc(ex) = cumulative_fix_time(Exp);
+end
+
+%% Plot cumulative fixation time
+figure(1); clf
+cmap = lines;
+
+good = find(arrayfun(@(x) x.fixtime.use, Sc));
+for ex = good(:)'
+    plot(Sc(ex).fixtime.exTimeFor/60, Sc(ex).fixtime.fixTimeFor/60, 'Color', cmap(1,:)); hold on
+    plot(Sc(ex).fixtime.exTimeFix/60, Sc(ex).fixtime.fixTimeFix/60, 'Color', cmap(5,:));
+end
+xd = [0 5];
+plot(xd, xd, 'k--')
+xlim(xd)
+ylim(xd) 
+
+plot.formatFig(gcf, [1 1], 'nature')
+set(gca, 'XTick', xd, 'YTick', xd)
+saveas(gcf, fullfile(figDir, 'Fig02_cumulativeFixTimeInset.pdf'))
+
+% fixTimeFor = arrayfun(@(x) mean(x.fixtime.fixTimeFor(:) ./ x.fixtime.exTimeFor(:)), Sc(good));
+fixTimeFix = arrayfun(@(x) mean(x.fixtime.fixTimeFix(:) ./ x.fixtime.exTimeFix(:)), Sc(good));
+
+fixTimeFor = arrayfun(@(x) x.All.nFixationSamples/x.All.nTotalSamples, S);
+
+fprintf('Forage prep (ddpi):\n\tTime Fixating=%02.2f [%02.2f, %02.2f] (n=%d)\n', median(fixTimeFor), prctile(fixTimeFor, [2.5 97.5]), numel(fixTimeFor))
+fprintf('Fixation prep:\n\tTime Fixating=%02.2f [%02.2f,%02.2f] (n=%d)\n', median(fixTimeFix), prctile(fixTimeFix, [2.5 97.5]), numel(fixTimeFix))
+
+figure(2); clf
+
+xd = [0 60];
+plot(xd, xd, 'k--'); hold on
+plot.errorbarFill(xd, xd*mean(fixTimeFor), xd*std(fixTimeFor), 'k', 'FaceColor', cmap(1,:), 'FaceAlpha', .5, 'EdgeColor', 'none')
+plot.errorbarFill(xd, xd*mean(fixTimeFix), xd*std(fixTimeFix), 'k', 'FaceColor', cmap(5,:), 'FaceAlpha', .5, 'EdgeColor', 'none')
+
+plot(xd, (1 - 1/60)*xd, 'r') % ITI effect
+
+% lost track
+mvalid = mean(arrayfun(@(x) x.All.nValidSamples/x.All.nTotalSamples, S));
+msac = mvalid*(1-mean(arrayfun(@(x) x.All.nSaccadeSamples/x.All.nValidSamples, S)));
+
+plot(xd, xd*mvalid, 'g')
+plot(xd, xd*msac, 'm')
+
+xlabel('Experiment Time (min)')
+ylabel('Cumulative Fixation Time (min)')
+xlim(xd)
+ylim(xd)
+plot([0 5], [5 5], 'k:')
+plot([5 5], [0 5], 'k:')
+
+plot.formatFig(gcf, [2 1.8], 'nature')
+saveas(gcf, fullfile(figDir, 'Fig02_cumulativeFixTime.pdf'))
+
+%% Total experiment time
+totalTime = arrayfun(@(x) x.All.totalDuration, S)/60;
+fprintf('Experiment Duration = %02.2f [%02.2f, %02.2f] minutes (n=%d)\n', median(totalTime), prctile(totalTime, [2.5 97.5]), numel(S))
+
+
+hasStim = arrayfun(@(x) isfield(x.Dots, 'totalDuration'), S);
+totalTime = arrayfun(@(x) x.Dots.totalDuration, S(hasStim))/60;
+fprintf('Dot-mapping Duration = %02.2f [%02.2f, %02.2f] minutes (n=%d)\n', median(totalTime), prctile(totalTime, [2.5 97.5]), sum(hasStim))
+
+hasStim = arrayfun(@(x) isfield(x.Grating, 'totalDuration'), S);
+totalTime = arrayfun(@(x) x.Grating.totalDuration, S(hasStim))/60;
+fprintf('Grating Duration = %02.2f [%02.2f, %02.2f] minutes (n=%d)\n', median(totalTime), prctile(totalTime, [2.5 97.5]), sum(hasStim))
+
+
+figure(2); clf
+plot(totalTime, 'o')

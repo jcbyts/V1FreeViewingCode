@@ -211,6 +211,9 @@ ylabel('Proportion')
 plot.fixfigure(gcf, 7, [2.5 2])
 saveas(gcf, 'Figures/manuscript_freeviewing/fig05_MicrosacRate.pdf')
 
+fprintf('Microsaccade rate:\nmedian = %02.2f [%02.2f, %02.2f]\n', median(nsac./fdur), bootci(1000, @median, nsac./fdur))
+
+
 %%
 validTrials = io.getValidTrials(Exp, 'FixCalib');
 thisTrial = validTrials(1);

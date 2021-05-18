@@ -7,7 +7,8 @@ if nargin < 1
         'Forage', ...
         'FixRsvpStim', ...
         'FixCalib', ...
-        'ForageStaticLines'};
+        'ForageStaticLines', ...
+        'DriftingGrating'};
     fprintf('%s\n', stimList{:})
     validTrials = [];
     return
@@ -70,6 +71,11 @@ switch stimulusSet
         
     case {'BackImage'}
         validTrials = intersect(find(strcmp(trialProtocols, 'BackImage')), ephysTrials);
+    
+    case {'DriftingGrating'}
+        validTrials = intersect(find(strcmp(trialProtocols, 'ForageProceduralNoise')), ephysTrials);
+
+        validTrials = validTrials(cellfun(@(x) x.PR.noisetype==6, Exp.D(validTrials)));
         
     case {'Forage'}
         

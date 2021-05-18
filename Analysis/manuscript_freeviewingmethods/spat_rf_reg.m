@@ -97,8 +97,8 @@ valid = find(opts.eyeLabel==1 & ecc < 6.2);
 CpriorInv = qfsmooth3D([num_lags, fliplr(opts.dims)], 1);
 CpriorInv = CpriorInv + .5*eye(size(CpriorInv,2));
 
-% --- Ridge regression to find RF
-lambdas = [1 10 100 1000 5000 10000 50000 100000]; % ridge parameter
+% --- regularized regression to find RF
+lambdas = [1 10 100 1000 5000 10000 50000 100000]; % hyper parameter
 
 nValid = numel(valid);
 rng(1234) % fix random seed for reproducibility

@@ -1,9 +1,9 @@
  
 %%
 pixperdeg = 30;
-cpd = 3;
+cpd = 6;
 phase = 0;
-ori = pi/2;
+ori = pi/4;
 
 rPix = 50/2;
 
@@ -41,8 +41,8 @@ kys = freqs;
 [xx,yy] = meshgrid(pixdims);
 twoPi = 2*pi/pixperdeg;
 
-ori = ori + 2;
-sf = 10;
+ori = 45; %ori + 2;
+sf = 5;
 [ky, kx] = pol2cart(ori/180*pi, sf);
 
 % kx = 5;
@@ -57,7 +57,7 @@ hi = h-mean(h(:));
 
 figure(1); clf
 subplot(1,2,1) % SPATIAL DOMAIN
-imagesc(degdims, degdims, hi); hold on
+imagesc(degdims, degdims, hi, 2*[-1 1]); hold on
 colormap gray
 plot(degdims, (kx/ky)*-degdims+median(degdims), 'r', 'Linewidth', 2)
 xlabel('horizontal space')
@@ -70,13 +70,18 @@ fi = abs(fftshift(fft2((hi))));
 x = -floor(dPix/2):floor((dPix-1)/2);
 x = x/-x(1)*pixperdeg/2;
 
-subplot(1,2,2) % FOURIER DOMAIN
-imagesc(x, x, fi)
+ax = subplot(1,2,2); % FOURIER DOMAIN;
+imagesc(x, x, fi, [-1 1]*max(fi(:)))
 hold on
-plot(kx, ky, 'or', 'Linewidth', 2)
+% plot(kx, ky, 'or', 'Linewidth', 2)
 xlabel('horizontal frequencies')
 ylabel('vertical frequencies')
 axis xy
+xlim([-1 1]*10)
+ylim([-1 1]*10)
+set(gca, 'XTick',  -10:5:10, 'YTick', -10:5:10)
+axis equal
 
-
+plot.fixfigure(gcf, 8, [4 2], 'offsetAxes', false)
+saveas(gcf, fullfile(figDir, 'freqdomain.pdf'))
 

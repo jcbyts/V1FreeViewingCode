@@ -185,8 +185,13 @@ for iTrial = 1:nTrials
             end
             
             hNoise = copy(Exp.D{thisTrial}.PR.hNoise);
-            hNoise.rng.reset(); % reset the random seed to the start of the trial
-            hNoise.frameUpdate = 0; % reset the frame counter
+            if ismethod(hNoise, 'reset')
+                hNoise.reset();
+            else
+                hNoise.rng.reset(); % reset the random seed to the start of the trial
+                hNoise.frameUpdate = 0; % reset the frame counter
+            end
+            
             if isprop(hNoise, 'screenRect')
                 hNoise.screenRect = Exp.S.screenRect;
             end
@@ -377,11 +382,18 @@ for iTrial = 1:nTrials
                     case 5 % dots
                         noiseNum = Exp.D{thisTrial}.PR.noiseNum;
                         seedGood = all([hNoise.x(1:noiseNum) hNoise.y(1:noiseNum)] == Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2:end));
+                    case 6
+                        seedGood = all([hNoise.orientation, hNoise.cpd, hNoise.phase, hNoise.orientation-90, hNoise.speed, hNoise.contrast] == ...
+                            Exp.D{thisTrial}.PR.NoiseHistory(iFrame,2:end));
                 end
                 if ctr > iFrame + 6
                     warning('regenerateStimulus: seed is off')
-                    hNoise.rng.reset(); % reset the random seed to the start of the trial
-                    hNoise.frameUpdate = 0; % reset the frame counter
+                    if ismethod(hNoise, 'reset')
+                        hNoise.reset();
+                    else
+                        hNoise.rng.reset(); % reset the random seed to the start of the trial
+                        hNoise.frameUpdate = 0; % reset the frame counter
+                    end
                     continue
                 end
                 ctr = ctr + 1;

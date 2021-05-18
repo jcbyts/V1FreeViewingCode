@@ -42,6 +42,7 @@ if exist(gfname, 'file')==2
     disp('Loading Grating RFs')
     load(gfname)
 else
+
     for iEx = 1:numel(sesslist)
         if isempty(Sgt{iEx})
             try
@@ -85,6 +86,10 @@ end
 %% Example units
 exs = [25, 27, 45, 45, 5]; % session #
 ccs = [9, 8, 19, 35, 14]; % unit #
+
+
+ccs = 6;
+exs = 10*ones(1,numel(ccs));
 % ex = ex - 1;
 % cc = 0;
 % sesslist{ex}
@@ -172,18 +177,19 @@ for ii = 1:numel(exs)
     hold on
     plot(Sgt{ex}.timeax(:), Sgt{ex}.temporalPref(:,cc), 'k')
     axis tight %, 'k', 'FaceColor', 'k', 'EdgeColor', 'k', 'FaceAlpha', .5); hold on
-    % plot.errorbarFill(Sgt{ex}.timeax(:), Sgt{ex}.temporalNull(:,cc), Sgt{ex}.temporalNullSd(:,cc), 'k', 'FaceColor', cmap(1,:), 'EdgeColor', cmap(1,:), 'FaceAlpha', .5); hold on
+%     plot.errorbarFill(Sgt{ex}.timeax(:), Sgt{ex}.temporalNull(:,cc), Sgt{ex}.temporalNullSd(:,cc), 'k', 'FaceColor', cmap(1,:), 'EdgeColor', cmap(1,:), 'FaceAlpha', .5); hold on
     xlabel('Time lag (ms)')
     ylabel('Firing Rate (sp s^{-1})')
     
     plot.offsetAxes(ax)
+    set(gca, 'XTick', -40:40:120)
     
 %     set(gcf, 'PaperSize', [2.5 6], 'PaperPosition', [0 0 2.5 6])
     plot.fixfigure(gcf, 8, [2.5 6], 'offsetAxes', false)
     ax2.XColor = [1 0 0];
     ax2.YColor = [1 0 0];
     ax2.Box = 'on';
-    saveas(gcf, fullfile(figDir, sprintf('example_%s_%d.pdf', sesslist{ex}, cc)))
+%     saveas(gcf, fullfile(figDir, sprintf('example_%s_%d.pdf', sesslist{ex}, cc)))
     
 end
 
@@ -300,7 +306,7 @@ ecrl = arrayfun(@(x) x.ExtremityCiRatio(1), wf);
 ecru = arrayfun(@(x) x.ExtremityCiRatio(2), wf);
 wfamp = arrayfun(@(x) x.peakval - x.troughval, wf);
 
-%% 
+%% Rosa comparison Eccentricity plot
 % get index
 validwf = wfamp > 40; % only include units with an amplitude > 40 microvolts
 
@@ -362,14 +368,15 @@ set(gca, 'YTickLabel', yt)
 
 text(.25, 5, sprintf('n=%d', sum(six)))
 
-plot.fixfigure(gcf, 7, [2 2], 'FontName', 'Arial', ...
-    'LineWidth',.5, 'OffsetAxes', false);
+% plot.fixfigure(gcf, 7, [2 2], 'FontName', 'Arial', ...
+%     'LineWidth',.5, 'OffsetAxes', false);
+plot.formatFig(gcf, [1.75 1.5], 'nature')
 
 saveas(gcf, fullfile(figDir, 'fig04_ecc_vs_RFsize.pdf'))
 
 
-%%
-
+%% Orientation
+addpath ~/Dropbox/MatlabCode/Repos/circstat-matlab/
 oriPref(angle(oriBw)~=0) = nan; % ignore untuned units
 gix = sigg==1 & ~isnan(oriPref) & angle(oriBw)==0 & oriBw < 90;
 gix = gix & validwf;
@@ -403,7 +410,6 @@ pval = circ_otest(op/180*pi);
 fprintf('Orientation distribution is significantly different than uniform:\n')
 fprintf('Circ_otest pval: %d (%02.4f)\n', pval, pval)
 
-
 cmap = [0 0 0];
 bc = (be + be2)/2;
 plot.errorbarFill(bc, obws, obwe, 'k', 'FaceColor', cmap(1,:), 'FaceAlpha', .25, 'EdgeColor', 'none');
@@ -416,7 +422,6 @@ ylabel('Orientation Bandwidth (deg)')
 
 set(ax, 'XTick', 0:45:180, 'YTick', 0:30:90)
 
-
 fun = @(params,x) params(1)*cosd(params(4)*(x+params(3))).^2 + params(2);
 % fun = @(params,x) params(1)*cosd(params(4)*x+params(3)).^2 + params(2);
 par0 = [10 mean(obw) 0 0];
@@ -427,9 +432,10 @@ phat = lsqcurvefit(fun, par0, op, real(obw), [0 0 0 0], [max(obw), max(obw), 180
 plot(0:180, fun(phat, 0:180), 'b')
 r2 = rsquared(obw, fun(phat, op));
 
-plot.fixfigure(gcf, 7, [2 2], 'FontName', 'Arial', ...
-    'LineWidth',.5, 'OffsetAxes', false);
+% plot.fixfigure(gcf, 7, [2 2], 'FontName', 'Arial', ...
+%     'LineWidth',.5, 'OffsetAxes', false);
 
+plot.formatFig(gcf, [1.75 1.9], 'nature')
 saveas(gcf, fullfile(figDir, 'fig04_Orientation.pdf'))
 
 

@@ -175,12 +175,12 @@ else
         
         % mask out preferred stimulus
         mask = w(pl,:) ./ max(w(pl,:));
-        maskPref = mask>.7;
-        maskNull = mask<.3;
+        maskPref = mask==1;
+        maskNull = mask==min(mask(:));
         
         % preferred stim
         X = Stim*maskPref(:);
-        ind = find(diff(X)>0);
+        ind = find(X==max(X(:)));
         vind = intersect(ind, valid);
         [an, sd] = eventTriggeredAverage(Rdelta(:,cc), vind, win);
         sd = sd./sqrt(numel(vind));
@@ -190,7 +190,7 @@ else
         
         % preferred stim
         X = Stim*maskNull(:);
-        ind = find(diff(X)>0);
+        ind = find(X==max(X(:)));
         vind = intersect(ind, valid);
         [an, sd] = eventTriggeredAverage(Rdelta(:,cc), vind, win);
         sd = sd./sqrt(numel(vind));
