@@ -18,7 +18,7 @@ csdExclusionList = {'ellie_20190107', ...
     'milo_20190607', ...
     'milo_20190621'};
 %%
-for iEx = 56:57
+for iEx = 56
     tic; 
    
     [Exp, ~, lfp] = io.dataFactoryGratingSubspace(iEx, 'spike_sorting', 'jrclustwf');
@@ -75,7 +75,7 @@ end
 % BRI2 = [ ((1-3) - (3-6)) / ((1-3) + (3-6)]
 %%  plot all CSDs
 
-C = csdSac;
+C = csdStim;
 figure; clf
 field = 'csd';
 ix = ~cellfun(@isempty, csdStim);
@@ -222,6 +222,15 @@ for c = 1:n
     AIC(c) = gmdist.AIC;
     BIC(c) = gmdist.BIC;
 end
+
+[~, id] = min(BIC);
+
+xax = linspace(min(xlim), max(xlim), 100);
+yax = linspace(min(ylim), max(ylim), 100);
+[xx,yy] = meshgrid(xax, yax);
+contourf
+
+
 
 %%
 figure(1); clf

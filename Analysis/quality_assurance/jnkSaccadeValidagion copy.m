@@ -83,7 +83,9 @@ xlim([3e6 3.1e6])
 cc = cc + 1
 ev = Exp.vpx2ephys(Exp.slist(:,1:2));
 st = Exp.osp.st(Exp.osp.clu==cids(cc));
-[spbn_pre, bcenters, Spre] = prf.sac_trig_var_dur(st, ev, 'alignment', 'pre', 'win', [-.3 .1], 'nonlinearBins', nlBins, 'smoothing', sm, 'buffer', buffer, 'sacix', sacix, 'fname', fname1);
+sm = 7;
+[spbn_pre, bcenters, Spre] = prf.sac_trig_var_dur(st, ev, 'alignment', 'pre', 'win', [-.3 .1], ...
+    'smoothing', sm);
 
 xd = [-0.2 .1];
 subplot(4,1,1:3)
