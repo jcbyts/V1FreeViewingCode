@@ -33,6 +33,7 @@ ip.addParameter('boxfilt', 5)
 ip.addParameter('spikesmooth', 0)
 ip.addParameter('stat', [])
 ip.addParameter('debug', false)
+ip.addParameter('eyePos', [])
 ip.parse(varargin{:})
 
 %% build stimulus matrix for spatial mapping
@@ -47,11 +48,15 @@ if ~isempty(ip.Results.stat)
     nlags = numel(stat.timeax);
     
 else
-    eyePos = Exp.vpx.smo(:,2:3);
+    if isempty(ip.Results.eyePos)
+        eyePos = Exp.vpx.smo(:,2:3);
+    else
+        eyePos = ip.Results.eyePos;
+    end
     
     [Xstim, RobsSpace, opts] = io.preprocess_spatialmapping_data(Exp, ...
         'ROI', ip.Results.ROI*Exp.S.pixPerDeg, 'binSize', ip.Results.binSize*Exp.S.pixPerDeg, ...
-        'eyePos', eyePos, 'frate', 60);
+        'eyePos', eyePos, 'frate', 120);
     
     % use indices while fixating
     ecc = hypot(opts.eyePosAtFrame(:,1), opts.eyePosAtFrame(:,2))/Exp.S.pixPerDeg;
@@ -136,7 +141,9 @@ for cc = 1:NC
         sy = round(sqrt(nlags));
         for ilag = 1:nlags
             subplot(sx, sy, ilag)
-            imagesc(squeeze(rf(ilag,:,:)), [min(rf(:)) max(rf(:))])
+            imagesc(opts.xax/Exp.S.pixPerDeg, opts.yax/Exp.S.pixPerDeg, squeeze(rf(ilag,:,:)), [min(rf(:)) max(rf(:))])
+            axis xy
+            title(sprintf('%02.2f', stat.timeax(ilag)))
         end
         
         keyboard
@@ -294,7 +301,9 @@ for cc = 1:NC
         sy = round(sqrt(nlags));
         for ilag = 1:nlags
             subplot(sx, sy, ilag)
-            imagesc(squeeze(rf(ilag,:,:)), [min(rf(:)) max(rf(:))])
+            imagesc(opts.xax/Exp.S.pixPerDeg, opts.yax/Exp.S.pixPerDeg, squeeze(rf(ilag,:,:)), [min(rf(:)) max(rf(:))])
+            axis xy
+            title(sprintf('%02.2f', stat.timeax(ilag)))
         end
         
         keyboard
