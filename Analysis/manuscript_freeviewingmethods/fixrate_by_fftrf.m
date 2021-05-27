@@ -43,7 +43,9 @@ end
 sm = ip.Results.smoothing;
 win = ip.Results.win; % centered on fixation start
 binsize = ip.Results.binsize; % raster resolution
-
+% valid fixations are longer than
+fixthresh = 0.25;
+    
 stimulusSet = 'BackImage';
 validTrials = io.getValidTrials(Exp, stimulusSet);
 
@@ -510,8 +512,7 @@ for clustGroup = unique(clusts(:)')
     Blate(lags>.3) = 0;
     Blate = Blate ./ sum(Blate);
     
-    % valid fixations are longer than
-    fixthresh = 0.25;
+    
         
         
     clist = find(clusts==clustGroup);

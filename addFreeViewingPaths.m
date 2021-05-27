@@ -32,6 +32,7 @@ switch user
         % processed data:
         setpref('FREEVIEWING', 'PROCESSED_DATA_DIR', dataPath)
         setpref('FREEVIEWING', 'SERVER_DATA_DIR', '/Volumes/mitchelllab/Data/')
+        setpref('FREEVIEWING', 'HUKLAB_DATASHARE', '~/Google Drive/HuklabTreadmill/')
         
     case 'jakework'
         % we need marmoview in the path for the stimulus objects to
