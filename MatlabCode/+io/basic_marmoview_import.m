@@ -21,17 +21,31 @@ EventFiles = dir([DataFolder,filesep,'*.events']);
 HASEPHYS = false;
 
 if ~isempty(EventFiles)
+    ext = 'events';
     HASEPHYS = true;
 else
-    disp('basic_marmoview_import: No ephys found');
+    EventFiles = dir(fullfile(DataFolder,'*.kwe'));
+    if ~isempty(EventFiles)
+        ext = 'kwe';
+        HASEPHYS = true;
+    else
+        disp('basic_marmoview_import: No ephys found');
+    end
 end
 
 if HASEPHYS
-    [evdata,evtime,evinfo] = read_ephys.load_open_ephys_data_faster([DataFolder,filesep,EventFiles(1).name]);
+    switch ext
+        case 'events'
+            [evdata,evtime,evinfo] = read_ephys.load_open_ephys_data_faster([DataFolder,filesep,EventFiles(1).name]);
+        case 'kwe'
+            [evdata,evtime,evinfo] = read_ephys.load_kwe(fullfile(DataFolder,EventFiles(1).name));
+            evtime = double(evtime) / 30e3; % convert to seconds
+    end
     %**** convert events into strobes with times
     [tstrobes,strobes] = read_ephys.convert_data_to_strobes(evdata,evtime,evinfo);
     strobes = read_ephys.fix_missing_strobes(strobes);
     disp('Strobes are loaded');
+            
 end
 
 
