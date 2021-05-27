@@ -217,8 +217,8 @@ dims = sz;
 % %%
 
 Robs = Robs(valid,:);
-
-t_downsample = ceil(Exp.S.frameRate / ip.Results.frate);
+frate = 1/median(diff(frameTimes));
+t_downsample = ceil(frate / ip.Results.frate);
 if t_downsample > 1
     fprintf('Downsampling by %d\n', t_downsample)
 	stimX = downsample_time(stimX, t_downsample) / t_downsample;
