@@ -5,6 +5,8 @@ function out = get_spat_rf_coarsefine(Exp)
 out = struct();
 
 try
+    
+    %%
     % spatial
     BIGROI = [-14 -8 14 8];
     % BIGROI = [-4 -4 4 4];
@@ -38,7 +40,7 @@ try
     
     subplot(1,3,3)
     imagesc(mrf); hold on
-    
+%%
     [~, ind] = sort([s.Area], 'descend');
     
     for i = ind(1)
