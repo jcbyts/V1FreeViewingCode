@@ -193,6 +193,7 @@ if HASEPHYS
 %         Exp.ptb2Ephys = synchtime.sync_ptb_to_ephys_clock(Exp);
 %             
 %             
+% %%
 %             
 %         startClockPTB = cell2mat(cellfun(@(x) x.STARTCLOCK, Exp.D, 'uni', 0));
 %         endClockPTB = cell2mat(cellfun(@(x) x.ENDCLOCK, Exp.D, 'uni', 0));
@@ -207,6 +208,7 @@ if HASEPHYS
 %         numel(tstrobes)
         
     end
+    
     % do a global synchronization of the clocks
     Exp.ptb2Ephys = synchtime.sync_ptb_to_ephys_clock(Exp);
     disp('Finished Synching up ephys strobes');

@@ -123,6 +123,7 @@ eyeDat(:,1) = Exp.vpx2ephys(eyeDat(:,1));
 [~, ~,id] = histcounts(frameTimes, eyeDat(:,1));
 eyeAtFrame = eyeDat(id,2:3);
 eyeLabels = Exp.vpx.Labels(id);
+eyeSpeed = (Exp.vpx.smo(id,7) + Exp.vpx.smo(id-1,7))/2;
     
 if debug
     figure(1); clf
@@ -228,6 +229,7 @@ if t_downsample > 1
     ypos =  downsample_time(ypos(valid,:), t_downsample) / t_downsample;
     eyeAtFrame = downsample_time(eyeAtFrame(valid,:), t_downsample) / t_downsample;
     eyeLabels = downsample_time(eyeLabels(valid), t_downsample) / t_downsample;
+    eyeSpeed = downsample_time(eyeSpeed(valid), t_downsample) / t_downsample;
     valid =  downsample_time(valid(valid), t_downsample) / t_downsample;
 else % apply valid
     frameTimes = frameTimes(valid);
@@ -235,6 +237,7 @@ else % apply valid
     ypos =  ypos(valid,:);
     eyeAtFrame = eyeAtFrame(valid,:);
     eyeLabels = eyeLabels(valid);
+    eyeSpeed = eyeSpeed(valid);
     valid = valid(valid);
 end
     
@@ -246,5 +249,6 @@ opts.dims = dims;
 opts.xPosition = xpos;
 opts.yPosition = -ypos;
 opts.eyePosAtFrame = eyeAtFrame.*[1 -1]; % flip Y ahead of time
+opts.eyeSpeed = eyeSpeed;
 opts.validFrames = valid;
 opts.numDots = size(xpos,2);

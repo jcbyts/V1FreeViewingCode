@@ -37,7 +37,10 @@ if isempty(VpxFiles)
             
             badsamples = (diff(Exp.vpx.raw(:,1))==0);
             Exp.vpx.raw(badsamples,:) = [];
+            badsamples = Exp.vpx.raw(:,1)==0;
+            Exp.vpx.raw(badsamples,:) = [];
             Exp.vpx.smo = Exp.vpx.raw;
+            Exp.vpx2ephys = @(x) Exp.ptb2Ephys(x);
             
             return
         else
@@ -134,3 +137,186 @@ for k = 1:size(Exp.D,1)
     end
 end
 disp('Finished synching up vpx strobes');
+
+if ~isfield(Exp, 'vpx2ephys')
+    vpx2ephys = synchtime.sync_vpx_to_ephys_clock(Exp);
+    Exp.vpx2ephys = vpx2ephys;
+end
+
+if all(isnan(Exp.vpx2ephys(Exp.vpx.raw(:,1))))
+    warning('Eyetracker sync did not work')
+    warning('Going to try to manually match traces. This is slow...')
+    
+    numTrials = numel(Exp.D);
+    vpx = struct();
+    vpx.raw = []; % time, x, y, pupil
+    for iTrial = 1:numTrials
+        ix = ~isnan(Exp.D{iTrial}.eyeData(:,1));
+        tmp = Exp.D{iTrial}.eyeData(:,1:4);
+        vpx.raw = [vpx.raw; tmp(ix,:)];
+    end
+    
+    badsamples = (diff(vpx.raw(:,1))==0);
+    vpx.raw(badsamples,:) = [];
+    vpx.raw(:,3) = 1 - vpx.raw(:,3); % flip online y
+    
+    nsamples = size(vpx.raw,1);
+    samplematch = inf(nsamples,2);
+    for isample=1:20:nsamples
+        xdiff = vpx.raw(isample,2) - Exp.vpx.raw(:,2);
+        ydiff = vpx.raw(isample,3) - Exp.vpx.raw(:,3);
+        [minerr, id] = min(sqrt(xdiff.^2 + ydiff.^2));
+        samplematch(isample,1) = id;
+        samplematch(isample,2) = minerr;
+    end
+    
+    goodsamples = find(samplematch(:,2)<1e-5);
+    ptbTime = vpx.raw(goodsamples,1);
+    vpxTime = Exp.vpx.raw(samplematch(goodsamples,1));
+    wts = robustfit(vpxTime, Exp.ptb2Ephys(ptbTime));
+    
+    figure(100); clf
+    plot(vpxTime, Exp.ptb2Ephys(ptbTime), 'o'); hold on
+    Exp.vpx2ephys = @(t) t*wts(2) + wts(1);
+    plot(vpxTime, Exp.vpx2ephys(vpxTime), 'r')
+    xlabel('Eye Tracker Time')
+    ylabel('Ephys Time')
+    legend({'Data', 'Fit'})
+    
+end
+
+
+%% clean up and resample
+Exp.vpx.raw0 = Exp.vpx.raw;
+
+Exp.vpx.raw(isnan(Exp.vpx.raw)) = 32000;
+
+% detect valid epochs (this could be invalid due to failures in the
+% eyetracker parameters / blinks / etc)
+x = double(Exp.vpx.raw(:,2)==32000);
+x(1) = 0;
+x(end) = 0;
+
+bon = find(diff(x)==1);
+boff = find(diff(x)==-1);
+
+bon = bon(2:end); % start of bad
+boff = boff(1:end-1); % end of bad
+if isempty(bon)
+    boff = 1;
+    bon = size(Exp.vpx.raw,1);
+end
+gdur = Exp.vpx.raw(bon,1)-Exp.vpx.raw(boff,1);
+
+remove = gdur < 1;
+
+bremon = bon(remove);
+bremoff = boff(remove);
+gdur(remove) = [];
+
+goodSnips = sum(gdur/60);
+
+totalDur = Exp.vpx.raw(end,1)-Exp.vpx.raw(1,1);
+totalMin = totalDur/60;
+
+fprintf('%02.2f/%02.2f minutes are usable\n', goodSnips, totalMin)
+
+% go back through and eliminate snippets that are not analyzable
+n = numel(bremon);
+for i = 1:n
+    Exp.vpx.raw(bremoff(i):bremon(i),2:end) = 32e3;
+end
+
+% eliminate double samples (this shouldn't do anything)
+[~,ia] =  unique(Exp.vpx.raw(:,1));
+Exp.vpx.raw = Exp.vpx.raw(ia,:);
+
+% upsample eye traces to 1kHz
+new_timestamps = Exp.vpx.raw(1,1):1e-3:Exp.vpx.raw(end,1);
+new_EyeX = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,2), new_timestamps);
+new_EyeY = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,3), new_timestamps);
+new_Pupil = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,4), new_timestamps);
+bad = interp1(Exp.vpx.raw(:,1), double(Exp.vpx.raw(:,2)>31e3), new_timestamps);
+Exp.vpx.raw = [new_timestamps(:) new_EyeX(:) new_EyeY(:) new_Pupil(:)];
+
+Exp.vpx.raw(bad>0,2:end) = nan; % nan out bad sample times
+
+
+%% convert eye position to degrees
+Fs = 1./nanmedian(diff(Exp.vpx.raw(:,1)));
+% x and y position
+vxx = Exp.vpx.raw(:,2);
+vyy = 1 - Exp.vpx.raw(:,3);
+vtt = Exp.vpx.raw(:,1);
+
+%--- OLD WAY: use most common calibraiton
+% use the most common value across trials (we should've only calibrated
+% once in these sessions)
+% cx = mode(cxs);
+% cy = mode(cys);
+% dx = mode(dxs);
+% dy = mode(dys);
+% 
+% % convert to d.v.a.
+% vxxd = (vxx - cx)/(dx * Exp.S.pixPerDeg);
+% vyy = 1 - vyy;
+% vyyd = (vyy - cy)/(dy * Exp.S.pixPerDeg);
+
+% NEW WAY
+nTrials = numel(Exp.D);
+validTrials = 1:nTrials;
+
+% gain and offsets from online calibration
+cxs = cellfun(@(x) x.c(1), Exp.D(validTrials));
+cys = cellfun(@(x) x.c(2), Exp.D(validTrials));
+dxs = cellfun(@(x) x.dx, Exp.D(validTrials));
+dys = cellfun(@(x) x.dy, Exp.D(validTrials));
+
+vxxd = vxx;
+vyyd = vyy;
+
+for iTrial = 1:nTrials
+    tstartPtb = Exp.ptb2Ephys(Exp.D{iTrial}.STARTCLOCKTIME);
+    tstartVpx = find(Exp.vpx2ephys(vtt) > tstartPtb, 1);
+    if iTrial < nTrials
+        tNextPtb = Exp.ptb2Ephys(Exp.D{iTrial+1}.STARTCLOCKTIME);
+        tEndVpx = find(Exp.vpx2ephys(vtt) > tNextPtb, 1);
+    else
+        tEndVpx = numel(vtt);
+    end
+    
+    iix = tstartVpx:tEndVpx;
+        
+    cx = cxs(1);
+    cy = cys(1);
+    dx = dxs(1);
+    dy = dys(1);
+    
+    % convert to d.v.a.
+    vxxd(iix) = (vxx(iix) - cx)/(dx * Exp.S.pixPerDeg);
+    vyyd(iix) = (vyy(iix) - cy)/(dy * Exp.S.pixPerDeg);
+
+end
+
+vpp = Exp.vpx.raw(:,4);
+
+vxx = medfilt1(vxxd, 5);
+vyy = medfilt1(vyyd, 5);
+
+vxx = imgaussfilt(vxx, 7);
+vyy = imgaussfilt(vyy, 7);
+
+vx = [0; diff(vxx)];
+vy = [0; diff(vyy)];
+
+vx = sgolayfilt(vx, 1, 3);
+vy = sgolayfilt(vy, 1, 3);
+
+% convert to d.v.a / sec
+vx = vx * Fs;
+vy = vy * Fs;
+
+spd = hypot(vx, vy);
+Exp.vpx.smo = [vtt vxxd vyyd vpp vx vy spd];
+
+

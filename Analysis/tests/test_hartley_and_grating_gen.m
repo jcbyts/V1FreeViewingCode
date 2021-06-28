@@ -41,8 +41,8 @@ kys = freqs;
 [xx,yy] = meshgrid(pixdims);
 twoPi = 2*pi/pixperdeg;
 
-ori = 45; %ori + 2;
-sf = 5;
+ori = ori + 2;
+sf = 4;
 [ky, kx] = pol2cart(ori/180*pi, sf);
 
 % kx = 5;
@@ -53,6 +53,7 @@ disp(ori)
 gr = twoPi * ((kx*xx + ky*yy) / M);
 h = sin(gr) + cos(gr);
 
+% h = double(h>0);
 hi = h-mean(h(:));
 
 figure(1); clf
@@ -82,6 +83,13 @@ ylim([-1 1]*10)
 set(gca, 'XTick',  -10:5:10, 'YTick', -10:5:10)
 axis equal
 
-plot.fixfigure(gcf, 8, [4 2], 'offsetAxes', false)
-saveas(gcf, fullfile(figDir, 'freqdomain.pdf'))
+% plot.fixfigure(gcf, 8, [4 2], 'offsetAxes', false)
+% saveas(gcf, fullfile(figDir, 'freqdomain.pdf'))
 
+%%
+figure(1); clf;
+
+for i = 1:1000
+    
+    imagesc(h(mod(i, size(h,1))+1,:)); drawnow
+end

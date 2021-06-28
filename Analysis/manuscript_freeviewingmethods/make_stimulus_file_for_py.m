@@ -1,7 +1,11 @@
 function fname = make_stimulus_file_for_py(Exp, S, varargin)
 % make_stimulus_file_for_py(Exp, S, varargin)
 eyesmoothing = 19;
-spike_sorting = S.spikeSorting;
+if isfield(S, 'spikeSorting')
+    spike_sorting = S.spikeSorting;
+else
+    spike_sorting = 'none';
+end
 
 ip = inputParser();
 ip.addParameter('stimlist', {'Dots', 'Gabor', 'Grating', 'FixRsvpStim', 'BackImage'})
@@ -58,6 +62,8 @@ try %#ok<*TRYNC>
     h5write(fname, '/Neurons/cgs', Exp.osp.cgs)
 end
 
-io.h5addSpikesorting(Exp, fname, spike_sorting)
+if ~strcmp(spike_sorting, 'none')
+    io.h5addSpikesorting(Exp, fname, spike_sorting)
+end
 
 
