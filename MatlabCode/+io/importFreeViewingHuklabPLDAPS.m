@@ -42,9 +42,11 @@ for iFile = 1:numel(pdsfiles)
         PDS = PDS.tmpFile;
     end
     
-    filenameE = fullfile(DataFolder,kwefiles(1).name);
-    if ~(numel(kwefiles) == 1)
-        keyboard
+    if numel(kwefiles) > 1
+        [~, id] = min( ([kwefiles.datenum] - pdsfiles(iFile).datenum).^2);
+        filenameE = fullfile(DataFolder, kwefiles(id).name);
+    else
+        filenameE = fullfile(DataFolder,kwefiles(1).name);
     end
     
     % sync clock
@@ -89,6 +91,10 @@ for iFile = 1:numel(pdsfiles)
     
     [EP2PTBfit, EP2PTB, PTB2EP, maxreconstructionerror] = ephys.syncGeneralClock(PDS, ephysData);
     
+    if isempty(maxreconstructionerror)
+        continue % skip file
+    end
+    
     % loop over trials
     numTrials = numel(PDS.data);
     
@@ -113,7 +119,10 @@ for iFile = 1:numel(pdsfiles)
             
             assert(PDS.data{iTrial}.pmBase.condsShown(iGrating) == gratParams.condIndex, "condition mismatch")
             gratingOnset = ft(find(ft > gratParams.modOnDur(1), 1)) + trialStart;
-            gratingOffset = ft(find(ft > gratParams.modOnDur(1), 1)) + trialStart;
+            gratingOffset = ft(find(ft > gratParams.modOnDur(2), 1)) + trialStart;
+            if isempty(gratingOffset)
+                gratingOffset = ft(end) + trialStart;
+            end
             
             D.GratingOnsets = [D.GratingOnsets; gratingOnset];
             D.GratingOffsets = [D.GratingOffsets; gratingOffset];
@@ -151,10 +160,18 @@ for iFile = 1:numel(pdsfiles)
     
     D.eyeLabels = Exp.vpx.Labels;
     
+    if any(isinf(D.GratingOnsets))
+    keyboard
+    end
+
     % convert times to ephys
     timingFields = {'treadTime', 'GratingOnsets', 'GratingOffsets', 'eyeTime'};
     for iTimingField = 1:numel(timingFields)
         D.(timingFields{iTimingField}) = PTB2EP(D.(timingFields{iTimingField}))/double(sample_rate);
+    end
+    
+    if any(isinf(D.GratingOnsets))
+    keyboard
     end
     
     % --- exclude negative times
@@ -163,6 +180,9 @@ for iFile = 1:numel(pdsfiles)
     for iField = 1:numel(gratFields)
        D.(gratFields{iField})(iix) = [];
     end
+    
+    
+
     
     eyeFields = {'eyeLabels', 'eyePos', 'eyeTime'};
     iix = D.eyeTime < 0;
@@ -179,4 +199,5 @@ for iFile = 1:numel(pdsfiles)
     
 end
 disp('Done importing session');
+
 

@@ -65,8 +65,8 @@ else
     treadTime = Exp.ptb2Ephys(treadTime);
     
     % --- spike times / saccade times / eye pos
-    st = Exp.osp.st;
-    clu = Exp.osp.clu;
+    st = Exp.spikeTimes;
+    clu = Exp.spikeIds;
     eyeTime = Exp.vpx2ephys(Exp.vpx.smo(:,1));
     eyePos = Exp.vpx.smo(:,2:3);
     
