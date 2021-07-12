@@ -1,10 +1,13 @@
 
-[Exp,S] = io.dataFactoryTreadmill(4);
+[Exp,S] = io.dataFactoryTreadmill(13);
 % add unit quality (since some analyses require this field)
 Exp.osp.cgs = ones(size(Exp.osp.cids))*2;
 io.checkCalibration(Exp);
+% io.getEyeCalibrationFromRaw(Exp)
 
 %% Forward correlation spatial RF mapping
+addpath Analysis/manuscript_freeviewingmethods/
+
 BIGROI = [-10 -8 10 8];
 
 stat = spat_rf_helper(Exp, 'ROI', BIGROI, ...
@@ -16,6 +19,9 @@ stat = spat_rf_helper(Exp, 'ROI', BIGROI, ...
 frf = fixrate_by_stim(Exp, 'stimSets', {'DriftingGrating', 'BackImage'});
 
 %% Grating tuning
+Exp.spikeTimes = Exp.osp.st;
+Exp.spikeIds = Exp.osp.clu;
+
 D = io.get_drifting_grating_output(Exp);
 
 %% bin spikes in window aligned ton onset

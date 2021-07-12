@@ -6,7 +6,23 @@ if nargin < 1
     error('addFreeViewingPaths: requires a user argument')
 end
 
+dataPath = []; % empty by default
+
 switch user
+    
+%     case 'jack'
+        % Add paths to the location on your machine
+        
+        % we need marmopipe to import raw data
+%         marmoPipePath = Repo at https://github.com/jcbyts/MarmoPipe
+        
+        % we need marmoview in the path for the stimulus objects to
+        % regenerate properly
+%         marmoViewPath = Repo at https://github.com/jcbyts/MarmoV5)
+
+        % set the path to the huklab datashare
+%         setpref('FREEVIEWING', 'HUKLAB_DATASHARE', PATH TO THE GOOGLE DRIVE)
+        
 
     case 'jakesigur'
         % we need marmoview in the path for the stimulus objects to

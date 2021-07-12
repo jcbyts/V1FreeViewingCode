@@ -1,13 +1,21 @@
-fpath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
-subj = 'gru';
+function stat = tuning_empirical(D, varargin)
+% Empirical (bootstrap-based) tuning curve analyses
+% stat = tuning_empirical(D, varargin)
+% Inputs:
+%   D - big supersession struct
+% Optional Arguments:
+%   binsize
+%   win
 
-fname = fullfile(fpath, [subj 'D_all.mat']);
+ip = inputParser();
+ip.addParameter('binsize', 10e-3)
+ip.addParameter('win', [-.25 1.1])
+ip.addParameter('runningthresh', 1)
+ip.parse(varargin{:});
 
-D = load(fname);
-
-%% bin spikes in window aligned ton onset
-binsize = 10e-3;
-win = [-.25 1.1];
+% bin spikes in window aligned ton onset
+binsize = ip.Results.binsize;
+win = ip.Results.win;
 
 spikeIds = unique(D.spikeIds);
 NC = numel(spikeIds);
@@ -23,22 +31,38 @@ blags = ceil(lags/binsize);
 
 numlags = numel(blags);
 balign = ceil(D.GratingOnsets/binsize);
+validix = (balign + blags(end)) < size(spbn,1);
+balign = balign(validix);
+
 numStim = numel(balign);
 
+treadTime = D.treadTime;
+treadSpeed = D.treadSpeed;
+iix = ~(isnan(D.treadTime) | isnan(D.treadSpeed));
+
+treadTime = treadTime(iix);
+treadSpeed = treadSpeed(iix);
+
 % binning treadmill speed
-treadBins = ceil(D.treadTime/binsize);
-treadSpd = nan(size(spbn,1), 1);
-treadSpd(treadBins(~isnan(D.treadSpeed))) = D.treadSpeed(~isnan(D.treadSpeed));
-treadSpd = max(repnan(treadSpd, 'v5cubic'),0);
+treadBins = ceil(treadTime/binsize);
+
+treadSpd = nan(size(spbn,1), 1); % make same size as spike bins
+
+% interpolate nan's
+treadSpd(treadBins(~isnan(treadSpeed))) = treadSpeed(~isnan(treadSpeed));
+treadSpd = abs(repnan(treadSpd, 'pchip')); % absolute value (not forward vs. backwards)
+
+% only use valid gratings
+GratingDirections = D.GratingDirections(validix);
 
 % Do the binning here
 disp('Binning spikes')
 spks = zeros(numStim, NC, numlags);
 tspd = zeros(numStim, numlags);
-dfilt = false(numStim, NC);
+dfilt = false(numStim, NC); % this is the "data filter" it says which Gratings correspond to the selected unit
 
 for cc = 1:NC
-   dfilt(:,cc) = ismember(D.sessNumGratings, unique(D.sessNumSpikes(D.spikeIds==spikeIds(cc)))); 
+   dfilt(:,cc) = ismember(D.sessNumGratings(validix), unique(D.sessNumSpikes(D.spikeIds==spikeIds(cc)))); 
 end
 
 for i = 1:numlags
@@ -83,7 +107,7 @@ psthsNoRunning = zeros(numlags, nd, NC);
 for cc = 1:NC % cells
     fprintf("Unit %d/%d\n", cc, NC)
     for i = 1:nd % directions
-        iix = D.GratingDirections==ths(i) & dfilt(:,cc);
+        iix = GratingDirections==ths(i) & dfilt(:,cc);
         psthsRunning(:,i,cc) = squeeze(mean(spksfilt(iix & runningTrial,cc,:),1))';
         psthsNoRunning(:,i,cc) = squeeze(mean(spksfilt(iix & ~runningTrial,cc,:),1))';
     end
@@ -95,16 +119,13 @@ end
 % psthsNoRunning(1:10,:,:) = nan;
 % psthsNoRunning(end-10:end,:,:) = nan;
 
-cc = 100;
+cc = 1;
 %% Step through and plot individual cells
 % cc = 1
-
-
-
 figure(1); clf
 
     
-cc = cc - 1;
+cc = cc + 1;
 if cc > NC
     cc = 1;
 end
@@ -120,7 +141,7 @@ spkS = [];
 spkR = [];
 thctr = 0;
 for th = 1:numel(ths)
-    iix = find(D.GratingDirections==ths(th) & ~runningTrial & dfilt(:,cc));
+    iix = find(GratingDirections==ths(th) & ~runningTrial & dfilt(:,cc));
 
     nt = numel(iix);
     spk = squeeze(spks(iix,cc,:));
@@ -141,7 +162,7 @@ subplot(1,2,2)
 
 thctr = 0;
 for th = 1:numel(ths)
-    iix = find(D.GratingDirections==ths(th) & runningTrial & dfilt(:,cc));
+    iix = find(GratingDirections==ths(th) & runningTrial & dfilt(:,cc));
     
     nt = numel(iix);
     spk = squeeze(spks(iix,cc,:));
@@ -194,8 +215,8 @@ plot((1:NT)/NT, mean(spkR(:,iix),2), '-o', 'Linewidth', 2)
 
 
 %% empirical tuning curve differences
-
-nboot = 5000;
+rng(1234) % set random seed for reproducing the exact numbers
+nboot = 1000;
 TCdiffNull = nan(NC, nboot);
 maxFRdiffNull = nan(NC, nboot);
 TCdiff = nan(NC,1);
@@ -352,6 +373,8 @@ iUnit = 1;
 % if iUnit > nMod
 %     iUnit = 1;
 % end
+% modUnits = 1:size(dfilt,2);
+% nMod = numel(modUnits);
 for iUnit = 1:nMod
     cc = modUnits(iUnit);
     
@@ -389,7 +412,7 @@ for iUnit = 1:nMod
     spkR = [];
     thctr = 0;
     for th = 1:nStim
-        iix = find(D.GratingDirections==ths(th) & ~runningTrial & unitix);
+        iix = find(GratingDirections==ths(th) & ~runningTrial & unitix);
         
         nt = numel(iix);
         spk = squeeze(spks(iix,cc,:));
@@ -423,7 +446,7 @@ for iUnit = 1:nMod
     
     thctr = 0;
     for th = 1:nStim
-        iix = find(D.GratingDirections==ths(th) & runningTrial & unitix);
+        iix = find(GratingDirections==ths(th) & runningTrial & unitix);
         
         nt = numel(iix);
         spk = squeeze(spks(iix,cc,:));

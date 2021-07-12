@@ -151,6 +151,9 @@ for iBreak = 1:nBreaks
     end
 end
 
+D.sessNumGratings = ones(size(D.GratingOnsets));
+D.sessNumSpikes = ones(size(D.spikeTimes));
+
 function plotGratingData(D)
     figure(111); clf
     subplot(3,1,1)

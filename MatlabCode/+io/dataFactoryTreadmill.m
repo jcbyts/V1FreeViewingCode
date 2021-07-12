@@ -114,7 +114,7 @@ else % try importing the file
             
             stmp = double(D.z.Times{rId}{kunit}) / D.z.Sampling;
             st = [st; stmp];
-            clu = [clu; iunit*ones(numel(stmp),1)];
+            clu = [clu; kunit*ones(numel(stmp),1)];
         end
         
     end

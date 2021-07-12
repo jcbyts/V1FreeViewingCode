@@ -6,11 +6,15 @@ addpath Analysis/manuscript_freeviewingmethods/
 
 %%
 close all
-sessId = 7;
+sessId = 13;
 [Exp, S] = io.dataFactoryTreadmill(sessId);
 Exp.osp.cgs = ones(size(Exp.osp.cids))*2;
 
 io.checkCalibration(Exp);
+
+%%
+
+
 
 %%
 % BIGROI = [-10 -8 10 8];

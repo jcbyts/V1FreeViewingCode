@@ -1,25 +1,6 @@
 
 
-%% load data
-addpath Analysis/HukLabTreadmill/
-fpath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
-subj = 'gru';
-
-fname = fullfile(fpath, [subj 'D_all.mat']);
-
-D = load(fname);
-
-sessions = unique(D.sessNumSpikes);
-Nsess = numel(sessions);
-NCs = zeros(Nsess,1);
-fprintf('Found %d unique sessions\n', Nsess)
-for i = 1:Nsess
-    NC = numel(unique(D.spikeIds(D.sessNumSpikes == sessions(i))));
-    dur = median(D.GratingOffsets(D.sessNumGratings == sessions(i)) - D.GratingOnsets(D.sessNumGratings == sessions(i)));
-    
-    fprintf('%d) %d Units, %d Trials, Stim Duration: %02.2fs \n', sessions(i), NC, sum(D.sessNumGratings == sessions(i)), dur)
-    NCs(i) = NC;
-end
+D = load_subject(subj);
 
 %%
 clear Dstat
