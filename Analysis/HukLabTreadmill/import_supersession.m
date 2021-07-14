@@ -36,14 +36,15 @@ Dbig = struct('GratingDirections', [], 'GratingFrequency', [], ...
     'GratingOffsets', [], 'GratingOnsets', [], 'GratingSpeeds', [], ...
     'eyeLabels', [], 'eyePos', [], 'eyeTime', [], ...
     'treadSpeed', [], 'treadTime', [], ...
-    'sessNumSpikes', [], 'sessNumGratings', [], 'spikeTimes', [], 'spikeIds', []);
+    'sessNumSpikes', [], 'sessNumGratings', [], ...
+    'sessNumTread', [], 'sessNumEye', [], 'spikeTimes', [], 'spikeIds', []);
 
 fprintf('Loading and aligning spikes with behavior\n')
 
 startTime = 0; % all experiments start at zero. this number will increment as we concatenate sessions
 newOffset = 0;
 timingFields = {'GratingOnsets', 'GratingOffsets', 'spikeTimes', 'treadTime', 'eyeTime'};
-nonTimingFields = {'GratingDirections', 'GratingFrequency', 'GratingSpeeds', 'eyeLabels', 'eyePos', 'treadSpeed', 'spikeIds', 'sessNumSpikes', 'sessNumGratings'};
+nonTimingFields = {'GratingDirections', 'GratingFrequency', 'GratingSpeeds', 'eyeLabels', 'eyePos', 'treadSpeed', 'spikeIds', 'sessNumSpikes', 'sessNumGratings', 'sessNumTread', 'sessNumEye'};
 
 fprintf('Looping over %d sessions\n', numel(goodEphysSessions))
 for iSess = 1:numel(goodEphysSessions)
@@ -74,6 +75,8 @@ for iSess = 1:numel(goodEphysSessions)
     D = io.get_drifting_grating_output(D_);
     D.sessNumSpikes = iSess*ones(size(D.spikeTimes));
     D.sessNumGratings = iSess*ones(size(D.GratingOnsets));
+    D.sessNumTread = iSess*ones(size(D.treadTime));
+    D.sessNumEye = iSess*ones(size(D.eyeTime));
     
     % loop over timing fields and offset time
     for iField = 1:numel(timingFields)

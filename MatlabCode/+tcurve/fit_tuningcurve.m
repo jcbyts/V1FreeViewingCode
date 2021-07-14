@@ -115,10 +115,15 @@ else
     fun = @(params) tcurve.neglogli_poissGLM(tcurve.vonmisesnest(theta, params), count);
     
     % optimization
-    [phat, fval, ~, ~, ~, ~, H] = fmincon(fun, params0, [], [], [], [], LB, UB, [], opts);
-    
-    % error bars
-    paramsSD = sqrt(diag(inv(H)))';
+    try
+        [phat, fval, ~, ~, ~, ~, H] = fmincon(fun, params0, [], [], [], [], LB, UB, [], opts);
+        
+        % error bars
+        paramsSD = sqrt(diag(inv(H)))';
+    catch
+        phat = nan(5,1);
+        paramsSD = nan(5,1);
+    end
 end
 
 fval = tcurve.neglogli_poissGLM(tcurve.vonmisesnest(theta, phat), count);

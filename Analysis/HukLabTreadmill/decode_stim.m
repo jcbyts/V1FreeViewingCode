@@ -1,12 +1,23 @@
-function Dstat = do_decoding(D, sessionId, varargin)
+function Dstat = decode_stim(D, sessionId, varargin)
 % do orientation / direction decoding for the huklab treadmill data
+% Dstat = decode_stim(D, sessionId, varargin)
+% Inputs:
+%   D            <struct> super session struct
+    % sessionId <numeric> session number
+% Optional Arguments:
+%   binSize:        bin size (seconds)
+%   Latency:        estimated stim onset (for decoding window, in seconds)
+%   Decode:         decoding target {'Orientation', 'Direction'}
+%   slidingWin:     boxcar width for sliding window analyses (seconds)
+%   runThreshold:   threshold in cm/s to consider running
+%   plot:           boolean for saving plots (default: true)
 
 ip = inputParser();
 ip.addParameter('binSize', 5e-3)
 ip.addParameter('Latency', .04)
 ip.addParameter('Decode', 'Orientation')
 ip.addParameter('slidingWin', 80e-3)
-ip.addParameter('runThreshold', 5)
+ip.addParameter('runThreshold', 1)
 ip.addParameter('plot', true)
 ip.parse(varargin{:})
 
@@ -15,12 +26,13 @@ ip.parse(varargin{:})
 circdiff = @(x,y) angle(exp(1i*(x - y)/180*pi))/pi*180;
 circmean = @(x) angle(sum(exp(1i*x/180*pi)))/pi*180;
 
+% wrap in radians
 wrappi = @(x) mod(x/pi, 1)*pi;
 wrap2pi = @(x) mod(x/2/pi, 1)*2*pi;
 
+% in degrees
 wrap180 = @(x) mod(x/180, 1)*180;
 wrap360 = @(x) mod(x/360, 1)*360;
-
 
 crossValidate = true;
 trainStationaryOnly = false;
@@ -43,11 +55,11 @@ treadTime = D.treadTime(~isnan(D.treadTime));
 treadSpeed = D.treadSpeed(~isnan(D.treadTime));
 [~, ~, idOn] = histcounts(StimOnset, treadTime);
 [~, ~, idOff] = histcounts(StimOnset, treadTime);
+
 runSpeed = zeros(NT, 1);
 for i = 1:NT
     runSpeed(i) = mean(treadSpeed(idOn(i):idOff(i)));
 end
-
 
 ix = D.sessNumSpikes == sessionId;
 SpikeTimes = D.spikeTimes(ix);
