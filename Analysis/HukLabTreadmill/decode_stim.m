@@ -17,12 +17,12 @@ ip.addParameter('binSize', 5e-3)
 ip.addParameter('Latency', .04)
 ip.addParameter('Decode', 'Orientation')
 ip.addParameter('slidingWin', 80e-3)
-ip.addParameter('runThreshold', 1)
+ip.addParameter('runThreshold', 3)
 ip.addParameter('plot', true)
 ip.parse(varargin{:})
 
 
-% useful functions
+%% useful functions
 circdiff = @(x,y) angle(exp(1i*(x - y)/180*pi))/pi*180;
 circmean = @(x) angle(sum(exp(1i*x/180*pi)))/pi*180;
 
@@ -39,116 +39,34 @@ trainStationaryOnly = false;
 instantaneousDecoder = false; % retrain decoder at each timelag
 cumulativeDecoder = false;
 
-ix = D.sessNumGratings == sessionId;
+%%
+[StimDir, spksb, runningSpeed, Dstat] = bin_population(D, sessionId);
 
-StimOnset = D.GratingOnsets(ix);
-StimOffset = D.GratingOffsets(ix);
-StimDir = D.GratingDirections(ix);
-StimDur = median(StimOffset - StimOnset);
+% throw out spurious running trials
+toofast = find(any(runningSpeed > 60,2));
 
-NT = numel(StimDir);
-Dstat = struct();
-Dstat.NTrials = NT;
+StimDir(toofast,:) = [];
+spksb(toofast,:,:) = [];
+runningSpeed(toofast,:) = [];
+Dstat.NTrials = Dstat.NTrials-numel(toofast);
+% figure(1); clf
+% imagesc(runningSpeed)
 
+runSpeed = mean(runningSpeed,2);
 
-treadTime = D.treadTime(~isnan(D.treadTime));
-treadSpeed = D.treadSpeed(~isnan(D.treadTime));
-[~, ~, idOn] = histcounts(StimOnset, treadTime);
-[~, ~, idOff] = histcounts(StimOnset, treadTime);
-
-runSpeed = zeros(NT, 1);
-for i = 1:NT
-    runSpeed(i) = mean(treadSpeed(idOn(i):idOff(i)));
-end
-
-ix = D.sessNumSpikes == sessionId;
-SpikeTimes = D.spikeTimes(ix);
-SpikeIds = D.spikeIds(ix);
-UnitList = unique(SpikeIds);
-
-NC = numel(UnitList); % number of neurons
-fprintf("Session %d) %d Grating Trials, %d Units %02.2f sec duration\n", sessionId, NT, NC, StimDur)
-
-Dstat.NCells = NC;
-Dstat.stimDuration = StimDur;
-
-%% preprocess some of the data
-
-% parameters for counting spikes
-StimDur = max(StimDur, .1);
-win = [-0.21 StimDur];
-binsize = ip.Results.binSize; % 10 ms bins
-
-bins = win(1):binsize:win(2);
-nbins = numel(bins)-1;
-
-plotDuringImport = ip.Results.plot;
-
-stimid = unique(StimDir); % unique stimuli shown
-nstm = numel(stimid);
-
-spksb = zeros(NT, nbins, NC);
-
-sx = ceil(sqrt(NC));
-sy = round(sqrt(NC));
-
-if plotDuringImport
-    fig(1) = figure(1); clf
-    
-    ax1 = axes('Position', [.08 .08 .84 .84]);
-    ax1.XColor = 'w';
-    ax1.YColor = 'w';
-    ax = decoding.tight_subplot(sx, sy, .01);
-    
-end
-
-% count spike times aligned to motion onset
-fprintf('Counting spikes aligned to stim onset \n')
-for k = 1:(sx*sy)
-    if plotDuringImport
-        figure(fig(1))
-        set(fig(1), 'currentaxes', ax(k))
-    end
-    
-    if k > NC
-        axis off
-        continue
-    end
-    
-    % count spikes
-    st = SpikeTimes(SpikeIds==UnitList(k));
-    [scnt, bins] = decoding.binSpTimes(st, StimOnset, win, binsize);
-    spksb(:,:,k) = scnt;
-    
-    if plotDuringImport
-        % visualize tuning
-        [~, ind] = sort(StimDir);
-        smcnt = imgaussfilt(scnt(ind,:), 30, 'FilterSize', [31 1]); % smooth along trials
-        
-        if binsize > 1e-3
-            imagesc(smcnt); colormap(1-gray)
-            axis off
-        else % if 1ms bins, plot raster
-            [iTrial,j] = find(scnt(ind,:));
-            plot.raster(bins(j), iTrial, 1);
-            axis off
-        end
-        
-        
-        drawnow
-    end
-end
-
-if plotDuringImport
-    xlabel(ax1, 'Time from motion onset', 'Color', 'k')
-    ylabel(ax1, 'Trials (sorted by Direction)', 'Color', 'k')
-end
-
+NC = Dstat.NCells; % number of neurons
+NT = Dstat.NTrials;
+nbins = Dstat.NLags;
+binsize = Dstat.binsize;
+win = Dstat.lags([1 end]);
+fprintf("Session %d) %d Grating Trials, %d Units %02.2f sec duration\n", sessionId, NT, NC, Dstat.stimDuration)
 
 %% Do some decoding
 
+bins = Dstat.lags;
+
 % window to train decoder on
-tidx = bins > ip.Results.Latency & bins < StimDur;
+tidx = bins > ip.Results.Latency & bins < Dstat.stimDuration;
 
 decodeOrientation = strcmpi(ip.Results.Decode, 'orientation');
 
@@ -270,7 +188,6 @@ figure(1); clf
 set(gcf, 'Color', 'w')
 
 iTrial = randsample(1:NT,1);
-% iTrial = 134;
 
 [~, ind] = sort(wts(2:end,2));
 subplot('Position', [.05 .15 .1 .75])
@@ -548,7 +465,7 @@ for iCond = 1:nConds
     plot.errorbarFill(bins, mu, serr, 'k', 'EdgeColor', cmap(iCond,:), 'FaceColor', cmap(iCond,:), 'FaceAlpha', .5); hold on
     h(iCond) = plot(bins, mu, 'Color', cmap(iCond,:));
 end
-plot(xlim, (1/nstm)*[1 1], 'k--')
+plot(xlim, (1/numel(unique(StimDir)))*[1 1], 'k--')
 xlabel('Time from Grating Onset')
 ylabel('Proportion Correct')
 legend(h, labels)

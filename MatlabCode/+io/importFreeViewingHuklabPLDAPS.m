@@ -5,6 +5,9 @@ disp('FREE VIEWING IMPORT FOR HUKLAB DATASHARE')
 disp('THIS MUST BE RUN ON A COMPUTER CONNECTED TO THE HUKLAB DATASHARE DRIVE FOLDER')
 disp('REQUIRES MARMOPIPE CODE IN THE PATH')
 
+ip = struct();
+ip.Results.wheelsmoothing = 15; % HARD CODED SMOOTHING FOR SPEED
+
 % get paths
 SERVER_DATA_DIR = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
 
@@ -20,11 +23,9 @@ pdsfiles = dir(fullfile(DataFolder, '*.PDS'));
 kwefiles = dir(fullfile(DataFolder, '*.kwe'));
 
 D = struct();
-% D.trialNum = [];
-% D.spikeTimes = st;
-% D.spikeIds = clu;
 D.treadTime = [];
 D.treadSpeed = [];
+D.treadPos = [];
 D.GratingOnsets = [];
 D.GratingOffsets = [];
 D.GratingDirections = [];
@@ -133,11 +134,17 @@ for iFile = 1:numel(pdsfiles)
         % treadmill time is the frame times
         D.treadTime = [D.treadTime; ft(:) + trialStart];
         % smooth with gaussian, differentiate, divide by timestep to get speed
-        dxdt = diff(imgaussfilt(PDS.data{iTrial}.locationSpace(2,:), 5)) ./ diff(ft);
+        tpos = PDS.data{iTrial}.locationSpace(2,:);
+        tpos = tpos - tpos(1);
+        dxdt = diff(imgaussfilt(tpos, ip.Results.wheelsmoothing)) ./ diff(ft);
         % smooth again because of dropped frames
-        spd = imgaussfilt([0; dxdt(:)], 5);
+        spd = [0; dxdt(:)];
         
         D.treadSpeed = [D.treadSpeed; spd];
+        D.treadPos = [D.treadPos; tpos(:)];
+        
+        assert(numel(D.treadTime)==numel(D.treadSpeed))
+        assert(numel(D.treadTime)==numel(D.treadPos))
         
         pos = squeeze(PDS.data{1}.eyelink.posRawFrames)';
         nt = min(numel(ft),size(pos,1));

@@ -18,8 +18,17 @@ sesslist = io.dataFactoryTreadmill();
 
 %% Step 1.1: Try importing a session
 
-sessionId = 24;
+sessionId = 11;
 Exp = io.dataFactoryTreadmill(sessionId);
+
+
+%%
+
+Exp.spikeTimes = Exp.osp.st;
+Exp.spikeIds = Exp.osp.clu;
+
+% convert to D struct format
+D = io.get_drifting_grating_output(Exp);
 
 % Note: PLDAPS sessions and MarmoV5 will load into different formats
 
@@ -30,6 +39,36 @@ subject = 'brie';
 import_supersession(subject);
 
 % TODO: this does not track RF locations yet
+
+
+%% Basic summary of session running
+thresh = 3;
+nboot = 100;
+subjects = {'gru', 'brie'};
+for i = 1:2
+    subject = subjects{i};
+    fprintf('Subject [%s], run threshold %02.2f cm/s\n', subject, thresh)
+    D = load_subject(subject);
+    
+    fprintf("%d Unique units\n", numel(unique(D.spikeIds)))
+    treadSpeed = D.treadSpeed;
+    runix = treadSpeed > thresh;
+    
+    m = mean(runix)*100;
+    n = numel(runix);
+    booti = mean(runix(randi(n, [n nboot])));
+    
+    ci = prctile(booti, [2.5 97.5])*100;
+    fprintf("%02.2f [%02.2f,%02.2f] %% of time running\n", m, ci(1), ci(2))
+    
+    m = mean(treadSpeed(runix));
+    runinds = find(runix);
+    n = sum(runix);
+    booti = mean(treadSpeed(runinds(randi(n, [n nboot]))));
+    ci = prctile(booti, [2.5 97.5]);
+    fprintf("%02.2f [%02.2f,%02.2f] cm/s mean running speed\n", m, ci(1), ci(2))
+    
+end
 
 %% Step 2: Load a super session file
 subject = 'brie';
@@ -140,10 +179,156 @@ for t = 1:500
     pause(0.1)
 end
 
+
+%% Unit by Unit simple analysis
+thresh = 3;
+
+unitList = unique(D.spikeIds);
+NC = numel(unitList);
+
+corrRho = zeros(NC,1);
+corrPval = zeros(NC,1);
+
+frBaseR = zeros(NC,3);
+frBaseS = zeros(NC,3);
+
+frStimR = zeros(NC,3);
+frStimS = zeros(NC,3);
+
+for cc = 1:NC
+    unitId = unitList(cc);
+    [stimDir, robs, runSpd, opts] = bin_ssunit(D, unitId, 'win', [-.2 .2]);
+    
+    goodIx = getStableRange(sum(robs,2), 'plot', false);
+    
+    stimDir = stimDir(goodIx);
+    robs = robs(goodIx,:);
+    runSpd = runSpd(goodIx,:);
+    
+    iix = opts.lags < 0;
+    frbase = sum(robs(:,iix),2) / (max(opts.lags(iix)) - min(opts.lags(iix)));
+    
+    spd = mean(runSpd,2);
+    
+    [corrRho(cc), corrPval(cc)] = corr(spd, frbase, 'type', 'Spearman');
+    
+    runTrials = find(spd > thresh);
+    statTrials = find(abs(spd) < 1);
+    mixTrials = [runTrials; statTrials];
+    
+    nrun = numel(runTrials);
+    nstat = numel(statTrials);
+    
+    n = min(nrun, nstat);
+    
+    frBaseR(cc,:) = prctile(mean(frbase(runTrials(randi(nrun, [n nboot])))), [2.5 50 97.5]);
+    frBaseS(cc,:) = prctile(mean(frbase(statTrials(randi(nstat, [n nboot])))), [2.5 50 97.5]);
+    
+    iix = opts.lags > 0.04 & opts.lags < opts.lags(end)-.15;
+    frstim = sum(robs(:,iix),2) / (max(opts.lags(iix)) - min(opts.lags(iix)));
+    
+    frStimR(cc,:) = prctile(mean(frstim(runTrials(randi(nrun, [n nboot])))), [2.5 50 97.5]);
+    frStimS(cc,:) = prctile(mean(frstim(statTrials(randi(nstat, [n nboot])))), [2.5 50 97.5]);
+    
+end
+
+%% plot some outcomes
+
+incBaseIx = find(frBaseR(:,2) > frBaseS(:,3));
+decBaseIx = find(frBaseR(:,2) < frBaseS(:,1));
+
+incStimIx = find(frStimR(:,2) > frStimS(:,3));
+decStimIx = find(frStimR(:,2) < frStimS(:,1));
+
+figure(1); clf
+set(gcf, 'Color', 'w')
+ms = 4;
+cmap = lines;
+subplot(1,2,1)
+plot(frBaseS(:,[2 2])', frBaseR(:,[1 3])', 'Color', .5*[1 1 1]); hold on
+plot(frBaseS(:,[1 3])', frBaseR(:,[2 2])', 'Color', .5*[1 1 1])
+plot(frBaseS(:,2), frBaseR(:,2), 'o', 'Color', cmap(1,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(1,:))
+plot(frBaseS(incBaseIx,2), frBaseR(incBaseIx,2), 'o', 'Color', cmap(2,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(2,:))
+plot(frBaseS(decBaseIx,2), frBaseR(decBaseIx,2), 'o', 'Color', cmap(3,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(3,:))
+
+xlabel('Stationary')
+ylabel('Running')
+title('Baseline Firing Rate')
+
+set(gca, 'Xscale', 'log', 'Yscale', 'log')
+plot(xlim, xlim, 'k')
+
+subplot(1,2,2)
+plot(frStimS(:,[2 2])', frStimR(:,[1 3])', 'Color', .5*[1 1 1]); hold on
+plot(frStimS(:,[1 3])', frStimR(:,[2 2])', 'Color', .5*[1 1 1])
+plot(frStimS(:,2), frStimR(:,2), 'o', 'Color', cmap(1,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(1,:))
+plot(frStimS(incStimIx,2), frStimR(incStimIx,2), 'o', 'Color', cmap(2,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(2,:))
+plot(frStimS(decStimIx,2), frStimR(decStimIx,2), 'o', 'Color', cmap(3,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(3,:))
+
+xlabel('Stationary Firing Rate')
+ylabel('Running Firing Rate')
+title('Stim-driven firing rate')
+
+set(gca, 'Xscale', 'log', 'Yscale', 'log')
+plot(xlim, xlim, 'k')
+
+nIncBase = numel(incBaseIx);
+nDecBase = numel(decBaseIx);
+
+nIncStim = numel(incStimIx);
+nDecStim = numel(decStimIx);
+
+modUnits = unique([incBaseIx; decBaseIx; incStimIx; decStimIx]);
+nModUnits = numel(modUnits);
+
+fprintf('%d/%d (%02.2f%%) increased baseline firing rate\n', nIncBase, NC, 100*nIncBase/NC)
+fprintf('%d/%d (%02.2f%%) decreased baseline firing rate\n', nDecBase, NC, 100*nDecBase/NC)
+
+fprintf('%d/%d (%02.2f%%) increased stim firing rate\n', nIncStim, NC, 100*nIncStim/NC)
+fprintf('%d/%d (%02.2f%%) decreased stim firing rate\n', nDecStim, NC, 100*nDecStim/NC)
+
+fprintf('%d/%d (%02.2f%%) total modulated units\n', nModUnits, NC, 100*nModUnits/NC)
+
+[pvalStim, ~, sStim] = signrank(frStimS(:,2), frStimR(:,2));
+[pvalBase, ~, sBase] = signrank(frBaseS(:,2), frBaseR(:,2));
+
+fprintf('Wilcoxon signed rank test:\n')
+fprintf('Baseline rates: p = %02.10f\n', pvalBase)
+fprintf('Stim-driven rates: p = %02.10f\n', pvalStim)
+
+good = ~(frBaseR(:,2)==0 | frBaseS(:,2)==0);
+
+m = geomean(frBaseR(good,2)./frBaseS(good,2));
+ci = bootci(nboot, @geomean, frBaseR(good,2)./frBaseS(good,2));
+
+fprintf("geometric mean baseline firing rate ratio (Running:Stationary) is %02.3f [%02.3f, %02.3f] (n=%d)\n", m, ci(1), ci(2), sum(good)) 
+
+m = geomean(frStimR(:,2)./frStimS(:,2));
+ci = bootci(nboot, @geomean, frStimR(:,2)./frStimS(:,2));
+
+fprintf("geometric mean stim-driven firing rate ratio (Running:Stationary) is %02.3f [%02.3f, %02.3f] (n=%d)\n", m, ci(1), ci(2), NC)
+%%
+mean(corrPval < 0.05)
+
+figure(1); clf
+histogram(corrRho, -.5:.025:.5); hold on
+histogram(corrRho(corrPval < 0.05), -.5:.025:.5)
+xlabel("Spearman's Rho")
+ylabel('Count')
+legend({'All', 'p<0.05'})
+
+%%
+plot(sum(robs,2))
+
+
+%%
+
+goodix = getStableRange(R, 'plot', false); % key function: finds stable region of firing
+
 %% Do direction / orientation decoding
 
 % example session to explore
-Dstat = decode_stim(D, 1);
+Dstat = decode_stim(D, 12);
 
 
 %%
@@ -223,13 +408,99 @@ if exist(fname, 'file')
 else
     stat = tuning_empirical(D, 'binsize', 10e-3, ...
         'runningthresh', 3, ...
-        'nboot', 100, ...
+        'nboot', 500, ...
         'seed', 1234);
     save(fname, '-v7.3', '-struct', 'stat')
 end
 
+%% combine two subjects?
+subjects = {'gru', 'brie'};
+stat = [];
+for i = 1:2
+    subject = subjects{i};
+    fname = fullfile(fpath, [subject 'TCstats.mat']);
+    s = load(fname);
+    
+    if isempty(stat)
+        stat = s;
+        continue
+    end
+    
+    nUnits = numel(stat.TCempirical.TCdiff);
+    nNew = numel(s.TCempirical.TCdiff);
+    
+    snew = struct();
 
+    % ---- TC EMPIRICAL
+    fields = fieldnames(stat.TCempirical);
+    thetas = unique([stat.TCempirical.thetas; s.TCempirical.thetas]);
+    nthetas = numel(thetas);
+    
+    for ifield = 1:numel(fields)
+        sz = size(stat.TCempirical.(fields{ifield}));
+        sznew = size(s.TCempirical.(fields{ifield}));
+        unitDim = find(sz==nUnits);
+        if ~isempty(unitDim)
+            nonUnitDims = setdiff(1:numel(sz), unitDim);
+            if sz(1)==numel(stat.TCempirical.thetas)
+                snew.TCempirical.(fields{ifield}) = zeros(nthetas, nUnits+nNew, 3);
+                snew.TCempirical.(fields{ifield})(ismember(stat.TCempirical.thetas, thetas), 1:nUnits,:) = stat.TCempirical.(fields{ifield});
+                snew.TCempirical.(fields{ifield})(ismember(s.TCempirical.thetas, thetas), nUnits+(1:nNew),:) = s.TCempirical.(fields{ifield});
+            else
+                snew.TCempirical.(fields{ifield}) = zeros(nUnits+nNew, sz(nonUnitDims));
+                snew.TCempirical.(fields{ifield})(1:nUnits,:) = stat.TCempirical.(fields{ifield});
+                snew.TCempirical.(fields{ifield})(nUnits + (1:nNew),:) = s.TCempirical.(fields{ifield});
+            end
+        end
+    end
 
+    snew.TCempirical.thetas = thetas;
+    
+    % --- struct arrays
+    snew.running = [stat.running; s.running];
+    snew.TCfitR = [stat.TCfitR s.TCfitR];
+    snew.TCfitS = [stat.TCfitS s.TCfitS];
+    
+    % --- SPEED TUNING
+    fields = fieldnames(stat.speedTuning);
+    
+    for ifield = 1:numel(fields)
+        sz = size(stat.speedTuning.(fields{ifield}));
+        sznew = size(s.speedTuning.(fields{ifield}));
+        unitDim = find(sz==nUnits);
+        if ~isempty(unitDim)
+            nonUnitDims = setdiff(1:numel(sz), unitDim);
+            
+            snew.speedTuning.(fields{ifield}) = zeros(sz(nonUnitDims), nUnits+nNew);
+            snew.speedTuning.(fields{ifield})(:,1:nUnits) = stat.speedTuning.(fields{ifield});
+            snew.speedTuning.(fields{ifield})(:, nUnits + (1:nNew)) = s.speedTuning.(fields{ifield});
+        else
+            snew.speedTuning.(fields{ifield}) = s.speedTuning.(fields{ifield});
+        end
+    end
+    
+    % --- PSTHS
+    fields = fieldnames(stat.psths);
+    
+    for ifield = 1:numel(fields)
+        sz = size(stat.psths.(fields{ifield}));
+        sznew = size(s.psths.(fields{ifield}));
+        unitDim = find(sz==nUnits);
+        if ~isempty(unitDim)
+            nonUnitDims = setdiff(1:numel(sz), unitDim);
+            newd = arrayfun(@(x) x, sz(nonUnitDims), 'uni', 0);
+            snew.psths.(fields{ifield}) = zeros(newd{:}, nUnits+nNew);
+            snew.psths.(fields{ifield})(:,ismember(stat.TCempirical.thetas, thetas),:,1:nUnits) = stat.psths.(fields{ifield});
+            snew.psths.(fields{ifield})(:,ismember(s.TCempirical.thetas, thetas),:, nUnits + (1:nNew)) = s.psths.(fields{ifield});
+        else
+            snew.psths.(fields{ifield}) = s.psths.(fields{ifield});
+        end
+    end
+    
+    
+end
+    
+stat = snew;
 %% plot running tuning?
 
 NC = numel(stat.TCfitR);
@@ -274,15 +545,28 @@ for i = 1:(sx*sy)
     
 end
 
+%% plot all running speed tuning curves on top of each other
+
+figure(10); clf
+runrat = stat.speedTuning.rateSpdMu - mean(stat.speedTuning.rateSpdMu(1:3,:));
+
+plot(stat.speedTuning.bins, runrat, '-', 'MarkerSize', 2, 'Color', [cmap(1,:) .25] ); hold on
+xlabel('Running Speed (cm/s)')
+ylabel('\Delta Firing Rate')
+plot(stat.speedTuning.bins, nanmean(runrat, 2), 'r', 'Linewidth', 2)
+plot(xlim, [0 0], 'b--', 'Linewidth', 2)
+ylim([-5 5])
+
 
 %% Raw Running Modulation (ignore stimulus entirely)
 % Just look at the entire session. Using labeled epochs of running and
 % stationary, count the mean firing rate (while accounting for issues with
 % stationarity by resampling from the epochs to hopefully match)
 
+nExamples = 5;
 figure(1); clf
 set(gcf, 'Color', 'w')
-
+NC = numel(stat.running);
 rateS = nan(NC, 3);
 rateR = nan(NC, 1);
 cmap = lines;
@@ -388,7 +672,7 @@ ind = isvalid(ind);
 
 figure(3); clf
 set(gcf, 'Color', 'w')
-nExamples = 10;
+
 spacing = 0.05;
 ax = plot.tight_subplot(nExamples, 2, spacing, 0.05, 0.05);
 sm = 20;
@@ -513,15 +797,90 @@ xlabel('Time from Running Onset (s)')
 
 
 %% TC diff
-ix = ~arrayfun(@(x) isempty(x.tuningCurve), stat.TCfitR);
-TCMaxR = arrayfun(@(x) max(x.tuningCurve), stat.TCfitR(ix));
-TCMaxS = arrayfun(@(x) max(x.tuningCurve), stat.TCfitS(ix));
+
+nullci = prctile(stat.TCempirical.maxFRdiffNull, [2.5 97.5], 2);
+
+nInc = sum(stat.TCempirical.maxFRdiff > nullci(:,2));
+nDec = sum(stat.TCempirical.maxFRdiff < nullci(:,1));
+fprintf('%d/%d (%02.2f%%) units had significantly increased firing (outside null) rate while running\n', nInc, NC, 100*nInc/NC)
+fprintf('%d/%d (%02.2f%%) units had significantly decreased firing (outside null) rate while running\n', nDec, NC, 100*nDec/NC)
+fprintf('%d/%d (%02.2f%%) units had any significant modulation of max firing rate\n', nDec+nInc, NC, 100*(nDec+nInc)/NC)
+
+
+
+maxR = [];
+maxS = [];
+for i = 1:3
+    maxR = [maxR max(stat.TCempirical.TCrun(:,:,i))'];
+    maxS = [maxS max(stat.TCempirical.TCstat(:,:,i))'];
+end
+
 figure(1); clf
-plot(TCMaxS, TCMaxR, 'o'); hold on
+cmap = lines;
+
+plot(maxS(:,[1 3])', maxR(:,[2 2])', 'Color', .5*[1 1 1]); hold on
+plot(maxS(:,[2 2])', maxR(:,[1 3])', 'Color', .5*[1 1 1])
+plot(maxS(:,2), maxR(:,2), 'o', 'Color', cmap(1,:), 'MarkerFaceColor', cmap(1,:), 'MarkerSize', 2);
 plot(xlim, xlim, 'k')
 xlabel('Stationary')
 ylabel('Running')
-signrank(TCMaxR, TCMaxS)
+title('Max Firing Rate')
+
+
+nInc = sum(maxR(:,2) > maxS(:,3));
+nDec = sum(maxR(:,2) < maxS(:,1));
+fprintf('%d/%d (%02.2f%%) units had significantly increased firing rate while running\n', nInc, NC, 100*nInc/NC)
+fprintf('%d/%d (%02.2f%%) units had significantly decreased firing rate while running\n', nDec, NC, 100*nDec/NC)
+
+
+% --- MEDIAN --- %
+% DIFFERENCE
+maxDiff = maxR(:,2)-maxS(:,2);
+m = nanmedian(maxDiff);
+ci = bootci(1000, @nanmedian, maxDiff);
+fprintf('Median difference (Running-Stationary) = %02.2f [%02.2f, %02.2f] (n=%d)\n', m, ci(1), ci(2), sum(~isnan(maxDiff)))
+
+% RATIO
+maxRat = maxR(:,2)./maxS(:,2);
+good = ~(isnan(maxRat) | isinf(maxRat));
+m = nanmedian(maxRat(good));
+ci = bootci(1000, @nanmedian, maxRat(good));
+fprintf('Median ratio (Running:Stationary) = %02.3f [%02.3f, %02.3f] (n=%d)\n', m, ci(1), ci(2), sum(good))
+
+% --- MEAN --- %
+% DIFFERENCE
+m = nanmean(maxDiff);
+ci = bootci(1000, @nanmean, maxDiff);
+fprintf('Mean difference (Running-Stationary) = %02.2f [%02.2f, %02.2f] (n=%d)\n', m, ci(1), ci(2), sum(~isnan(maxDiff)))
+
+% RATIO
+good = ~(isnan(maxRat) | isinf(maxRat));
+m = nanmean(maxRat(good));
+ci = bootci(1000, @nanmean, maxRat(good));
+fprintf('Mean ratio (Running:Stationary) = %02.3f [%02.3f, %02.3f] (n=%d)\n', m, ci(1), ci(2), sum(good))
+
+%% examples
+[~, ind] = sort(maxRat);
+
+cc = cc + 1;
+
+
+tcr = squeeze(stat.TCempirical.TCrun(:,ind(cc),:));
+tcs = squeeze(stat.TCempirical.TCstat(:,ind(cc),:));
+
+figure(1); clf
+subplot(1,2,1)
+
+plot(tcr, 'r'); hold on
+plot(tcs, 'b')
+plot(tcr(:,2), 'r', 'Linewidth', 2); hold on
+plot(tcs(:,2), 'b', 'Linewidth', 2)
+
+title(maxRat(ind(cc)))
+
+stat.TCempirical.thetas
+
+% osi = 
 
 %%
 
@@ -743,6 +1102,10 @@ title('How many cells are "tuned"?')
 
 
 %% Plot all tuning curves
+fitS = stat.TCfitS;
+fitR = stat.TCfitR;
+NC = numel(fitS);
+
 sx = ceil(sqrt(NC));
 sy = round(sqrt(NC));
 
@@ -753,17 +1116,17 @@ for cc = 1:NC
     if min(fitS(cc).numTrials, fitR(cc).numTrials) < 50
         continue
     end
-    
-    if fitS(cc).llrpval > 0.05 && fitR(cc).llrpval > 0.05
-        continue
-    end
+%     
+%     if fitS(cc).llrpval > 0.05 && fitR(cc).llrpval > 0.05
+%         continue
+%     end
     fprintf("Unit %d/%d\n", cc, NC)
 
     set(gcf, 'currentaxes', ax(cc))
     
     cmap = lines;
     % STATIONARY
-    h = errorbar(fitS(cc).thetas, fitS(cc).tuningCurve, fitS(cc).tuningCurveSE, 'o', 'Color', cmap(1,:));
+    h = errorbar(fitS(cc).thetas, fitS(cc).tuningCurve, fitS(cc).tuningCurveSE, '-o', 'Color', cmap(1,:));
     h.MarkerSize = 2;
     h.MarkerFaceColor = cmap(1,:);
     h.CapSize = 0;
@@ -775,7 +1138,7 @@ for cc = 1:NC
     end
     
     % RUNNING
-    h = errorbar(fitR(cc).thetas, fitR(cc).tuningCurve, fitR(cc).tuningCurveSE, 'o', 'Color', cmap(2,:));
+    h = errorbar(fitR(cc).thetas, fitR(cc).tuningCurve, fitR(cc).tuningCurveSE, '-o', 'Color', cmap(2,:));
     h.MarkerSize = 2;
     h.MarkerFaceColor = cmap(2,:);
     h.CapSize = 0;

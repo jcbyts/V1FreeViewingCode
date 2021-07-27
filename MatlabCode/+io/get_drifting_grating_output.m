@@ -1,6 +1,10 @@
-function D = get_drifting_grating_output(Exp)
+function D = get_drifting_grating_output(Exp, varargin)
 % Output for GLM analyses from the drifting grating protocol
 
+ip = inputParser();
+ip.addParameter('plot', true)
+ip.addParameter('wheelsmoothing', 15)
+ip.parse(varargin{:})
 %% Grating tuning
 
 if isfield(Exp, 'GratingOnsets')
@@ -15,17 +19,54 @@ else
     freq = [];
     treadTime = [];
     treadSpeed = [];
+    wheelpos = [];
     % figure(1); clf
     
     for iTrial = validTrials(:)'
+        % treadmill position and time
         pos = Exp.D{iTrial}.treadmill.locationSpace(:,4); % convert to meters
         ttime = Exp.D{iTrial}.treadmill.locationSpace(:,1);
         
-        dpos = diff(imgaussfilt(pos, 5)) ./ diff(ttime);
-        spd = [0; abs(dpos(:))];
+        % find the initial messed up period
+        init = find(diff(diff(pos)==0)==-1, 1)+1;
+        if isempty(init)
+            init = 3; % third sample
+        end
+        trialStart = ttime(init);
         
         
-        bad = isnan(Exp.D{iTrial}.treadmill.locationSpace(:,2));
+        treadIx = find(ttime > trialStart);
+        
+        pos = pos - pos(treadIx(1));
+        
+        dpos = diff(imgaussfilt(pos(treadIx), ip.Results.wheelsmoothing)) ./ diff(ttime(treadIx));
+        dpos = [0; dpos];
+        spd = dpos;
+        
+        if ip.Results.plot
+            figure(77); clf
+            subplot(2,1,1)
+            plot(ttime - ttime(1), pos, 'k', 'Linewidth', 2); hold on
+            fill(ttime([1 1 init init]) - ttime(1), [ylim fliplr(ylim)], 'r', 'FaceAlpha', .25, 'EdgeColor', 'none')
+            ylabel('Wheel Position')
+            xlabel('Trial Time')
+            legend({'Wheel', 'Bad'})
+            title(sprintf('Trial %d', iTrial), 'Fontweight', 'normal')
+            
+            subplot(2,1,2)
+            plot(ttime(treadIx)-ttime(1), dpos, 'k', 'Linewidth', 2)
+            xlim(ttime([1 end])-ttime(1))
+            fprintf('Trial %d) removing %02.2f seconds from start\n', iTrial, trialStart - ttime(1))
+            drawnow
+            
+%             if max(spd) > 60
+%                 pause
+%             end
+        end
+        
+        
+        
+        bad = isnan(Exp.D{iTrial}.treadmill.locationSpace(treadIx,2));
         bad = imboxfilt(double(bad), 101)>0;
         spd(bad) = nan;
         
@@ -33,8 +74,10 @@ else
         
         ylim([0 5])
         
-        treadTime = [treadTime; ttime];
+        assert(numel(ttime(treadIx)) == numel(spd))
+        treadTime = [treadTime; ttime(treadIx)];
         treadSpeed = [treadSpeed; spd];
+        wheelpos = [wheelpos; pos(treadIx)];
         
         % Fields:
         % time, orientation, cpd, phase, direction, speed, contrast
@@ -51,12 +94,19 @@ else
             offsets = [offsets; numel(contrast)];
         end
         
+        TrialOnsets = Exp.D{iTrial}.PR.NoiseHistory(onsets,1);
+        TrialOffsets = Exp.D{iTrial}.PR.NoiseHistory(offsets,1);
+        TrialDirections = Exp.D{iTrial}.PR.NoiseHistory(onsets,5);
+        TrialSpeeds = Exp.D{iTrial}.PR.NoiseHistory(onsets,6);
+        TrialFreq = Exp.D{iTrial}.PR.NoiseHistory(onsets,3);
         
-        tonsets = [tonsets; Exp.D{iTrial}.PR.NoiseHistory(onsets,1)];
-        toffsets = [toffsets; Exp.D{iTrial}.PR.NoiseHistory(offsets,1)];
-        directions = [directions;  Exp.D{iTrial}.PR.NoiseHistory(onsets,5)];
-        speeds = [speeds; Exp.D{iTrial}.PR.NoiseHistory(onsets,6)];
-        freq = [freq; Exp.D{iTrial}.PR.NoiseHistory(onsets,3)];
+        goodStim = TrialOnsets > trialStart; % ignore stimuli in the bad zone at start of trial
+        
+        tonsets = [tonsets; TrialOnsets(goodStim)];
+        toffsets = [toffsets; TrialOffsets(goodStim)];
+        directions = [directions;  TrialDirections(goodStim)];
+        speeds = [speeds; TrialSpeeds(goodStim)];
+        freq = [freq; TrialFreq(goodStim)];
         
     end
     
@@ -75,6 +125,7 @@ else
     D.spikeTimes = st;
     D.spikeIds = clu;
     D.treadTime = treadTime;
+    D.treadPos = wheelpos;
     D.treadSpeed = treadSpeed;
     D.GratingOnsets = tonsets;
     D.GratingOffsets = toffsets;

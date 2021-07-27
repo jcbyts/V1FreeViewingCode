@@ -68,7 +68,7 @@ treadSpd = nan(size(spbn,1), 1); % make same size as spike bins
 
 % interpolate nan's
 treadSpd(treadBins(~isnan(treadSpeed))) = treadSpeed(~isnan(treadSpeed));
-treadSpd = (repnan(treadSpd, 'pchip')); % absolute value (not forward vs. backwards)
+treadSpd = (repnan(treadSpd, 'pchip'));
 
 % Do the binning here
 disp('Binning spikes')
@@ -133,10 +133,10 @@ runningSpd = mean(tspd,2);
 runningTrial = runningSpd > thresh;
 stationaryTrial = abs(runningSpd)<thresh;
 
-histogram(runningSpd(~runningTrial), 'binEdges', [-10 0:.1:25], 'FaceColor', [.5 .5 .5])
+histogram(runningSpd(~runningTrial), 'binEdges', [-5:.1:25], 'FaceColor', [.5 .5 .5])
 hold on
 clr = [1 .2 .2];
-histogram(runningSpd(runningTrial), 'binEdges', 0:.1:25, 'FaceColor', clr)
+histogram(runningSpd(runningTrial), 'binEdges', -5:.1:25, 'FaceColor', clr)
 plot.fixfigure(gcf,10,[4 4]);
 xlabel('Running Speed (cm/s)')
 ylabel('Trial Count') 
@@ -177,7 +177,7 @@ stat.psths.stationary = zeros(numlags, nd, 3, NC);
 for cc = 1:NC % cells
     fprintf("Unit %d/%d\n", cc, NC)
     for i = 1:nd % directions
-        iix = GratingDirections==ths(i) & dfilt(:,cc);
+        iix = D.GratingDirections==ths(i) & dfilt(:,cc);
         
         runinds = find(iix & runningTrial);
         statinds = find(iix & stationaryTrial);
@@ -450,25 +450,38 @@ for cc = 1:NC
     tfun = @(th,cnt) arrayfun(@(x) mean(cnt(th==x)), thetas);
     
     iirun = runningTrial(unitix);
+    iistat = stationaryTrial(unitix);
+    
     tuningCurveR = tfun(theta(iirun), R(iirun)); % RUNNING
-    tuningCurveS = tfun(theta(~iirun), R(~iirun)); % STATIONARY
+    tuningCurveS = tfun(theta(iistat), R(iistat)); % STATIONARY
     
     nn = numel(theta);
     nrun = sum(iirun);
-    nstat = sum(~iirun);
+    nstat = sum(iistat);
     
     iir = randi(nn, [nrun nboot]);
     iis = randi(nn, [nstat nboot]);
     
+    
+    % boostrap the null distribution
+    tcRnull = zeros(numel(thetas), nboot);
+    tcSnull = zeros(numel(thetas), nboot);
+    for iboot = 1:nboot
+        tcRnull(:,iboot) = tfun(theta(iir(:,iboot)), R(iir(:,iboot)));
+        tcSnull(:,iboot) = tfun(theta(iis(:,iboot)), R(iis(:,iboot)));
+        TCdiffNull(cc,iboot) = mean( (tcRnull(:,iboot) - tcSnull(:,iboot)).^2);
+        maxFRdiffNull(cc,iboot) = max(tcRnull(:,iboot)) - max(tcSnull(:,iboot));
+        
+    end
+    
+    % boostrap TC errorbars
     tcR = zeros(numel(thetas), nboot);
     tcS = zeros(numel(thetas), nboot);
-    
     for iboot = 1:nboot
-        tcR(:,iboot) = tfun(theta(iir(:,iboot)), R(iir(:,iboot)));
-        tcS(:,iboot) = tfun(theta(iis(:,iboot)), R(iis(:,iboot)));
-        TCdiffNull(cc,iboot) = mean( (tcR(:,iboot) - tcS(:,iboot)).^2);
-        maxFRdiffNull(cc,iboot) = max(tcR(:,iboot)) - max(tcS(:,iboot));
-        
+        iiboot = randsample(find(iirun), nrun, true);
+        tcR(:,iboot) = tfun(theta(iiboot), R(iiboot));
+        iiboot = randsample(find(iistat), nrun, true);
+        tcS(:,iboot) = tfun(theta(iiboot), R(iiboot));
     end
     
     

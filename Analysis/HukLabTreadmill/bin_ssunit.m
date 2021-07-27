@@ -124,5 +124,6 @@ end
 
 % output
 stim = StimDir(validStim);
-robs = spksb;
+robs = scnt;
 behavior = runSpeed;
+opts.lags = bins;

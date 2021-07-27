@@ -135,3 +135,5 @@ end
 stim = StimDir(validStim);
 robs = spksb;
 behavior = runSpeed;
+opts.lags = bins;
+opts.binsize = binsize;
