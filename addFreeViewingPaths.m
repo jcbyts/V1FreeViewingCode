@@ -41,7 +41,7 @@ switch user
         % regenerate properly
         marmoViewPath = '~/Documents/MATLAB/MarmoV5/';
         % we only need marmopipe to import raw data
-        marmoPipePath = '~/Dropbox/MarmoLabWebsite/PSA/Code/';
+        marmoPipePath = '~/Documents/MATLAB/MarmoPipe/'; %'~/Dropbox/MarmoLabWebsite/PSA/Code/';
         % where the data live
         dataPath = '~/Dropbox/Projects/FreeViewing/Data';
         
