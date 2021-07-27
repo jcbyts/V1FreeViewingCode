@@ -16,6 +16,11 @@ end
 
 assert(exist(DataFolder, 'dir')==7, 'importFreeViewing: raw data path does not exist')
 
+% make folder for exporting import quality checks
+figDir = fullfile(DataFolder, '_import');
+if ~exist(figDir, 'dir')
+    mkdir(figDir)
+end
 % %% Load spikes data
 % [sp,osp] = io.import_spike_sorting(DataFolder, S.spikeSorting);
 % io.copy_spikes_from_server(strrep(S.processedFileName, '.mat', ''), S.spikeSorting)

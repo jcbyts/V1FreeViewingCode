@@ -42,6 +42,8 @@ if isempty(VpxFiles)
             Exp.vpx.smo = Exp.vpx.raw;
             Exp.vpx2ephys = @(x) Exp.ptb2Ephys(x);
             
+            Exp = get_smo_eyetrace(Exp);
+            
             return
         else
             EDF = 1;
@@ -243,6 +245,9 @@ Exp.vpx.raw(bad>0,2:end) = nan; % nan out bad sample times
 
 
 %% convert eye position to degrees
+Exp = get_smo_eyetrace(Exp);
+
+function Exp = get_smo_eyetrace(Exp)
 Fs = 1./nanmedian(diff(Exp.vpx.raw(:,1)));
 % x and y position
 vxx = Exp.vpx.raw(:,2);

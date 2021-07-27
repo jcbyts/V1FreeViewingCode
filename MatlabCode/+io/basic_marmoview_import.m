@@ -4,6 +4,7 @@ ip = inputParser();
 ip.addParameter('Protocols', [])
 ip.addParameter('TAGSTART', 63)
 ip.addParameter('TAGEND', 62)
+ip.addParameter('fid', 1) % default is to dump to the command window
 ip.parse(varargin{:});
 
 ProtocolList = ip.Results.Protocols;
@@ -14,6 +15,7 @@ if ~isempty(ProtocolList)
     error('basic_marmoview_import: Protocol list should allow you to select the protocols you want, but it is not implemented yet')
 end
 
+fid = ip.Results.fid; % fprintf target (1 = command window)
 
 %% Events File importing
 %******** now grab the events file with strobes
@@ -29,22 +31,24 @@ else
         ext = 'kwe';
         HASEPHYS = true;
     else
-        disp('basic_marmoview_import: No ephys found');
+        fprintf(fid, 'basic_marmoview_import: No ephys found\n');
     end
 end
 
 if HASEPHYS
     switch ext
         case 'events'
+            fprintf(fid, 'Reading strobe times from [%s] .events file\n', EventFiles(1).name);
             [evdata,evtime,evinfo] = read_ephys.load_open_ephys_data_faster([DataFolder,filesep,EventFiles(1).name]);
         case 'kwe'
+            fprintf(fid, 'Reading strobe times from [%s] .kwe file\n', EventFiles(1).name);
             [evdata,evtime,evinfo] = read_ephys.load_kwe(fullfile(DataFolder,EventFiles(1).name));
             evtime = double(evtime) / 30e3; % convert to seconds
     end
     %**** convert events into strobes with times
     [tstrobes,strobes] = read_ephys.convert_data_to_strobes(evdata,evtime,evinfo);
     strobes = read_ephys.fix_missing_strobes(strobes);
-    disp('Strobes are loaded');
+    fprintf(fid, 'Strobes are loaded\n');
             
 end
 
@@ -77,7 +81,7 @@ for zk = FileSort(:,1)'
     end
     clear D;
     clear S;
-    fprintf('Experiment file %s loaded\n',fname);
+    fprintf(fid, 'Experiment file %s loaded\n',fname);
 end
 %***** store spikes info in Exp struct, let's keep all info there
 %***** once finished we will clear everything but the Exp struct
@@ -92,7 +96,7 @@ end
 
 
 clear sp lfp
-disp('Experiment files loaded')
+fprintf(fid, 'All experiment files loaded\n');
 %**************************
 
 %% Synching up strobes from Ephys to MarmoView
@@ -102,14 +106,14 @@ disp('Experiment files loaded')
 %***** since there is some redundancy (start and end codes for each trial)
 %***** this gives us a way to recover cases with just one errant bit
 if HASEPHYS
-    disp('Synching up ephys strobes');
+    fprintf(fid, '\nSynching up ephys strobes\n\n');
     for k = 1:size(Exp.D,1)
         start = synchtime.find_strobe_time(TAGSTART,Exp.D{k}.STARTCLOCK,strobes,tstrobes);
         finish = synchtime.find_strobe_time(TAGEND,Exp.D{k}.ENDCLOCK,strobes,tstrobes);
         if (isnan(start) || isnan(finish))
-            fprintf('Synching trial %d\n',k);
+            fprintf(fid, 'Synching trial %d\n',k);
             if (isnan(start) && isnan(finish))  % if both are missing drop the trial
-                fprintf('Dropping entire trial %d from protocol %s\n',k,Exp.D{k}.PR.name);
+                fprintf(fid, 'Dropping entire trial %d from protocol %s\n',k,Exp.D{k}.PR.name);
                 Exp.D{k}.START_EPHYS = NaN;
                 Exp.D{k}.END_EPHYS = NaN;
             else
@@ -119,7 +123,7 @@ if HASEPHYS
                 Exp.D{k}.END_EPHYS = finish;
                 tdiff = Exp.D{k}.eyeData(end,6) - Exp.D{k}.eyeData(1,1);
                 if isnan(start) && ~isnan(finish)
-                    disp('**Approximating start code from end');
+                    fprintf(fid, '**Approximating start code from end\n');
                     Exp.D{k}.START_EPHYS = Exp.D{k}.END_EPHYS - tdiff;
                     %****** now see if you can do even better
                     %****** see if the real code is there but a bit flipped
@@ -130,13 +134,13 @@ if HASEPHYS
                         mato = sum( Exp.D{k}.STARTCLOCK & beftag );
                         if (mato >= 5)  % all but one of taglet matched
                             E.D{k}.START_EPHYS = tstrobes(istart);
-                            disp('****Located matching start strobe, one bit was flipped');
+                            fprintf(fid, '****Located matching start strobe, one bit was flipped\n');
                         end
                     end
                     %*******************************
                 end
                 if isnan(finish) && ~isnan(start)
-                    disp('##Approximating end code from start');
+                    fprintf(fid, '##Approximating end code from start\n');
                     Exp.D{k}.END_EPHYS = Exp.D{k}.START_EPHYS + tdiff;
                     %****** now see if you can do even better
                     %****** see if the real code is there but a bit flipped
@@ -148,8 +152,8 @@ if HASEPHYS
                             mato = sum( Exp.D{k}.ENDCLOCK & endtag );
                             if (mato >= 5)  % all but one of taglet matched
                                 E.D{k}.END_EPHYS = tstrobes(istart);
-                                disp(endtag)
-                                disp('####Located matching end strobe, one bit was flipped');
+                                fprintf(fid, 'ENDTAG: %d\n', endtag);
+                                fprintf(fid, '####Located matching end strobe, one bit was flipped\n');
                             end
                         end
                     end
@@ -165,7 +169,7 @@ if HASEPHYS
     
     
     if all(cellfun(@(x) isnan(x.START_EPHYS), Exp.D))
-        disp('Syncing failed catastrophically. Trying to force it...')
+        fprintf(fid, 'Syncing failed catastrophically. Trying to force it...\n');
         
         sixletsOE = fliplr(conv2(strobes, eye(6)));
         sixletsOE=sixletsOE(6:end,:);
@@ -175,14 +179,14 @@ if HASEPHYS
             startId = find(all(Exp.D{kTrial}.STARTCLOCK == sixletsOE,2));
             endId = find(all(Exp.D{kTrial}.ENDCLOCK == sixletsOE,2));
             if ~isempty(startId) && numel(startId)==1
-                fprintf('Found STARTCLOCK for trial %d\n', kTrial)
+                fprintf(fid, 'Found STARTCLOCK for trial %d\n', kTrial);
                 Exp.D{kTrial}.START_EPHYS = tstrobes(startId);
             else
                 Exp.D{kTrial}.START_EPHYS = nan;
             end
             
             if ~isempty(endId) && numel(endId)==1
-                fprintf('Found ENDCLOCK for trial %d\n', kTrial)
+                fprintf(fid, 'Found ENDCLOCK for trial %d\n', kTrial);
                 Exp.D{kTrial}.END_EPHYS = tstrobes(endId);
             else
                 Exp.D{kTrial}.END_EPHYS = nan;
@@ -190,28 +194,11 @@ if HASEPHYS
         end
         
         
-%         Exp.ptb2Ephys = synchtime.sync_ptb_to_ephys_clock(Exp);
-%             
-%             
-% %%
-%             
-%         startClockPTB = cell2mat(cellfun(@(x) x.STARTCLOCK, Exp.D, 'uni', 0));
-%         endClockPTB = cell2mat(cellfun(@(x) x.ENDCLOCK, Exp.D, 'uni', 0));
-%         
-%         startTime = [cellfun(@(x) x.STARTCLOCKTIME, Exp.D(:)); cellfun(@(x) x.STARTCLOCKTIME, Exp.D(:))];
-%         sixletsPTB = [startClockPTB; endClockPTB];
-%         [~, hind]=ismember(datenum(startClockPTB),datenum(sixletsOE));
-%         
-%         goodPTBindex=hind~=0;
-%         hind(hind==0)=[];
-%         
-%         numel(tstrobes)
-        
     end
     
     % do a global synchronization of the clocks
     Exp.ptb2Ephys = synchtime.sync_ptb_to_ephys_clock(Exp);
-    disp('Finished Synching up ephys strobes');
+    fprintf(fid, 'Finished Synching up ephys strobes\n');
     
     
     

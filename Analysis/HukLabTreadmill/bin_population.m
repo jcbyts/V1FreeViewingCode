@@ -1,6 +1,21 @@
 function [stim, robs, behavior, opts] = bin_population(D, sessionId, varargin)
 % BIN POPULATION SPIKE TRAINS ALIGNED TO STIMULUS ONSET
 % [stim, robs, behavior, opts] = bin_population(D, sessionId, varargin)
+% Arguments:
+%   D - Data structure (output of io.dataFactory)
+%   sessionId - Session ID (which session number to use)
+% Optional arguments (as key/value pairs)
+%   'plot'      - whether to plot the results (default: true)
+%   'win'       - padding to use for binning before stim onset and after stim offset (default: [-.1, .1])
+%   'binsize'   - bin size in seconds (default: .01)
+% 
+% Outputs:
+% stim      - NT x 1 vector of stimulus directions
+% robs      - binned spike trains aligned to response onset
+% behavior  - running speed (same size as robs)
+% opts      - options used for binning / additional analyses
+% 
+% written by Jake, 2021
 
 ip = inputParser();
 ip.addParameter('plot', true);
@@ -10,9 +25,9 @@ ip.parse(varargin{:})
 
 
 %% bin spikes
-binsize = ip.Results.binsize; % 10 ms bins
+binsize = ip.Results.binsize; % (in seconds)
 
-ix = D.sessNumGratings == sessionId;
+ix = D.sessNumGratings == sessionId; % index into the grating times that correspond to requested session
 
 StimOnset  = D.GratingOnsets(ix);
 StimOffset = D.GratingOffsets(ix);
