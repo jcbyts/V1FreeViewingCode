@@ -312,7 +312,7 @@ def make_figures(name='20200304_kilowf', path='/home/jake/Data/Datasets/Mitchell
     plt.savefig(figDir + "/shiftstas_" + gd.id + ".pdf", bbox_inches='tight')
     plt.close('all')
 
-def fit_shifter(name='20200304_kilowf', path='/home/jake/Data/Datasets/MitchellV1FreeViewing/stim_movies/', tdownsample=2, numlags=12, lengthscale=1):
+def fit_shifter(name='20200304_kilowf', path='/home/jake/Data/Datasets/MitchellV1FreeViewing/stim_movies/', tdownsample=2, numlags=12, lengthscale=1, stimlist=["Gabor", "Dots", "BackImage", "Grating", "FixRsvpStim"]):
     """
     fit_shifter
 
@@ -344,7 +344,7 @@ def fit_shifter(name='20200304_kilowf', path='/home/jake/Data/Datasets/MitchellV
     t_downsample = tdownsample
 
     
-    gd = dd.PixelDataset(sessid, stims=["Gabor", "Dots", "BackImage", "Grating", "FixRsvpStim"],
+    gd = dd.PixelDataset(sessid, stims=stimlist,
         stimset="Train", num_lags=num_lags,
         downsample_t=t_downsample,
         downsample_s=1,
@@ -429,7 +429,7 @@ def fit_shifter(name='20200304_kilowf', path='/home/jake/Data/Datasets/MitchellV
     """
     Fit single layer DivNorm model with modulation
     """
-    for version in range(3): # range of version numbers
+    for version in range(1): # range of version numbers
         
 
         #% Model: convolutional model
@@ -498,8 +498,6 @@ def fit_shifter(name='20200304_kilowf', path='/home/jake/Data/Datasets/MitchellV
         model.readout.bias.data = sample['robs'].mean(dim=0) # initialize readout bias helps
         model.readout._mu.data[0,:,0,:] = torch.tensor(mu.astype('float32')) # initiaalize mus
 
-        #% check that the forward runs (for debugging)
-        
 
         #% Train
         trainer, train_dl, valid_dl = ut.get_trainer(gd, version=version,
@@ -508,7 +506,7 @@ def fit_shifter(name='20200304_kilowf', path='/home/jake/Data/Datasets/MitchellV
                     auto_lr=False,
                     batchsize=1000,
                     num_workers=64,
-                    earlystopping=False)
+                    earlystopping=True)
 
         trainpath = Path(save_dir) / gd.id / "version_{}".format(version)
         if not trainpath.exists():
@@ -568,6 +566,7 @@ if __name__=="__main__":
     parser.add_argument("--numlags", nargs=1, default=12, type=int, help="number of lags in model")
     parser.add_argument("--tdownsample", nargs=1, default=2, type=int, help="temporal downsampling factor (default=2)")
     parser.add_argument("--lengthscale", nargs=1, default=1, type=int, help="lengthscale (smoothness) for shifter (default=1)")
+    parser.add_argument("--stimlist", nargs=1, default=["Gabor", "Dots", "BackImage", "Grating", "FixRsvpStim"])
     # parser.add_argument("--makefigs", nargs=1, default=True, type=bool, help="run figures and analyses after fitting shifter")
 
     args = parser.parse_args()

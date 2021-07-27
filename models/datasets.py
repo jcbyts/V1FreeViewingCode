@@ -14,7 +14,8 @@ def get_stim_list(id):
             '20191206': 'logan_20191206_-20_-10_50_60_0_19_0_1.hdf5',
             '20191231': 'logan_20191231_-20_-10_50_60_0_19_0_1.hdf5',
             '20200304': 'logan_20200304_-20_-10_50_60_0_19_0_1.hdf5',
-            '20200306': 'logan_20200306_Gabor_-20_-10_40_60_2_2_0_9_0.mat'
+            '20200306': 'logan_20200306_Gabor_-20_-10_40_60_2_2_0_9_0.mat',
+            'gru20210525': 'gru_20210525_-13_-14_53_52_0_19_0_1.hdf5'
         }
     return stim_list[id]
 
@@ -71,7 +72,7 @@ class PixelDataset(Dataset):
 
         if len(chk)==0:
             sessname = id
-            spike_sorting is None
+            spike_sorting = None
         else:
             sessname = id[:chk[0]]
             spike_sorting = id[chk[0]+1:]
@@ -204,7 +205,10 @@ class PixelDataset(Dataset):
             cgs = self.fhandle['Neurons'][self.spike_sorting]['cgs'][0,:]
         else:
             self.cluster_ids = self.fhandle[self.stims[0]]['Test']['Robs'].attrs['cids']
-            cgs = self.fhandle['Neurons']['cgs'][:][0]
+            if 'cgs' in self.fhandle['Neurons'].keys():
+                cgs = self.fhandle['Neurons']['cgs'][:][0]
+            else:
+                cgs = np.ones(len(self.cluster_ids))*2
         
         self.NC = len(self.cluster_ids)
         if cids is not None:
@@ -214,7 +218,7 @@ class PixelDataset(Dataset):
         else:
             self.cids = list(range(0,self.NC-1))
         
-        self.single_unit = [int(cgs[c])==2 for c in self.cids]
+        # self.single_unit = [int(cgs[c])==2 for c in self.cids]
 
         if self.spike_sorting is not None:
             from V1FreeViewingCode.Analysis.notebooks.Utils import bin_at_frames

@@ -30,7 +30,7 @@ n = 40
 num_basis = 15
 B = np.maximum(1 - np.abs(np.expand_dims(np.asarray(np.arange(0,n)), axis=1) - np.arange(0,n,n/num_basis))/n*num_basis, 0)
 
-gd = PixelDataset(sessid, stims=["Gabor", "BackImage", "Dots", "DriftingGrating"],
+gd = PixelDataset(sessid, stims=["Gabor", "Dots"],
     stimset="Train", num_lags=num_lags,
     downsample_t=t_downsample,
     downsample_s=1,
@@ -47,7 +47,7 @@ Compute STAS using einstein summation through pytorch
 """
 sample = gd[:] # load sample 
 
-stas = torch.einsum('nlwh,nc->lwhc', sample['stim'], sample['robs']-sample['robs'].mean(dim=0))
+stas = torch.einsum('nlwh,nc->lwhc', sample['stim']**2, sample['robs']-sample['robs'].mean(dim=0))
 sta = stas.detach().cpu().numpy()
 
 #%% plot STAs / get RF centers
@@ -94,7 +94,7 @@ for cc in range(NC):
     yd = plt.ylim()
 
 #%% import models
-from V1FreeViewingCode.models.encoders import Encoder
+import V1FreeViewingCode.models.encoders as encoders
 import V1FreeViewingCode.models.cores as cores
 import importlib
 importlib.reload(cores)
@@ -109,169 +109,13 @@ lengthscale = 1
 # save_dir='./core_shifter_ls{}'.format(lengthscale)
 save_dir='../../checkpoints/v1calibration_ls{}'.format(lengthscale)
 from pathlib import Path
-# %% Fit convolutional divisive normalization model
 
-"""
-Fit LN model with shifter 10 times.
-"""
-for version in range(1): # range of version numbers
-    
-    print("Version %d" %version)
-    #% Model: convolutional model
-    input_channels = gd.num_lags
-    hidden_channels = 16
-    input_kern = 15
-    hidden_kern = 19
-    core = cores.Stacked2dDivNorm(input_channels,
-            hidden_channels,
-            input_kern,
-            hidden_kern,
-            layers=1,
-            gamma_hidden=0, # group sparsity
-            gamma_input=1,
-            gamma_center=0,
-            skip=0,
-            final_nonlinearity=False,
-            bias=False,
-            pad_input=True,
-            hidden_padding=hidden_kern//2,
-            group_norm=True,
-            num_groups=4,
-            weight_norm=True,
-            hidden_dilation=1,
-            input_regularizer="RegMats",
-            input_reg_types=["d2x", "center", "d2t"],
-            input_reg_amt=[.000005, .001, 0.00001],
-            stack=None,
-            use_avg_reg=True)
-
-
-    # initialize input layer to be centered
-    regw = regularizers.gaussian2d(input_kern,sigma=input_kern//4)
-    core.features[0].conv.weight.data = torch.einsum('ijkm,km->ijkm', core.features[0].conv.weight.data, torch.tensor(regw))
-        
-    # Readout
-    in_shape = [core.outchannels, gd.NY, gd.NX]
-    bias = True
-    readout = readouts.Point2DGaussian(in_shape, gd.NC, bias, init_mu_range=0.1, init_sigma=1, batch_sample=True,
-                    align_corners=True, gauss_type='uncorrelated',
-                    constrain_positive=False,
-                    shifter= {'hidden_features': 20,
-                            'hidden_layers': 1,
-                            'final_tanh': False,
-                            'activation': "softplus",
-                            'lengthscale': lengthscale}
-                            )
-
-    # combine core and readout into model
-    model = Encoder(core, readout,
-        weight_decay=.001, optimizer='AdamW', learning_rate=.01, # high initial learning rate because we decay on plateau
-        betas=[.9, .999], amsgrad=True)
-
-    # initialize readout based on spike rate and STA centers
-    model.readout.bias.data = sample['robs'].mean(dim=0) # initialize readout bias helps
-
-    #% check that the forward runs (for debugging)
-    out = model(sample['stim'][:10,:], shifter=sample['eyepos'][:10,:])
-    # out.shape
-
-    #% Train
-    trainer, train_dl, valid_dl = ut.get_trainer(gd, version=version,
-                save_dir=save_dir,
-                name=gd.id,
-                auto_lr=False,
-                batchsize=1000)
-    
-    trainpath = Path(save_dir) / gd.id / "version_{}".format(version)
-    if not trainpath.exists():
-        trainer.fit(model, train_dl, valid_dl)
-    else:
-        print("Already run. Skipping.")
-
-#%%
-"""
-Fit DivNorm model with shifter 10 times.
-"""
-for version in range(11,15): # range of version numbers
-    
-
-    #% Model: convolutional model
-    input_channels = gd.num_lags
-    hidden_channels = 16
-    input_kern = 15
-    hidden_kern = 19
-    core = cores.Stacked2dDivNorm(input_channels,
-            hidden_channels,
-            input_kern,
-            hidden_kern,
-            layers=2,
-            gamma_hidden=1e-6, # group sparsity
-            gamma_input=1,
-            gamma_center=0,
-            skip=0,
-            final_nonlinearity=True,
-            bias=False,
-            pad_input=True,
-            hidden_padding=hidden_kern//2,
-            group_norm=True,
-            num_groups=4,
-            weight_norm=True,
-            hidden_dilation=1,
-            input_regularizer="RegMats",
-            input_reg_types=["d2x", "center", "d2t"],
-            input_reg_amt=[.000005, .001, 0.00001],
-            hidden_reg_types=["d2x", "center"],
-            hidden_reg_amt=[.000005, .01],
-            stack=None,
-            use_avg_reg=True)
-
-
-    # initialize input layer to be centered
-    regw = regularizers.gaussian2d(input_kern,sigma=input_kern//4)
-    core.features[0].conv.weight.data = torch.einsum('ijkm,km->ijkm', core.features[0].conv.weight.data, torch.tensor(regw))
-        
-    # Readout
-    in_shape = [core.outchannels, gd.NY, gd.NX]
-    bias = True
-    readout = readouts.Point2DGaussian(in_shape, gd.NC, bias, init_mu_range=0.1, init_sigma=1, batch_sample=True,
-                    align_corners=True, gauss_type='uncorrelated',
-                    constrain_positive=False,
-                    shifter= {'hidden_features': 20,
-                            'hidden_layers': 1,
-                            'final_tanh': False,
-                            'activation': "softplus",
-                            'lengthscale': lengthscale}
-                            )
-
-    # combine core and readout into model
-    model = Encoder(core, readout,
-        weight_decay=.001, optimizer='AdamW', learning_rate=.01, # high initial learning rate because we decay on plateau
-        betas=[.9, .999], amsgrad=True)
-
-    # initialize readout based on spike rate and STA centers
-    model.readout.bias.data = sample['robs'].mean(dim=0) # initialize readout bias helps
-    # model.readout._mu.data[0,:,0,:] = torch.tensor(mu.astype('float32')) # initiaalize mus
-
-    #% check that the forward runs (for debugging)
-    out = model(sample['stim'][:10,:], shifter=sample['eyepos'][:10,:])
-    # out.shape
-
-    #% Train
-    trainer, train_dl, valid_dl = ut.get_trainer(gd, version=version,
-                save_dir=save_dir,
-                name=gd.id,
-                auto_lr=False,
-                batchsize=1000)
-
-    trainpath = Path(save_dir) / gd.id / "version_{}".format(version)
-    if not trainpath.exists():
-        trainer.fit(model, train_dl, valid_dl)
 
 #%%
 """
 Fit single layer DivNorm model with modulation
 """
-for version in range(1): # range of version numbers
+for version in range(2): # range of version numbers
     
 
     #% Model: convolutional model
@@ -382,13 +226,13 @@ valloss = valloss[sortind]
 plt.plot(ind, valloss)
 
 #%%
-ver1 = 0
+ver1 = 1
 ver = "version_" + str(int(ver1))
 chkpath = pth / ver / 'checkpoints'
 best_epoch = ut.find_best_epoch(chkpath)
 
 best_epoch = ut.find_best_epoch(chkpath)
-model = Encoder.load_from_checkpoint(str(chkpath / best_epoch))
+model = encoders.EncoderMod.load_from_checkpoint(str(chkpath / best_epoch))
 shifter1 = model.readout.shifter
 
 #%% plot best linear shifter and best LNLN shifter
@@ -402,45 +246,6 @@ ygrid = torch.tensor( yy.astype('float32').reshape( (-1,1)))
 
 inputs = torch.cat( (xgrid,ygrid), dim=1)
 
-# open figure
-fig,ax = plt.subplots(figsize=(5,3))
-ax.set_axis_off()
-axins = ax.inset_axes([0.1, 0.1, 0.27, 0.85])
-
-#--- axis 1: plot 
-n1 = sum(ind < 11)
-x = np.ones(n1)+np.random.rand(n1)*.1
-y = valloss[ind < 11]
-axins.plot(x, y, '.', alpha=.5, color="tab:cyan")
-mn = np.argmin(y)
-ver1 = 1#ind[mn]
-axins.plot(x[mn], y[mn], 'o', alpha=1, color="tab:cyan")
-
-n = sum(ind > 10)
-x = 2*np.ones(n)+np.random.rand(n)*.1
-y = valloss[ind>10]
-axins.plot(x, y, '.', alpha=.5, color="tab:green")
-mn = np.argmin(y)
-ver2 = ind[mn+n1-1]
-axins.plot(x[mn], y[mn], 'o', alpha=1, color="tab:green")
-
-axins.set_xlim((.5, 2.5))
-axins.set_xticks([1,2])
-axins.set_xticklabels(['LN', 'LNLN'])
-axins.set_yticks(np.arange(.135,.152,.005))
-
-axins.tick_params(labelsize=8)
-
-sns.despine(ax=axins, trim=True, offset=0)
-axins.set_xlabel("Model", fontsize=8)
-axins.set_ylabel("Loss", fontsize=8)
-
-# load linear model version
-ver = "version_" + str(int(ver1))
-chkpath = pth / ver / 'checkpoints'
-best_epoch = ut.find_best_epoch(chkpath)
-model2 = Encoder.load_from_checkpoint(str(chkpath / best_epoch))
-shifter1 = model2.readout.shifter
 shifter1.cpu()
 y = shifter1(inputs)
 y2 = y.detach().cpu().numpy()
@@ -449,59 +254,15 @@ y2/=gd.valid_eye_rad/60 # conver to arcmin
 vmin = np.min(y2)
 vmax = np.max(y2)
 
-x0 = 0.425
-x1 = 0.675
-y0 = 0.15
-y1 = 0.6
-axins1 = ax.inset_axes([x0, y1, 0.3, 0.35])
-axins1.imshow(y2[:,0].reshape((100,100)), extent=(-gd.valid_eye_rad,gd.valid_eye_rad,-gd.valid_eye_rad,gd.valid_eye_rad), interpolation=None, vmin=vmin, vmax=vmax)
-axins1.set_xticklabels([])
-axins1.tick_params(labelsize=8)
-axins1.set_title("Horizontal", fontsize=8)
+plt.figure()
+plt.subplot(1,2,1)
+plt.imshow(y2[:,0].reshape((100,100)), extent=(-gd.valid_eye_rad,gd.valid_eye_rad,-gd.valid_eye_rad,gd.valid_eye_rad), interpolation=None, vmin=vmin, vmax=vmax)
+plt.title("Horizontal")
 
-axins2 = ax.inset_axes([x1, y1, 0.3, 0.35])
-axins2.imshow(y2[:,1].reshape((100,100)), extent=(-gd.valid_eye_rad,gd.valid_eye_rad,-gd.valid_eye_rad,gd.valid_eye_rad), interpolation=None, vmin=vmin, vmax=vmax)
-axins2.set_yticklabels([])
-axins2.set_xticklabels([])
-axins2.set_title("Vertical", fontsize=8)
+plt.subplot(1,2,2)
+plt.imshow(y2[:,1].reshape((100,100)), extent=(-gd.valid_eye_rad,gd.valid_eye_rad,-gd.valid_eye_rad,gd.valid_eye_rad), interpolation=None, vmin=vmin, vmax=vmax)
+plt.title("Vertical")
 
-# trans_angle = plt.gca().transData.transform_angles(np.array((45,)),
-#                                                    l2.reshape((1, 2)))[0]
-
-# --- Load LNLN version
-ver = "version_" + str(int(ver2))
-chkpath = pth / ver / 'checkpoints'
-best_epoch = ut.find_best_epoch(chkpath)
-model2 = Encoder.load_from_checkpoint(str(chkpath / best_epoch))
-shifter2 = model2.readout.shifter
-shifter2.cpu()
-y = shifter2(inputs)
-y2 = y.detach().cpu().numpy()
-# y2 = y2 - np.mean(y2, axis=0)
-y2/=gd.valid_eye_rad/60 # conver to arcmin
-
-axins3 = ax.inset_axes([x0, y0, 0.3, 0.35])
-im = axins3.imshow(y2[:,0].reshape((100,100)), extent=(-gd.valid_eye_rad,gd.valid_eye_rad,-gd.valid_eye_rad,gd.valid_eye_rad), interpolation=None, vmin=vmin, vmax=vmax)
-axins3.tick_params(labelsize=8)
-
-axins4 = ax.inset_axes([x1, y0, 0.3, 0.35])
-axins4.imshow(y2[:,1].reshape((100,100)), extent=(-gd.valid_eye_rad,gd.valid_eye_rad,-gd.valid_eye_rad,gd.valid_eye_rad), interpolation=None, vmin=vmin, vmax=vmax)
-axins4.set_yticklabels([])
-axins4.tick_params(labelsize=8)
-th2 = ax.text(x0-.035, y0+.1, 'Vertical Eye Position (d.v.a.)', fontsize=8,
-               rotation=90, rotation_mode='anchor')
-
-th2 = ax.text(x0+.05, y0-.18, 'Horizontal Eye Position (d.v.a.)', fontsize=8,
-               rotation=0, rotation_mode='anchor')
-
-axcbar = ax.inset_axes([.95, y0, 0.015, 0.8])
-cbar = fig.colorbar(im, cax=axcbar, orientation="vertical")
-axcbar.tick_params(labelsize=7)
-axcbar.set_ylabel("Shift (Arcmin)", fontsize=8)
-# cmap = plt.cm.viridis()
-# cb = plt.colorbar(ax=im)
-# cb1 = mpl.colorbar.ColorbarBase(axins2, cmap=cmap,
-                                # orientation='vertical')
 #%% run each shifter to see what they predict
 
 iix = np.arange(0,1000) + 2000
@@ -509,7 +270,6 @@ plt.figure(figsize=(10,5))
 sample = gd[:]
 shifters = []
 shifters.append(shifter1)
-shifters.append(shifter2)
 
 bigshift = 0
 for i in range(len(shifters)):
@@ -529,7 +289,7 @@ affine_trans = torch.tensor([[[1., 0., 0.], [0., 1., 0.]]])
 
 aff = torch.tensor([[1,0,0],[0,1,0]])
 
-shift = shifters[1](sample['eyepos']).detach()
+shift = shifters[0](sample['eyepos']).detach()
 affine_trans = shift[:,:,None]+aff[None,:,:]
 affine_trans[:,0,0] = 1
 affine_trans[:,0,1] = 0
@@ -543,9 +303,9 @@ grid = F.affine_grid(affine_trans, torch.Size((n, gd.num_lags, gd.NY,gd.NX)), al
 im2 = F.grid_sample(im, grid)
 
 #%% new STAs on shifted stimulus
-stas = torch.einsum('nlwh,nc->lwhc', im, sample['robs']-sample['robs'].mean(dim=0))
+stas = torch.einsum('nlwh,nc->lwhc', im**2, sample['robs']-sample['robs'].mean(dim=0))
 sta = stas.detach().cpu().numpy()
-stas = torch.einsum('nlwh,nc->lwhc', im2, sample['robs']-sample['robs'].mean(dim=0))
+stas = torch.einsum('nlwh,nc->lwhc', im2**2, sample['robs']-sample['robs'].mean(dim=0))
 sta2 = stas.detach().cpu().numpy()
 cc = 0
 #%%

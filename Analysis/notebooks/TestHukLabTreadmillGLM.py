@@ -71,6 +71,11 @@ newtimes = np.arange(startTime, stopTime, binSize/1000)
 # bin spikes
 Robs = gt.bin_spike_times(matdat['spikeTimes'], matdat['spikeIds'], cids=np.unique(matdat['spikeIds']), bin_size=binSize, start_time=startTime, stop_time=stopTime ).T
 NT = Robs.shape[0]
+
+
+Robs = gaussian_filter1d(Robs, 4, axis=0)
+
+#%%
 treadSpd = resampleAtTimes(matdat['treadTime'].flatten(), matdat['treadSpeed'].flatten(), newtimes)
 sacBoxcar = resampleAtTimes(matdat['eyeTime'].flatten(), (matdat['eyeLabels'].flatten()==2).astype('float32'), newtimes)
 
@@ -158,23 +163,13 @@ dc_shift = NDNutils.ffnetwork_params(
 )
 
 dir_tuning_par = NDNutils.ffnetwork_params(
-    input_dims=[1,ND],
-    xstim_n=[2],
-    layer_sizes=[5, NC],
+    input_dims=[num_lags,ND],
+    xstim_n=[1],
+    layer_sizes=[10, NC],
     layer_types=['normal', 'normal'], # readout for cell-specific regularization
     act_funcs=['lin', 'lin'],
-    normalization=[1, 1],
+    normalization=[1, 0],
     reg_list={'d2x': [1e-5], 'orth':[0], 'l2':[1e-6, 1e-3]}
-)
-
-dir_onset_par = NDNutils.ffnetwork_params(
-    input_dims=[num_lags,1],
-    xstim_n=[1],
-    layer_sizes=[NC],
-    layer_types=['normal'], # readout for cell-specific regularization
-    act_funcs=['lin'],
-    normalization=[0],
-    reg_list={'d2t': [1e-2], 'l2':[1e-2]}
 )
 
 con_onset_par = NDNutils.ffnetwork_params(
@@ -190,7 +185,7 @@ con_onset_par = NDNutils.ffnetwork_params(
 sac_on_par = NDNutils.ffnetwork_params(
     input_dims=[1,1,1],
     time_expand=[num_onlags],
-    xstim_n=[3],
+    xstim_n=[2],
     layer_sizes=[num_sactkerns, NC], # conv_filter_widths=[1],
     layer_types=['temporal', 'normal'],
     act_funcs=['lin', 'lin'],
@@ -201,48 +196,26 @@ base_glm_par = NDNutils.ffnetwork_params(
     xstim_n=None, ffnet_n=[0,1], layer_sizes=[NC],
     layer_types=['add'], act_funcs=['softplus'])  
 
-direc_par = NDNutils.ffnetwork_params(
-    xstim_n=None, ffnet_n=[1,2], layer_sizes=[NC],
-    layer_types=['add'], act_funcs=['lin'])
-
 stim_glm_par = NDNutils.ffnetwork_params(
-    xstim_n=None, ffnet_n=[0,3,4], layer_sizes=[NC],
+    xstim_n=None, ffnet_n=[0,1], layer_sizes=[NC],
     layer_types=['add'], act_funcs=['softplus'])
 
 sac_glm_par = NDNutils.ffnetwork_params(
-    xstim_n=None, ffnet_n=[0,3,4], layer_sizes=[NC],
-    layer_types=['add'], act_funcs=['lin'])
+    xstim_n=None, ffnet_n=[0,1,2], layer_sizes=[NC],
+    layer_types=['add'], act_funcs=['softplus'])
 
-sac_glm_mult = NDNutils.ffnetwork_params(
-    xstim_n=None, ffnet_n=[5,6], layer_sizes=[NC],
-    layer_types=['add'], act_funcs=['softplus'])    
 
-sacglm = NDN.NDN([dc_shift, dir_tuning_par, dir_onset_par, con_onset_par, direc_par, sac_on_par, sac_glm_par, sac_glm_mult], tf_seed=seed, noise_dist=noise_dist)
-sacglm.networks[5].layers[0].init_temporal_basis( xs=tspacing )
+#%% Base Model
 
-plt.figure(figsize=(10,5))
-f = plt.plot(sacglm.networks[5].layers[0].filter_basis)
-plt.title("Sac Onset Basis")
-#%%
 baseglm = NDN.NDN([dc_shift, con_onset_par, base_glm_par], tf_seed=seed, noise_dist=noise_dist)
-stimglm = NDN.NDN([dc_shift, dir_tuning_par, dir_onset_par, con_onset_par, direc_par, stim_glm_par], tf_seed=seed, noise_dist=noise_dist)
-
-# Make saccade basis
-
-
-#%% Initial training
 
 v2f0 = baseglm.fit_variables(layers_to_skip=[[], [], [0]], fit_biases=False)
 v2f0[-1][-1]['biases']=True
 
-v2f1 = stimglm.fit_variables(layers_to_skip=[[], [], [], [0], [], [0]], fit_biases=False)
-v2f1[-1][-1]['biases']=True
-
-# --- BASE GLM
 _ = baseglm.train(input_data=[Time, Xcon], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
     learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f0)
 
-#%%
+#%% Find best Regularization
 reg_results = DU.unit_reg_test(baseglm, input_data=[Time, Xcon],
     output_data=Robs, train_indxs=Ui, test_indxs=Xi,
     reg_type='d2t', reg_vals=[1e-6, 1e-4, 1e-3, 1e-2, 0.1, 1],
@@ -258,36 +231,48 @@ plt.figure(figsize=(10,5))
 f = plt.plot(Time@baseglm.networks[0].layers[0].weights)
 
 
+#%% Stim GLM
 
-#%%
-stimglm.networks[0].layers[0].weights = deepcopy(baseglm.networks[0].layers[0].weights)
-stimglm.networks[3].layers[0].weights = deepcopy(baseglm.networks[1].layers[0].weights)
+stimglm = NDN.NDN([dc_shift, dir_tuning_par, stim_glm_par], tf_seed=seed, noise_dist=noise_dist)
 
-_ = stimglm.train(input_data=[Time, Xcon,gratingDir], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+v2f1 = stimglm.fit_variables(layers_to_skip=[[], [], [0]], fit_biases=False)
+v2f1[-1][-1]['biases']=True
+
+# stimglm.networks[0].layers[0].weights = deepcopy(baseglm.networks[0].layers[0].weights)
+# stimglm.networks[3].layers[0].weights = deepcopy(baseglm.networks[1].layers[0].weights)
+
+_ = stimglm.train(input_data=[Time, Xdir], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
     learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f1)
 
 #%%
-reg_results = DU.unit_reg_test(stimglm, input_data=[Time, Xcon, gratingDir],
+reg_results = DU.unit_reg_test(stimglm, input_data=[Time, Xdir],
     output_data=Robs, train_indxs=Ui, test_indxs=Xi,
     reg_type='d2t', reg_vals=[1e-6, 1e-4, 1e-3, 1e-2, 0.1, 1],
-    layer_targets=[0], ffnet_targets=[2],
+    layer_targets=[0], ffnet_targets=[1],
     learning_alg='lbfgs', opt_params=lbfgs_params)
 
 stimglm = DU.unit_assign_reg(stimglm, reg_results)
 
 #%%
 
-v2f2 = sacglm.fit_variables(layers_to_skip=[[], [], [], [], [0], [], [0], [0]], fit_biases=False)
+
+sacglm = NDN.NDN([dc_shift, dir_tuning_par, sac_on_par, sac_glm_par], tf_seed=seed, noise_dist=noise_dist)
+sacglm.networks[2].layers[0].init_temporal_basis( xs=tspacing )
+
+plt.figure(figsize=(10,5))
+f = plt.plot(sacglm.networks[2].layers[0].filter_basis)
+plt.title("Sac Onset Basis")
+
+v2f2 = sacglm.fit_variables(layers_to_skip=[[], [], [], [0]], fit_biases=False)
 v2f2[-1][-1]['biases']=True
 
+# sacglm.networks[0].layers[0].weights = deepcopy(stimglm.networks[0].layers[0].weights)
+# sacglm.networks[1].layers[0].weights = deepcopy(stimglm.networks[1].layers[0].weights)
+# sacglm.networks[1].layers[1].weights = deepcopy(stimglm.networks[1].layers[1].weights)
+# sacglm.networks[2].layers[0].weights = deepcopy(stimglm.networks[2].layers[0].weights)
+# sacglm.networks[3].layers[0].weights = deepcopy(stimglm.networks[3].layers[0].weights)
 
-sacglm.networks[0].layers[0].weights = deepcopy(stimglm.networks[0].layers[0].weights)
-sacglm.networks[1].layers[0].weights = deepcopy(stimglm.networks[1].layers[0].weights)
-sacglm.networks[1].layers[1].weights = deepcopy(stimglm.networks[1].layers[1].weights)
-sacglm.networks[2].layers[0].weights = deepcopy(stimglm.networks[2].layers[0].weights)
-sacglm.networks[3].layers[0].weights = deepcopy(stimglm.networks[3].layers[0].weights)
-
-_ = sacglm.train(input_data=[Time, Xcon, gratingDir, saconshift], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
+_ = sacglm.train(input_data=[Time, Xdir, saconshift], output_data=Robs, train_indxs=Ui, test_indxs=Xi,
     learning_alg=optimizer, opt_params=opt_params, use_dropout=False, fit_variables=v2f2)
 
 # reg_results = DU.unit_reg_test(sacglm, input_data=[Time, Xcon, gratingDir, saconshift],
@@ -298,57 +283,37 @@ _ = sacglm.train(input_data=[Time, Xcon, gratingDir, saconshift], output_data=Ro
 
 # sacglm = DU.unit_assign_reg(sacglm, reg_results)
 
-
-
-
-
-#%%
-
-
-
-
-# NDNutils.reg_path()
-
-# print("Done Training Initial Model")
-
 # %%
-def getDirWeights(glm):
-    filters = DU.compute_spatiotemporal_filters(glm, ffnet=1)
+def getDirWeights(glm, ffnet=1):
 
     TC = filters.squeeze()
-    if len(glm.networks[1].layers)>1:
-        TC = TC@glm.networks[1].layers[1].weights
+    if len(glm.networks[ffnet].layers)>1:
+        w = glm.networks[ffnet].layers[0].weights@glm.networks[ffnet].layers[1].weights
+        num_lags = glm.networks[ffnet].input_dims[0]
+        sp_dims = glm.networks[ffnet].input_dims[1:]
+        nfilt = glm.networks[ffnet].layers[-1].weights.shape[-1]
+        w2 = np.reshape(w, [np.prod(sp_dims), num_lags, NC])
+        TC = np.transpose(w2, [1,0,2])
+        
     return TC
 
 TC = getDirWeights(stimglm)
-plt.figure(figsize=(15,5))
-plt.subplot(1,3,1)
 
-f = plt.plot(directions, TC)
+sx = np.ceil(np.sqrt(NC))
+sy = np.round(np.sqrt(NC))
+win = [-4, 150]
 
-plt.title('Direction Tuning')
-plt.xlabel("Direction")
+plt.figure(figsize=(sx*2, sy*2))
+for cc in range(NC):
+    plt.subplot(sx, sy, cc+1)
+    plt.imshow(TC[:,:,cc])
 
-tkern = stimglm.networks[2].layers[0].weights
-ckern = stimglm.networks[3].layers[0].weights
-
-
-lags = np.arange(0, num_lags)/100
-plt.subplot(1,3,2)
-f = plt.plot(lags, tkern)
-plt.title('Direction Temporal Kernel')
-plt.xlabel("Time Lag")
-
-plt.subplot(1,3,3)
-f = plt.plot(lags, ckern)
-plt.title('Contrast Temporal Kernel')
-plt.xlabel("Time Lag")
 
 #%%
-filters = DU.tbasis_recover_filters(sacglm, ffnet=5).squeeze()
+filters = DU.tbasis_recover_filters(sacglm, ffnet=2).squeeze()
 f = plt.plot(filters)
 
-stimglm.networks[0].layers[0].weights.shape
+
 # %%
 
 def get_psth(robs, gratings, win):
@@ -364,8 +329,8 @@ def get_psth(robs, gratings, win):
 
 
 yhat0 = baseglm.generate_prediction(input_data=[Time, Xcon])
-yhat1 = stimglm.generate_prediction(input_data=[Time, Xcon, gratingDir])
-yhat2 = sacglm.generate_prediction(input_data=[Time, Xcon, gratingDir, saconshift])
+yhat1 = stimglm.generate_prediction(input_data=[Time, Xdir])
+yhat2 = sacglm.generate_prediction(input_data=[Time, Xdir, saconshift])
 
 #%%
 cc = 0
@@ -375,10 +340,10 @@ cc += 1
 
 iix = np.arange(0, 1000)+5000
 plt.plot(gaussian_filter1d(Robs[iix,cc], 10))
-plt.plot(yhat1[iix,cc])
+plt.plot(yhat0[iix,cc])
 plt.plot(yhat2[iix,cc])
 
-U.r_squared(TC, TC1)
+
 #%%
 
 ND
@@ -466,20 +431,24 @@ plt.title("Cell %d" %cc)
 
 LLt0 = Robs*np.log(yhat0) - yhat0
 LLt1 = Robs*np.log(yhat1) - yhat1
+LLt2 = Robs*np.log(yhat2) - yhat2
 
-rll0 = get_psth(LLt0[:,cc], gratingDir, win)
-rll1 = get_psth(LLt1[:,cc], gratingDir, win)
+#%%
+for cc in range(NC):
+    rll0 = get_psth(LLt0[:,cc], gratingDir, win)
+    rll1 = get_psth(LLt1[:,cc], gratingDir, win)
 
-plt.figure(figsize=(10,5))
-plt.subplot(1,2,1)
-plt.imshow(rll1[0].T-rll0[0].T, aspect='auto', extent=[win[0], win[1], 0, 360])
-plt.subplot(1,2,2)
-f = plt.plot(rll1[0]-rll0[0])
+    plt.figure(figsize=(10,5))
+    plt.subplot(1,2,1)
+    plt.imshow(rll1[0].T-rll0[0].T, aspect='auto', extent=[win[0], win[1], 0, 360])
+    plt.subplot(1,2,2)
+    f = plt.plot(rll1[0]-rll0[0])
+    plt.title("Cell %d" %cc)
 
 #%%
 LL0 = baseglm.eval_models(input_data=[Time, Xcon], output_data=Robs, data_indxs=Xi, nulladjusted=True)
-LL1 = stimglm.eval_models(input_data=[Time, Xcon, gratingDir], output_data=Robs, data_indxs=Xi, nulladjusted=True)
-LL2 = sacglm.eval_models(input_data=[Time, Xcon, gratingDir, saconshift], output_data=Robs, data_indxs=Xi, nulladjusted=True)
+LL1 = stimglm.eval_models(input_data=[Time, Xdir], output_data=Robs, data_indxs=Xi, nulladjusted=True)
+LL2 = sacglm.eval_models(input_data=[Time, Xdir, saconshift], output_data=Robs, data_indxs=Xi, nulladjusted=True)
 
 plt.figure(figsize=(15,5))
 plt.subplot(1,3,1)
@@ -510,29 +479,3 @@ plt.ylabel("Dir + Sac")
 
 # plt.text([ll for ll in LL0], [ll for ll in LL1], ["%d" %(cc+1) for cc in range(NC)])
 # %%
-
-filters = DU.compute_spatiotemporal_filters(stimglm, ffnet=0)
-f = plt.plot(filters.squeeze())
-# %%
-
-cc = 0
-
-plt.figure(figsize=(15,5))
-plt.subplot(1,3,1)
-
-f = plt.plot(directions, TC[:,cc])
-
-plt.title('Direction Tuning')
-plt.xlabel("Direction")
-
-plt.subplot(1,3,2)
-f = plt.plot(lags, tkern[:,cc])
-plt.title('Direction Temporal Kernel')
-plt.xlabel("Time Lag")
-
-plt.subplot(1,3,3)
-f = plt.plot(lags, ckern[:,cc])
-plt.title('Contrast Temporal Kernel')
-plt.xlabel("Time Lag")
-# %%
-
