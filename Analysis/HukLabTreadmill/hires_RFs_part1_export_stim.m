@@ -14,15 +14,23 @@ io.checkCalibration(Exp);
 
 %%
 
+io.checkCalibration(Exp);
 
+%%
+eyepos = io.getEyeCalibrationFromRaw(Exp);
 
 %%
 % BIGROI = [-10 -8 10 8];
 BIGROI = [-4 -4 4 4];
 
+eyePos = eyepos;
+% eyePos = Exp.vpx.smo(:,2:3);
+eyePos(:,1) = -eyePos(:,1);
+eyePos(:,2) = -eyePos(:,2);
+
 stat = spat_rf_helper(Exp, 'ROI', BIGROI, ...
     'win', [0 12],...
-    'binSize', .3, 'plot', true, 'debug', false, 'spikesmooth', 1);
+    'binSize', .3, 'plot', true, 'debug', false, 'spikesmooth', 1, 'eyePos', eyePos);
 
 %%
 
@@ -43,12 +51,11 @@ ROI = ceil(Exp.S.pixPerDeg*ROI);
 
 
 %% regenerate data with the following parameters
-
 close all
 % pixels run down so enforce this here
 S.rect = ROI;
 S.rect([2 4]) = sort(-S.rect([2 4]));
-fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'Dots', 'Gabor', 'BackImage', 'DriftingGrating'}, 'overwrite', false);
+fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'Gabor'}, 'overwrite', false);
 
 flist{1} = fname;
 

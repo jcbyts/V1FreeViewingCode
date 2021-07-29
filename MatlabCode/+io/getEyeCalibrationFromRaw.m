@@ -1,10 +1,11 @@
-function eyePos2 = getEyeCalibrationFromRaw(Exp, varargin)
+function [eyePos2, eyePos] = getEyeCalibrationFromRaw(Exp, varargin)
 
 
 ip = inputParser();
 ip.addParameter('usebilinear', false)
-ip.addParameter('usesmo', true)
+ip.addParameter('usesmo', false)
 ip.addParameter('plot', false)
+ip.addParameter('cmat', [])
 ip.parse(varargin{:})
 
 %% organize the data
@@ -35,44 +36,53 @@ ix = all(abs(zscore(xy(ix,:)))<1,2); % remove outliers
 ix = ix & ( spd / median(spd) < 2); % find fixations
 
 %% check original
-[~, id] = calibration_loss([1 1 0 0 0], xy(ix,:), targets);
-
-figure(1); clf
-subplot(1,2,1)
-cmap = jet(ntargs);
-inds = find(ix);
-for j = 1:ntargs
-    plot(xy(inds(id==j),1), xy(inds(id==j),2), '.', 'Color', cmap(j,:)); hold on
-    plot(targets(j,1), targets(j,2), 'ok', 'MarkerFaceColor', cmap(j,:), 'Linewidth', 2); hold on    
+if ~isempty(ip.Results.cmat)
+    
+    phat = ip.Results.cmat;
+    
+else
+    cmat = [1 1 0 0 0];
+    
+    
+    [~, id] = calibration_loss(cmat, xy(ix,:), targets);
+    
+    figure(1); clf
+    subplot(1,2,1)
+    cmap = jet(ntargs);
+    inds = find(ix);
+    for j = 1:ntargs
+        plot(xy(inds(id==j),1), xy(inds(id==j),2), '.', 'Color', cmap(j,:)); hold on
+        plot(targets(j,1), targets(j,2), 'ok', 'MarkerFaceColor', cmap(j,:), 'Linewidth', 2); hold on
+    end
+    %% Calibrate from RAW
+    
+    % ctr = mean(xy(ix,:)); % get center
+    
+    [C, xax, yax] = histcounts2(xy(ix,1), xy(ix,2), 1000);
+    [xx,yy] = meshgrid(xax(1:end-1), yax(1:end-1));
+    
+    I =  imgaussfilt(C', 10);
+    
+    % figure(1); clf
+    % imagesc(xax, yax, I); hold on
+    %
+    
+    wts = I(:).^9 / sum(I(:).^9);
+    x = xx(:)'*wts;
+    y = yy(:)'*wts;
+    ctr = [x,y];
+    
+    % plot(ctr(1), ctr(2), 'or')
+    % plot(x,y,'mo')
+    %%
+    
+    lossfun = @(params) sum(calibration_loss([params ctr], xy(ix,:), targets));
+    
+    % fit model
+    opts = optimset('Display', 'iter');
+    phat = fminsearch(lossfun, [std(xy)/10 0], opts);
+    phat = [phat ctr];
 end
-%% Calibrate from RAW
-
-% ctr = mean(xy(ix,:)); % get center
-
-[C, xax, yax] = histcounts2(xy(ix,1), xy(ix,2), 1000);
-[xx,yy] = meshgrid(xax(1:end-1), yax(1:end-1));
-
-I =  imgaussfilt(C', 10);
-
-% figure(1); clf
-% imagesc(xax, yax, I); hold on
-% 
-
-wts = I(:).^9 / sum(I(:).^9);
-x = xx(:)'*wts;
-y = yy(:)'*wts;
-ctr = [x,y];
-
-% plot(ctr(1), ctr(2), 'or')
-% plot(x,y,'mo')
-%%
-
-lossfun = @(params) sum(calibration_loss([params ctr], xy(ix,:), targets));
-
-% fit model
-opts = optimset('Display', 'iter');
-phat = fminsearch(lossfun, [std(xy)/10 0], opts);
-phat = [phat ctr];
 
 %% check whether we're in the right space
 th = phat(3);
@@ -133,8 +143,8 @@ dxdy = diff(eyePos); % velocity
 spd = hypot(dxdy(:,1), dxdy(:,2)); % speed
 
 
-figure(1); clf
-plot(spd)
+% figure(1); clf
+% plot(spd)
 
 fixatedLoss = [];
 

@@ -3,7 +3,8 @@
 classdef calibGUI < handle
     % GUI for fixing calibration
     %
-    % Purpose is to do the manual calibration thing offline
+    % Purpose is to do the manual calibration thing offline before
+    % refinement
     %
     % GUI by J.L. Yates
     
@@ -31,7 +32,7 @@ classdef calibGUI < handle
         function obj = calibGUI(Exp)
             
             
-            fig = figure(1029321); % ks uses some defined figure numbers for plotting - with this random number we don't clash
+            fig = figure(1029321); clf % ks uses some defined figure numbers for plotting - with this random number we don't clash
             set(fig,'Name', 'calibGUI',...
                 'MenuBar', 'none',...
                 'Toolbar', 'none',...
@@ -100,11 +101,101 @@ classdef calibGUI < handle
             
             obj.cmat = phat;
 
-
-            eyepos = obj.get_eyepos();
+            obj.get_eyepos(); % update eye position
             
             plot_calibration(obj)
              
+        end
+        
+         function build(obj, f)
+            % construct the GUI with appropriate panels
+            obj.H.fig = f;
+            set(f, 'UserData', obj);
+            set(f, 'KeyPressFcn', @(f,k)obj.keyboardFcn(f, k));
+            
+            % plot
+            obj.H.xpos = axes('Position', [.1 .2 .5 .7]);
+            
+            % --- individual buttons
+            obj.H.refine_calibration = uicontrol( 'Parent', obj.H.fig, ...
+                    'String', 'Refine Calibration', ...
+                    'Units', 'normalized', ...
+                    'Position', [.65 .7 .1 .05], ...
+                    'Callback', @(~,~)obj.refine_calibration);
+            
+            obj.H.update_cmat = uicontrol( 'Parent', obj.H.fig, ...
+                    'String', 'Update Calib Matrix', ...
+                    'Units', 'normalized', ...
+                    'Position', [.65 .65 .1 .05], ...
+                    'Callback', @(~,~)obj.update_cmat);
+                
+            obj.H.update_plot = uicontrol( 'Parent', obj.H.fig, ...
+                    'String', 'Update Plot', ...
+                    'Units', 'normalized', ...
+                    'Position', [.65 .6 .1 .05], ...
+                    'Callback', @(~,~)obj.plot_calibration);
+                
+            obj.H.save = uicontrol( 'Parent', obj.H.fig, ...
+                    'String', 'Save To File', ...
+                    'Units', 'normalized', ...
+                    'Position', [.85 .6 .1 .05], ...
+                    'Callback', @(~,~)obj.saveFile);
+            
+            obj.H.text.Buttons = annotation('textbox', [.67 .75 .1 .05], 'String', 'Buttons', 'Linestyle', 'none', 'Fontsize', 18);
+            
+            obj.H.text.Controls = annotation('textbox', [.7 .4 .2 .05], 'String', 'Keyboard Controls', 'Linestyle', 'none', 'Fontsize', 18);
+            
+            obj.H.text.shift = annotation('textbox', [.65 .35 .2 .05], 'String', 'Shift:     Use arrows', 'Linestyle', 'none', 'Fontsize', 18);
+            obj.H.text.rotate = annotation('textbox', [.65 .3 .2 .05], 'String',  'Rotate:    < (left) > (right)', 'Linestyle', 'none', 'Fontsize', 18);
+            obj.H.text.gain.head = annotation('textbox', [.65 .25 .2 .05], 'String',  'Gain:', 'Linestyle', 'none', 'Fontsize', 18);
+            obj.H.text.gain.righta = annotation('arrow', [0.68 .7], [.2 .2]+.03);
+            obj.H.text.gain.right = annotation('textbox', [.7 .2 .2 .05], 'String',  "Key: '", 'Linestyle', 'none', 'Fontsize', 18);
+            obj.H.text.gain.lefta = annotation('arrow', [0.7 .68], [.15 .15]+.03);
+            obj.H.text.gain.left = annotation('textbox', [.7 .15 .2 .05], 'String',  "Key: L", 'Linestyle', 'none', 'Fontsize', 18);
+            obj.H.text.gain.upa = annotation('arrow', [0.69 .69], [.1 .13]+.02);
+            obj.H.text.gain.up = annotation('textbox', [.7 .1 .2 .05], 'String',  "Key: P", 'Linestyle', 'none', 'Fontsize', 18);
+            obj.H.text.gain.upa = annotation('arrow', [0.69 .69], [.08 .05]+.02);
+            obj.H.text.gain.up = annotation('textbox', [.7 .05 .2 .05], 'String',  "Key: ;", 'Linestyle', 'none', 'Fontsize', 18);
+            
+%             obj.H.Plots = uiextras.HBox('Parent', f,...
+%                 'DeleteFcn', @(~,~)obj.cleanup(), 'Visible', 'on', ...
+%                 'Spacing', 0, 'Padding', 0);
+            
+            
+            % --- plotting axes
+%             obj.H.xpos = axes( 'Parent', obj.H.Plots );
+%             obj.H.ypos = axes( 'Parent', obj.H.Plots );
+            
+            % button box
+%             obj.H.Buttons = uiextras.VBox( 'Parent', obj.H.Plots);
+%             obj.H.Controls = uiextras.BoxPanel( 'Parent', obj.H.Buttons, 'Title', 'Calibration Controls');
+%             obj.H.ButtonBox = uiextras.VButtonBox( 'Parent', obj.H.Controls);
+%             
+%             % --- individual buttons
+%             obj.H.refine_calibration = uicontrol( 'Parent', obj.H.ButtonBox, ...
+%                     'String', 'Refine Calibration', ...
+%                     'Callback', @(~,~)obj.refine_calibration);
+%             
+%             obj.H.update_cmat = uicontrol( 'Parent', obj.H.ButtonBox, ...
+%                     'String', 'Update Calib Matrix', ...
+%                     'Callback', @(~,~)obj.update_cmat);
+%                 
+%             obj.H.update_plot = uicontrol( 'Parent', obj.H.ButtonBox, ...
+%                     'String', 'Update Plot', ...
+%                     'Callback', @(~,~)obj.plot_calibration);
+%             
+%             set(obj.H.ButtonBox, 'Widths', [10; 10; 10])  
+            
+            title(obj.H.xpos, 'Loss')
+            xlabel(obj.H.xpos, 'Degrees')
+            ylabel(obj.H.xpos, 'Degrees')
+            
+
+            % --- Data traces initialize
+            obj.H.hx = [];
+            obj.H.hy = [];
+            obj.H.selected = [];
+            
         end
         
         
@@ -163,53 +254,7 @@ classdef calibGUI < handle
         end
         
         
-        function build(obj, f)
-            % construct the GUI with appropriate panels
-            obj.H.fig = f;
-            set(f, 'UserData', obj);
-%             
-            set(f, 'KeyPressFcn', @(f,k)obj.keyboardFcn(f, k));
-            
-            obj.H.Plots = uiextras.HBox('Parent', f,...
-                'DeleteFcn', @(~,~)obj.cleanup(), 'Visible', 'on', ...
-                'Spacing', 0, 'Padding', 0);
-            
-            
-            % --- plotting axes
-            obj.H.xpos = axes( 'Parent', obj.H.Plots );
-%             obj.H.ypos = axes( 'Parent', obj.H.Plots );
-            
-            % button box
-            obj.H.Buttons = uiextras.VBox( 'Parent', obj.H.Plots);
-            obj.H.Controls = uiextras.BoxPanel( 'Parent', obj.H.Buttons, 'Title', 'Calibration Controls');
-            obj.H.ButtonBox = uiextras.VButtonBox( 'Parent', obj.H.Controls);
-            
-            % --- individual buttons
-            obj.H.refine_calibration = uicontrol( 'Parent', obj.H.ButtonBox, ...
-                    'String', 'Refine Calibration', ...
-                    'Callback', @(~,~)obj.refine_calibration);
-            
-            obj.H.update_cmat = uicontrol( 'Parent', obj.H.ButtonBox, ...
-                    'String', 'Update Calib Matrix', ...
-                    'Callback', @(~,~)obj.update_cmat);
-                
-            obj.H.update_plot = uicontrol( 'Parent', obj.H.ButtonBox, ...
-                    'String', 'Update Plot', ...
-                    'Callback', @(~,~)obj.plot_calibration);
-            
-            set(obj.H.ButtonBox, 'Widths', [10; 10; 10])  
-            
-            title(obj.H.xpos, 'Loss')
-            xlabel(obj.H.xpos, 'Degrees')
-            ylabel(obj.H.xpos, 'Degrees')
-            
-
-            % --- Data traces initialize
-            obj.H.hx = [];
-            obj.H.hy = [];
-            obj.H.selected = [];
-            
-        end
+       
         
         function update_cmat(obj)
             
@@ -532,7 +577,7 @@ classdef calibGUI < handle
             disp(k.Key)
             switch k.Key
                 case 'rightarrow'
-                    obj.cmat(4) = obj.cmat(4) + .001;
+                    obj.cmat(4) = obj.cmat(4) - .001;
                     th = obj.cmat(3);
                     R = [cosd(th) -sind(th); sind(th) cosd(th)];
                     S = [obj.cmat(1) 0; 0 obj.cmat(2)];
@@ -544,7 +589,7 @@ classdef calibGUI < handle
                     plot_calibration(obj);
                     
                 case 'leftarrow'
-                    obj.cmat(4) = obj.cmat(4) - .001;
+                    obj.cmat(4) = obj.cmat(4) + .001;
                     th = obj.cmat(3);
                     R = [cosd(th) -sind(th); sind(th) cosd(th)];
                     S = [obj.cmat(1) 0; 0 obj.cmat(2)];
@@ -579,18 +624,6 @@ classdef calibGUI < handle
                     plot_calibration(obj);
                     
                 case 'period'
-                    obj.cmat(3) = obj.cmat(3) + 1;
-                    th = obj.cmat(3);
-                    R = [cosd(th) -sind(th); sind(th) cosd(th)];
-                    S = [obj.cmat(1) 0; 0 obj.cmat(2)];
-                    A = (R*S)';
-                    Ainv = pinv(A);
-                    
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
-                    
-                    plot_calibration(obj);
-                    
-                case 'comma'
                     obj.cmat(3) = obj.cmat(3) - 1;
                     th = obj.cmat(3);
                     R = [cosd(th) -sind(th); sind(th) cosd(th)];
@@ -602,7 +635,31 @@ classdef calibGUI < handle
                     
                     plot_calibration(obj);
                     
+                case 'comma'
+                    obj.cmat(3) = obj.cmat(3) + 1;
+                    th = obj.cmat(3);
+                    R = [cosd(th) -sind(th); sind(th) cosd(th)];
+                    S = [obj.cmat(1) 0; 0 obj.cmat(2)];
+                    A = (R*S)';
+                    Ainv = pinv(A);
+                    
+                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    
+                    plot_calibration(obj);
+                    
                 case 'quote'
+                    obj.cmat(1) = obj.cmat(1) * .95;
+                    th = obj.cmat(3);
+                    R = [cosd(th) -sind(th); sind(th) cosd(th)];
+                    S = [obj.cmat(1) 0; 0 obj.cmat(2)];
+                    A = (R*S)';
+                    Ainv = pinv(A);
+                    
+                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    
+                    plot_calibration(obj);
+                    
+                case 'l'
                     obj.cmat(1) = obj.cmat(1) * 1.05;
                     th = obj.cmat(3);
                     R = [cosd(th) -sind(th); sind(th) cosd(th)];
@@ -615,7 +672,7 @@ classdef calibGUI < handle
                     plot_calibration(obj);
                     
                 case 'semicolon'
-                    obj.cmat(1) = obj.cmat(1) * .95;
+                    obj.cmat(2) = obj.cmat(2) * 1.05;
                     th = obj.cmat(3);
                     R = [cosd(th) -sind(th); sind(th) cosd(th)];
                     S = [obj.cmat(1) 0; 0 obj.cmat(2)];
@@ -625,10 +682,18 @@ classdef calibGUI < handle
                     obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
-                case 'f'
-                    plot_calibration(obj)
-                case 'l'
-                    plot_calibration(obj)
+                    
+                case 'p'
+                    obj.cmat(2) = obj.cmat(2) * .95;
+                    th = obj.cmat(3);
+                    R = [cosd(th) -sind(th); sind(th) cosd(th)];
+                    S = [obj.cmat(1) 0; 0 obj.cmat(2)];
+                    A = (R*S)';
+                    Ainv = pinv(A);
+                    
+                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    
+                    plot_calibration(obj);
             end
 
         end
@@ -665,34 +730,47 @@ classdef calibGUI < handle
         
         function saveFile(obj)
             
-            fprintf(1, 'Saving data\n')
-%             obj.Exp = load(obj.H.filename);
-%             obj.Exp.vpx.Labels = obj.Labels;
-%             saccades = Exp.vpx.Labels(:) == 2;
-%             sstart = find(diff(saccades)==1);
-%             sstop = find(diff(saccades)==-1);
-%             if saccades(1)
-%                 sstart = [1; sstart];
-%             end
-%             
-%             if saccades(end)
-%                 sstop = [sstop; numel(saccades)];
-%             end
-%             
-%             nSaccades = numel(sstart);
-%             midpoint = zeros(nSaccades, 1);
-%             for iSaccade = 1:nSaccades
-%                 [~, id] = max(Exp.vpx.smo(sstart(iSaccade):sstop(iSaccade),7));
-%                 midpoint(iSaccade) = sstart(iSaccade) + id;
-%             end
-%             sl = [Exp.vpx.smo(sstart,1) Exp.vpx.smo(sstop,1) Exp.vpx.smo(midpoint,1) sstart sstop midpoint];
-%             Exp.slist = sl;
-%             save(obj.H.filename, '-v7.3', '-struct','Exp')
-%             
-%             csvwrite(obj.H.Xfilename, obj.X)
-%             csvwrite(obj.H.Yfilename, obj.Y)
-%             csvwrite(obj.H.Lfilename, obj.Labels)
-%             fprintf(1, 'Done\n')
+            
+            [fname, fpath] = uigetfile('*.xls', 'Select the datasets.xls file');
+            
+            data = readtable(fullfile(fpath, fname));
+            field_list = fields(data);
+            if ~any(contains(field_list, 'CalibMat'))
+                nSessions = numel(data.Date);
+                for i = 1:5
+                    data.(sprintf('CalibMat_%d', i)) = nan(nSessions,1);
+                end
+            end
+            
+            Tag = strrep(obj.Exp.FileTag, '.mat', '');
+            ExNum = find(contains(data.Tag, Tag));
+            if isempty(ExNum)
+                warning("cannot find experiment. Are you sure you picked the right datasets file?")
+            end
+            
+            if isnan(data.CalibMat_1(ExNum))
+                for i = 1:5
+                    tmp = data.(sprintf('CalibMat_%d', i));
+                    tmp(ExNum) = obj.cmat(i);
+                    data.(sprintf('CalibMat_%d', i)) = tmp;
+                end
+            end
+            
+            fig = uifigure;
+            selection = uiconfirm(fig,'Do you want to save over the existing datasets.xls file values?','Confirm Save',...
+                        'Icon','warning');
+            close(fig)
+            figure(obj.H.fig)
+            if strcmp(selection, 'OK')
+                fprintf(1, 'Saving data\n')
+                writetable(data, fullfile(fpath, fname));
+                fprintf(1, 'Done\n')
+            else
+                fprintf(1, 'Canceled\n')
+                
+            end
+            
+
             
         end
         

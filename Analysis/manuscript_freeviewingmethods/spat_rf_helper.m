@@ -102,7 +102,11 @@ else
     
     stat.spmx = ones(NC,1);
     stat.spmn = ones(NC,1);
-    stat.cgs = Exp.osp.cgs(:);
+    if ~isfield(Exp.osp, 'cgs')
+        stat.cgs = 2*ones(NC,1);
+    else
+        stat.cgs = Exp.osp.cgs(:);
+    end
 end
 
 for cc = 1:NC

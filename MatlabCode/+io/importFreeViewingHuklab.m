@@ -1,4 +1,5 @@
 function Exp = importFreeViewingHuklab(S)
+close all
 % this function imports the data required for the FREEVIEWING project
 % It shares the same fundamentals as 
 disp('FREE VIEWING IMPORT FOR HUKLAB DATASHARE')
@@ -33,6 +34,8 @@ fid = fopen(fpath, 'wb');
 % io.copy_spikes_from_server(strrep(S.processedFileName, '.mat', ''), S.spikeSorting)
 
 %% Baic marmoView import. Synchronize with Ephys if it exists
+
+disp('BASIC MARMOVIEW IMPORT')
 Exp = io.basic_marmoview_import(DataFolder, 'fid', fid);
 
 % fix spatial frequency bug: marmoV5 data before 2021 February had a
@@ -54,22 +57,56 @@ for iFile = 1:numel(edfFiles)
     save(edfname, '-v7.3', '-struct', 'Dtmp');
 end
 
+disp('IMPORT EYE POSITION')
 % Import eye position signals
-[Exp, fig] = io.import_eye_position(Exp, DataFolder);
+[Exp, fig] = io.import_eye_position(Exp, DataFolder, 'fid', fid);
 if ~isempty(fig)
     saveas(fig, fullfile(figDir, 'eye_time_sync.pdf'))
 end
 
+disp('CLEANUP CALIBRATION')
 fig = io.checkCalibration(Exp);
 saveas(fig, fullfile(figDir, 'eye_calibration_from_file.pdf'))
 
+if any(isnan(S.CalibMat))
+    disp('Running Manual Calibration')
+    Exp.FileTag = S.processedFileName;
+    C = calibGUI(Exp);
+    keyboard
+    S.CalibMat = C.cmat;
+    eyePos0 = C.get_eyepos();
+end
 % redo calibration offline using FaceCal data
-eyePos = io.getEyeCalibrationFromRaw(Exp);
-Exp.vpx.smo(:,2:3) = eyePos;
+[eyePos, eyePos0] = io.getEyeCalibrationFromRaw(Exp, 'cmat', S.CalibMat);
 
+Exp.vpx.smo(:,2:3) = eyePos0;
 fig = io.checkCalibration(Exp);
-saveas(fig, fullfile(figDir, 'eye_calibration_redo_auto.pdf'))
+fig.Position(1) = 50;
+title('Before Auto Refine')
 
+Exp.vpx.smo(:,2:3) = eyePos;
+fig = io.checkCalibration(Exp);
+fig.Position(1) = fig.Position(1) + 100;
+title('After Auto Refine')
+
+f = uifigure('Position', [500 200 400 170]);
+selection = uiconfirm(f, 'Use Auto Refine Calibration?', 'Which Calibration', ...
+    'Options', {'Before', 'After'});
+close(f)
+
+if strcmp(selection, 'After')
+    Exp.vpx.smo(:,2:3) = eyePos;
+    fig = io.checkCalibration(Exp);
+    title('After Auto Refine')
+    saveas(fig, fullfile(figDir, 'eye_calibration_redo_autorefine.pdf'))
+else
+    Exp.vpx.smo(:,2:3) = eyePos0;
+    fig = io.checkCalibration(Exp);
+    title('Before Auto Refine')
+    saveas(fig, fullfile(figDir, 'eye_calibration_redo_before.pdf'))
+end
+
+close all
 % 
 %%
 

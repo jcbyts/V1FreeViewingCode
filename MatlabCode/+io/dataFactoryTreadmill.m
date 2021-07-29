@@ -41,6 +41,16 @@ if isnumeric(sessionId)
     thisSession = data(sessionId,:);
 end
     
+field_list = fields(data);
+if any(contains(field_list, 'CalibMat'))
+    S.CalibMat = [data.CalibMat_1(sessionId), ...
+        data.CalibMat_2(sessionId), ...
+        data.CalibMat_3(sessionId), ...
+        data.CalibMat_4(sessionId), ...
+        data.CalibMat_5(sessionId)];
+else
+    S.CalibMat = [];
+end
 
 S.Latency = 8.3e-3; % delay from PTB time to actual monitor refresh (even at 240Hz there's about an 8ms latency)
 S.rect = [-20 -60 50 10]; % default gaze-centered ROI (pixels)
@@ -119,7 +129,7 @@ else % try importing the file
         
     end
     
-    Exp.osp = struct('st', st, 'clu', clu, 'cids', 1:numel(unitlist));
+    Exp.osp = struct('st', st, 'clu', clu, 'cids', unitlist);
     fprintf('Done\n')
 %     % some more meta data
 %     % some more meta data
@@ -151,6 +161,29 @@ else % try importing the file
     
     % --- save meta data to dataset table
     fprintf('Updating Dataset Table\n')
+    
+    if strcmp(thisSession.ImportFun, 'importFreeViewingHuklab')
+        disp('Updating protocol list')
+        protocols =  {'Grating', 'Gabor', 'Dots', 'BackImage', ...
+            'FixRsvpStim', ...
+            'FixCalib', ...
+            'ForageStaticLines', ...
+            'DriftingGrating'};
+        
+        prot_list = [];
+        for iprot = 1:numel(protocols)
+            vt = io.getValidTrials(Exp, protocols{iprot});
+            if ~isempty(vt)
+                if isempty(prot_list)
+                    prot_list = protocols{iprot};
+                else
+                    prot_list = [prot_list ',' protocols{iprot}];
+                end
+            end
+        end
+        
+        thisSession.StimulusProtocols = {prot_list};
+    end
 %     thisSession.numChannels = S.numChan;
 %     thisSession.numUnits = S.numU;
 %     thisSession.numSingleUnit = S.numSU;
