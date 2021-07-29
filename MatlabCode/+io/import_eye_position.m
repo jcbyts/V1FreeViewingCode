@@ -1,15 +1,27 @@
-function Exp = import_eye_position(Exp, DataFolder, varargin)
-% Exp = import_eye_position(Exp, DataFolder, varargin)
+function [Exp, fig] = import_eye_position(Exp, DataFolder, varargin)
+% Import Eye Position for MarmoV5 session
+% Arguments:
+%   Exp         - Marmoview data structure
+%   DataFolder  - Path where the raw eye traces live
+% Optional arguments (as key/value pairs):
+%   TAGSTART    - value to identify as a trial start (default: 63)
+%   TAGEND      - value to identify as trial end (default: 64)
+%   fid         - file id to dump to (default: 1 => dumps to command window)
+% Outputs:
+%   Exp         - updated data struct, now with vpx and vpx2ephys added
+%   fig         - sync figure, returns empty if sync didn't work properly
 
 ip = inputParser();
 ip.addParameter('TAGSTART', 63)
 ip.addParameter('TAGEND', 62)
+ip.addParameter('fid', 1)
 ip.parse(varargin{:});
 
 TAGSTART = ip.Results.TAGSTART;
 TAGEND = ip.Results.TAGEND;
 
-
+fig = [];
+fid = ip.Results.fid;
 %% Loading up the VPX file as a long data stream
 % Can be done later, might just use matlab eye data for now
 %*****************************************************************
@@ -23,8 +35,8 @@ if isempty(VpxFiles)
         %******** if not DDPI, then try to find .edf from EyeLink
         VpxFiles = dir([DataFolder,filesep,'*edf.mat']);
         if isempty(VpxFiles)
-            warning('import_eye_position: Error finding raw eye data file');
-            disp('using online eye position')
+            fprintf(fid, '\nWARNING: Error finding raw eye data file\n');
+            fprintf(fid, 'USING ONLINE EYE POSITION\n');
             
             numTrials = numel(Exp.D);
             Exp.vpx = struct();
@@ -96,10 +108,10 @@ for zk = FileSort(:,1)'
         
         
         clear vpx;
-        disp('******************************************');
-        fprintf('Experiment file %s loaded\n',fname);
+        fprintf(fid, '\n\n******************************************\n');
+        fprintf(fid, 'Experiment file [%s] loaded\n',fname);
     else
-        fprintf('WARNING: failed to read %s\n',fname);
+        fprintf(fid, 'WARNING: failed to read [%s]\n',fname);
     end
 end
 
@@ -107,14 +119,15 @@ end
 %% Synching up the strobes from VPX to MarmoView
 % Same thing, might use matlab eye data for now
 %*****************************************************************
-disp('Synching up vpx strobes');
-for k = 1:size(Exp.D,1)
+fprintf(fid, '\nSynching up vpx strobes\n');
+nTrials = size(Exp.D,1);
+for k = 1:nTrials
     start = synchtime.find_strobe_time(TAGSTART,Exp.D{k}.STARTCLOCK,Exp.vpx.strobes,Exp.vpx.tstrobes);
     finish = synchtime.find_strobe_time(TAGEND,Exp.D{k}.ENDCLOCK,Exp.vpx.strobes,Exp.vpx.tstrobes);
     if (isnan(start) || isnan(finish))
-        fprintf('Synching VPX trial %d\n',k);
+        fprintf(fid, 'Synching VPX trial %d/%d\n',k, nTrials);
         if isnan(finish) && isnan(start)
-            fprintf('Dropping entire VPX trial %d from protocol %s\n',k,Exp.D{k}.PR.name);
+            fprintf(fid, 'Dropping entire VPX trial %d from protocol %s\n',k,Exp.D{k}.PR.name);
             Exp.D{k}.START_VPX = NaN;
             Exp.D{k}.END_VPX = NaN;
         else
@@ -125,11 +138,11 @@ for k = 1:size(Exp.D,1)
             tdiff = Exp.D{k}.eyeData(end,6) - Exp.D{k}.eyeData(1,1);
             if isnan(start) && ~isnan(finish)
                 Exp.D{k}.START_VPX = Exp.D{k}.END_VPX - tdiff;
-                disp('Approximating VPX start code');
+                fprintf(fid, 'Approximating VPX start code\n');
             end
             if isnan(finish) && ~isnan(start)
                 Exp.D{k}.END_VPX = Exp.D{k}.START_VPX + tdiff;
-                disp('Approximating VPX end code');
+                fprintf(fid, 'Approximating VPX end code\n');
             end
             %****************
         end
@@ -138,7 +151,7 @@ for k = 1:size(Exp.D,1)
         Exp.D{k}.END_VPX = finish;
     end
 end
-disp('Finished synching up vpx strobes');
+fprintf(fid, '\nFinished synching up vpx strobes\n\n');
 
 if ~isfield(Exp, 'vpx2ephys')
     vpx2ephys = synchtime.sync_vpx_to_ephys_clock(Exp);
@@ -146,8 +159,8 @@ if ~isfield(Exp, 'vpx2ephys')
 end
 
 if all(isnan(Exp.vpx2ephys(Exp.vpx.raw(:,1))))
-    warning('Eyetracker sync did not work')
-    warning('Going to try to manually match traces. This is slow...')
+    fprintf(fid, 'WARNING: Eyetracker sync did not work\n');
+    fprintf(fid, 'Going to try to manually match traces. This is slow...\n');
     
     numTrials = numel(Exp.D);
     vpx = struct();
@@ -177,13 +190,15 @@ if all(isnan(Exp.vpx2ephys(Exp.vpx.raw(:,1))))
     vpxTime = Exp.vpx.raw(samplematch(goodsamples,1));
     wts = robustfit(vpxTime, Exp.ptb2Ephys(ptbTime));
     
-    figure(100); clf
+    fig = figure(100); clf
     plot(vpxTime, Exp.ptb2Ephys(ptbTime), 'o'); hold on
     Exp.vpx2ephys = @(t) t*wts(2) + wts(1);
     plot(vpxTime, Exp.vpx2ephys(vpxTime), 'r')
     xlabel('Eye Tracker Time')
     ylabel('Ephys Time')
     legend({'Data', 'Fit'})
+    set(gcf, 'PaperSize', [4 4], 'PaperPosition', [0 0 4 4])
+   
     
 end
 
@@ -221,7 +236,7 @@ goodSnips = sum(gdur/60);
 totalDur = Exp.vpx.raw(end,1)-Exp.vpx.raw(1,1);
 totalMin = totalDur/60;
 
-fprintf('%02.2f/%02.2f minutes are usable\n', goodSnips, totalMin)
+fprintf(fid, '%02.2f/%02.2f minutes are usable\n', goodSnips, totalMin);
 
 % go back through and eliminate snippets that are not analyzable
 n = numel(bremon);

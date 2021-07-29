@@ -18,7 +18,7 @@ sesslist = io.dataFactoryTreadmill();
 
 %% Step 1.1: Try importing a session
 
-sessionId = 11;
+sessionId = 23;
 Exp = io.dataFactoryTreadmill(sessionId);
 
 

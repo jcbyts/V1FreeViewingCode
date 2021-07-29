@@ -1,4 +1,5 @@
-function checkCalibration(Exp)
+function fig = checkCalibration(Exp, varargin)
+
 % Check the existing gaze calibration
 %% organize the data
 fprintf('Correcting eye pos by reanalyzing FaceCal\n')
@@ -26,7 +27,7 @@ ix = ix & ( spd / median(spd) < 2); % find fixations
 %% check original
 [~, id] = calibration_loss([1 1 0 0 0], xy(ix,:), targets);
 
-figure; clf
+fig = figure; clf
 set(gcf, 'Color', 'w')
 cmap = jet(ntargs);
 inds = find(ix);
@@ -37,3 +38,4 @@ end
 xlabel('Space (deg)')
 ylabel('Space (deg)')
 title('Calibration')
+set(fig, 'PaperSize', [4 4], 'PaperPosition', [0 0 4 4])

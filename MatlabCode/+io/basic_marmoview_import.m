@@ -197,7 +197,7 @@ if HASEPHYS
     end
     
     % do a global synchronization of the clocks
-    Exp.ptb2Ephys = synchtime.sync_ptb_to_ephys_clock(Exp);
+    Exp.ptb2Ephys = synchtime.sync_ptb_to_ephys_clock(Exp, [], 'fid', fid);
     fprintf(fid, 'Finished Synching up ephys strobes\n');
     
     

@@ -17,28 +17,34 @@ end
 assert(exist(DataFolder, 'dir')==7, 'importFreeViewing: raw data path does not exist')
 
 % make folder for exporting import quality checks
-figDir = fullfile(DataFolder, '_import');
+datashare = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+exname = strrep(S.processedFileName, '.mat', '');
+
+figDir = fullfile(datashare, 'imported_sessions_qa', exname);
 if ~exist(figDir, 'dir')
     mkdir(figDir)
 end
+
+fpath = fullfile(figDir, 'import.txt');
+fid = fopen(fpath, 'wb');
+
 % %% Load spikes data
 % [sp,osp] = io.import_spike_sorting(DataFolder, S.spikeSorting);
 % io.copy_spikes_from_server(strrep(S.processedFileName, '.mat', ''), S.spikeSorting)
 
 %% Baic marmoView import. Synchronize with Ephys if it exists
-Exp = io.basic_marmoview_import(DataFolder);
+Exp = io.basic_marmoview_import(DataFolder, 'fid', fid);
 
 % fix spatial frequency bug: marmoV5 data before 2021 February had a
 % scaling bug where all spatial frequencies off by a factor of two
 datebugfixed = datenum('20210201', 'yyyymmdd');
 thisdate = datenum(regexp(S.processedFileName, '[0-9]*', 'match', 'once'), 'yyyymmdd');
 if thisdate < datebugfixed
-    warning('importFreeViewing: fixing early MarmoV5 spatial frequency bug')
+%     warning('importFreeViewing: fixing early MarmoV5 spatial frequency bug')
+    fprintf(fid, 'importFreeViewing: fixing early MarmoV5 spatial frequency bug');
     Exp = io.correct_spatfreq_by_half(Exp);
 end
 
-% Exp.sp = sp;  % Jude's cell array of spike times
-% Exp.osp = osp; % keep the original Kilosort spike format
 % cleanup eye position files
 edfFiles = dir(fullfile(DataFolder, '*edf.mat'));
 for iFile = 1:numel(edfFiles)
@@ -49,19 +55,26 @@ for iFile = 1:numel(edfFiles)
 end
 
 % Import eye position signals
-Exp = io.import_eye_position(Exp, DataFolder);
+[Exp, fig] = io.import_eye_position(Exp, DataFolder);
+if ~isempty(fig)
+    saveas(fig, fullfile(figDir, 'eye_time_sync.pdf'))
+end
+
+fig = io.checkCalibration(Exp);
+saveas(fig, fullfile(figDir, 'eye_calibration_from_file.pdf'))
 
 % redo calibration offline using FaceCal data
 eyePos = io.getEyeCalibrationFromRaw(Exp);
+Exp.vpx.smo(:,2:3) = eyePos;
 
+fig = io.checkCalibration(Exp);
+saveas(fig, fullfile(figDir, 'eye_calibration_redo_auto.pdf'))
+
+% 
 %%
 
-% io.checkCalibration(Exp)
-% 
-% %%
-% 
 % trial = 15;
-% % eyepos = Exp.D{trial}.eyeData(:,2:3);
+% eyepos = Exp.D{trial}.eyeData(:,2:3);
 % eyepos = Exp.vpx.raw(:,2:3);
 % eyepos(:,2) = 1 - eyepos(:,2);
 % 
@@ -74,7 +87,7 @@ eyePos = io.getEyeCalibrationFromRaw(Exp);
 
 %%
 % 
-Exp.vpx.smo(:,2:3) = eyePos;
+
 
 % Saccade processing:
 % Perform basic processing of eye movements and saccades
@@ -95,5 +108,5 @@ for iTrial = validTrials(:)'
     end
 end
         
-disp('Done importing session');
+fprintf(fid, 'Done importing session\n');
 
