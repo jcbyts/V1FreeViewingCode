@@ -18,11 +18,52 @@ sesslist = io.dataFactoryTreadmill();
 
 %% Step 1.1: Try importing a session
 
-sessionId = 13;
+sessionId = 27;
 Exp = io.dataFactoryTreadmill(sessionId);
 
-%%
+%% get spatial map
 
+dotTrials = io.getValidTrials(Exp, 'Dots');
+if ~isempty(dotTrials)
+    
+    
+    BIGROI = [-1 -1 1 1]*5;
+    
+    % eyePos = eyepos;
+    eyePos = Exp.vpx.smo(:,2:3);
+    % eyePos(:,1) = -eyePos(:,1);
+    % eyePos(:,2) = -eyePos(:,2);
+    
+    stat = spat_rf_helper(Exp, 'ROI', BIGROI, ...
+        'win', [0 12],...
+        'binSize', .3, 'plot', true, 'debug', false, 'spikesmooth', 0);
+    
+    dataPath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+    exname = strrep(Exp.FileTag, '.mat', '');
+    figDir = fullfile(dataPath, 'imported_sessions_qa', exname);
+    
+    NC = numel(stat.cgs);
+    sx = ceil(sqrt(NC));
+    sy = round(sqrt(NC));
+    figure(11); clf
+    ax = plot.tight_subplot(sx, sy, 0.02);
+    for cc = 1:NC
+        set(gcf, 'currentaxes', ax(cc))
+        imagesc(stat.xax, stat.yax, stat.spatrf(:,:,cc));
+        hold on
+        plot(xlim, [0 0], 'r')
+        plot([0 0], ylim, 'r')
+        axis xy
+        title(sprintf('Unit: %d', Exp.osp.cids(cc)))
+    end
+      
+    
+    plot.suplabel('Coarse RFs', 't');
+    plot.fixfigure(gcf, 10, [sy sx]*2, 'offsetAxes', false)
+    saveas(gcf, fullfile(figDir, 'Dot_RFs.pdf'))
+        
+    
+end
 
 %%
 

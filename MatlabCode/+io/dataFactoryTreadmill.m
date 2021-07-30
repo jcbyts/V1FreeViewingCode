@@ -112,15 +112,26 @@ else % try importing the file
     st = [];
     clu = [];
     
+    exname = strrep(S.processedFileName, '.mat', '');
+    figDir = fullfile(dataPath, 'imported_sessions_qa', exname);
+    
     recId = find(contains(D.z.RecId, dateStr));
     for rId = recId(:)'
         
+        figure(rId); clf
+      
         unitlist = find(cellfun(@(x) ~isempty(x), D.z.Times{rId}));
+        nUnits = numel(unitlist);
+        sx = ceil(sqrt(nUnits));
+        sy = round(sqrt(nUnits));
+        ax = plot.tight_subplot(sx, sy, 0.05);
         
-        
-        
-        for iunit = 1:numel(unitlist)
+        for iunit = 1:nUnits
             kunit = unitlist(iunit);
+            
+            set(gcf, 'currentaxes', ax(iunit))
+            plot(squeeze(D.z.Shapes(:,kunit,:))', 'Linewidth', 2)
+            title(sprintf('Unit: %d', kunit))
             
             stmp = double(D.z.Times{rId}{kunit}) / D.z.Sampling;
             st = [st; stmp];
@@ -128,6 +139,12 @@ else % try importing the file
         end
         
     end
+    
+    plot.suplabel('Waveforms', 't');
+    plot.fixfigure(gcf, 10, [sy sx]*2)
+    saveas(gcf, fullfile(figDir, 'waveforms.pdf'))
+    
+    
     
     Exp.osp = struct('st', st, 'clu', clu, 'cids', unitlist);
     fprintf('Done\n')

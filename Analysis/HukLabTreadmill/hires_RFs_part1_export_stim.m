@@ -11,22 +11,14 @@ sessId = 13;
 Exp.osp.cgs = ones(size(Exp.osp.cids))*2;
 
 io.checkCalibration(Exp);
-
-%%
-
-io.checkCalibration(Exp);
-
-%%
-eyepos = io.getEyeCalibrationFromRaw(Exp);
-
 %%
 % BIGROI = [-10 -8 10 8];
 BIGROI = [-4 -4 4 4];
 
-eyePos = eyepos;
-% eyePos = Exp.vpx.smo(:,2:3);
-eyePos(:,1) = -eyePos(:,1);
-eyePos(:,2) = -eyePos(:,2);
+% eyePos = eyepos;
+eyePos = Exp.vpx.smo(:,2:3);
+% eyePos(:,1) = -eyePos(:,1);
+% eyePos(:,2) = -eyePos(:,2);
 
 stat = spat_rf_helper(Exp, 'ROI', BIGROI, ...
     'win', [0 12],...

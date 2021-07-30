@@ -19,9 +19,10 @@ ip.addParameter('Decode', 'Orientation')
 ip.addParameter('slidingWin', 80e-3)
 ip.addParameter('runThreshold', 3)
 ip.addParameter('plot', true)
+ip.addParameter('figDir', fullfile('Figures', 'HuklabTreadmill'))
 ip.parse(varargin{:})
 
-
+figDir = ip.Results.figDir;
 %% useful functions
 circdiff = @(x,y) angle(exp(1i*(x - y)/180*pi))/pi*180;
 circmean = @(x) angle(sum(exp(1i*x/180*pi)))/pi*180;
@@ -41,6 +42,12 @@ cumulativeDecoder = false;
 
 %%
 [StimDir, spksb, runningSpeed, Dstat] = bin_population(D, sessionId);
+
+sx = ceil(sqrt(Dstat.NCells));
+sy = round(sqrt(Dstat.NCells));
+set(gcf, 'PaperSize', [sy sx]*2, 'PaperPosition', [0 0 sy sx]*2)
+% plot.fixfigure(gcf, 10, [sy sx]*2, 'offsetAxes', false);
+saveas(gcf, fullfile(figDir, 'binned_spikes.pdf'))
 
 % throw out spurious running trials
 toofast = find(any(runningSpeed > 60,2));
@@ -301,7 +308,7 @@ annotation(gcf, 'TextBox', [.4 .2 .1 .8], 'String', 'B', 'Linestyle', 'none')
 
 if ip.Results.plot
     set(gcf, 'PaperSize', [10 3], 'PaperPosition', [0 0 12 3])
-    saveas(gcf, fullfile('Figures', 'HuklabTreadmill', sprintf('decoderschematic%02.2f.pdf', sessionId)))
+    saveas(gcf, fullfile(figDir, sprintf('decoderschematic%02.2f.pdf', sessionId)))
 end
 
 %% initialize
@@ -390,11 +397,11 @@ end
 
 if ip.Results.plot
     set(gcf, 'PaperSize', [12 2.5], 'PaperPosition', [0 0 12 2.5])
-    saveas(gcf, fullfile('Figures', 'HuklabTreadmill', sprintf('decoderprobability%02.0f.pdf', sessionId)))
+    saveas(gcf, fullfile(figDir, sprintf('decoderprobability%02.0f.pdf', sessionId)))
     
     colorbar
     set(gcf, 'PaperSize', [12 3], 'PaperPosition', [0 0 12 3])
-    saveas(gcf, fullfile('Figures', 'HuklabTreadmill', sprintf('decoderprobabilitywcolorbar%02.0f.pdf', sessionId)))
+    saveas(gcf, fullfile(figDir, sprintf('decoderprobabilitywcolorbar%02.0f.pdf', sessionId)))
 end
 
 Dstat.DecodeError = DecoderError;
@@ -435,7 +442,7 @@ end
 
 if ip.Results.plot
     set(gcf, 'PaperSize', [12 3], 'PaperPosition', [0 0 12 3])
-    saveas(gcf, fullfile('Figures', 'HuklabTreadmill', sprintf('decodererror%02.0f.pdf', sessionId)))
+    saveas(gcf, fullfile(figDir, sprintf('decodererror%02.0f.pdf', sessionId)))
 end
 
 
@@ -497,5 +504,5 @@ set(gca, 'Box', 'off', 'TickDir', 'out')
 % decoding.offsetAxes(gca)
 if ip.Results.plot
     set(gcf, 'PaperSize', [4 4], 'PaperPosition', [0 0 4 4])
-    saveas(gcf, fullfile('Figures', 'HuklabTreadmill', sprintf('decoders_mae%02.0f.pdf', sessionId)))
+    saveas(gcf, fullfile(figDir, sprintf('decoders_mae%02.0f.pdf', sessionId)))
 end

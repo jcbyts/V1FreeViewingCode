@@ -24,12 +24,16 @@ classdef calibGUI < handle
         xlim = [-12 12]
         ylim = [-12 12]
         plotid
-        
+        datasetFile = []
         selected = []
     end
     
     methods (Access = public)
-        function obj = calibGUI(Exp)
+        function obj = calibGUI(Exp, varargin)
+            
+            ip = inputParser();
+            ip.addParameter('datasetFile', [])
+            ip.parse(varargin{:});
             
             
             fig = figure(1029321); clf % ks uses some defined figure numbers for plotting - with this random number we don't clash
@@ -49,6 +53,7 @@ classdef calibGUI < handle
             obj.Exp = Exp;
             obj.build(fig);
             obj.initialize();
+            obj.datasetFile = ip.Results.datasetFile;
             
         end
         
@@ -140,6 +145,24 @@ classdef calibGUI < handle
                     'Units', 'normalized', ...
                     'Position', [.85 .6 .1 .05], ...
                     'Callback', @(~,~)obj.saveFile);
+                
+            obj.H.save = uicontrol( 'Parent', obj.H.fig, ...
+                    'String', 'Flip X', ...
+                    'Units', 'normalized', ...
+                    'Position', [.75 .7 .1 .05], ...
+                    'Callback', @(~,~)obj.flipX);
+                
+            obj.H.save = uicontrol( 'Parent', obj.H.fig, ...
+                    'String', 'Flip Y', ...
+                    'Units', 'normalized', ...
+                    'Position', [.75 .65 .1 .05], ...
+                    'Callback', @(~,~)obj.flipY);
+                
+            obj.H.save = uicontrol( 'Parent', obj.H.fig, ...
+                    'String', 'Show Asym Trials', ...
+                    'Units', 'normalized', ...
+                    'Position', [.75 .6 .1 .05], ...
+                    'Callback', @(~,~)obj.show_asymetric_trials);
             
             obj.H.text.Buttons = annotation('textbox', [.67 .75 .1 .05], 'String', 'Buttons', 'Linestyle', 'none', 'Fontsize', 18);
             
@@ -253,6 +276,43 @@ classdef calibGUI < handle
             
         end
         
+        function show_asymetric_trials(obj)
+           
+            %%
+            
+            validTrials = io.getValidTrials(obj.Exp, 'FaceCal');
+            
+            tstart = obj.Exp.ptb2Ephys(cellfun(@(x) x.STARTCLOCKTIME, obj.Exp.D(validTrials)));
+            tstop = obj.Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, obj.Exp.D(validTrials)));
+            
+            eyeTime = obj.Exp.vpx2ephys(obj.Exp.vpx.raw(:,1));
+            eyePos = obj.get_eyepos();
+            
+            mx = cellfun(@(x) mean(x(:,1)), obj.trialTargets);
+            my = cellfun(@(x) mean(x(:,2)), obj.trialTargets);
+            asymTrials = find(mx ~= 0 | my ~=0);
+            nAsym = numel(asymTrials);
+            figure(100); clf
+            sx = ceil(sqrt(nAsym));
+            sy = round(sqrt(nAsym));
+            
+            for iTrial = 1:nAsym
+                thisTrial = asymTrials(iTrial);
+                iix = eyeTime > tstart(thisTrial) & eyeTime < tstop(thisTrial);
+                
+                targetlist = obj.trialTargets{thisTrial};
+                
+                subplot(sx, sy, iTrial)
+                plot(eyePos(iix,1), eyePos(iix,2), 'k'); hold on
+                plot(targetlist(:,1), targetlist(:,2), 'sk', 'MarkerSize', 10)
+                xlim([-1 1]*12);
+                ylim([-1 1]*12);
+%                 title(ax3, sprintf('Trial %d', iTrial))
+
+            end
+           
+           %%
+        end
         
        
         
@@ -294,13 +354,16 @@ classdef calibGUI < handle
             
             % runs a refinement on the calibration based on 
             eyeTime = obj.Exp.vpx2ephys(obj.Exp.vpx.raw(:,1));
-            th = obj.cmat(3);
-            R = [cosd(th) -sind(th); sind(th) cosd(th)];
-            S = [obj.cmat(1) 0; 0 obj.cmat(2)];
-            A = (R*S)';
-            Ainv = pinv(A);
+            eyePos = obj.get_eyepos();
+%             th = obj.cmat(3);
+%             R = [cosd(th) -sind(th); sind(th) cosd(th)];
+%             S = [obj.cmat(1) 0; 0 obj.cmat(2)];
+%             A = (R*S)';
+%             Ainv = pinv(A);
+            
+            
 
-            eyePos = (obj.Exp.vpx.raw(:,2:3) - obj.cmat(4:5))*Ainv;
+%             eyePos = (obj.Exp.vpx.raw(:,2:3) - obj.cmat(4:5))*Ainv;
             
 %             eyePos = obj.Exp.vpx.raw(:,2:3);
             
@@ -517,8 +580,23 @@ classdef calibGUI < handle
             
         end
         
+        function flipX(obj)
+           obj.cmat(1) = -obj.cmat(1);
+           obj.get_eyepos();
+           obj.plot_calibration();
+           obj.show_asymetric_trials();
+        end
+        
+        function flipY(obj)
+           obj.cmat(2) = -obj.cmat(2);
+           obj.get_eyepos();
+           obj.plot_calibration();
+           obj.show_asymetric_trials();
+        end
+        
         
         function selectFileDlg(obj)
+            
             [filename, pathname] = uigetfile('*.*', 'Pick a data file.');
             
             if filename==0 % 0 when cancel
@@ -730,10 +808,16 @@ classdef calibGUI < handle
         
         function saveFile(obj)
             
+            if isempty(obj.datasetFile)
+                [fname, fpath] = uigetfile('*.xls', 'Select the datasets.xls file');
+                if isempty(fname)
+                    warning('canceled by user')
+                    return
+                end
+                obj.datasetFile = fullfile(fpath, fname);
+            end
             
-            [fname, fpath] = uigetfile('*.xls', 'Select the datasets.xls file');
-            
-            data = readtable(fullfile(fpath, fname));
+            data = readtable(obj.datasetFile);
             field_list = fields(data);
             if ~any(contains(field_list, 'CalibMat'))
                 nSessions = numel(data.Date);
@@ -763,7 +847,7 @@ classdef calibGUI < handle
             figure(obj.H.fig)
             if strcmp(selection, 'OK')
                 fprintf(1, 'Saving data\n')
-                writetable(data, fullfile(fpath, fname));
+                writetable(data, obj.datasetFile);
                 fprintf(1, 'Done\n')
             else
                 fprintf(1, 'Canceled\n')
