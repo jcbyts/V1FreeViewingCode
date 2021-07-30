@@ -244,22 +244,23 @@ lXY = sum(lossFlipXY);
 
 flips = {[1 1], [-1 1], [1 -1], [-1 -1]};
 
-[~, bestflip] = min([L0 lX lY lXY]);
-
-switch bestflip
-    case 1
-        disp("No flipping necessary")
-    case 2
-        disp("Flipping X")
-    case 3
-        disp("Flipping Y")
-    case 4
-        disp("Flipping X and Y")
+try
+    [~, bestflip] = min([L0 lX lY lXY]);
+    
+    switch bestflip
+        case 1
+            disp("No flipping necessary")
+        case 2
+            disp("Flipping X")
+        case 3
+            disp("Flipping Y")
+        case 4
+            disp("Flipping X and Y")
+    end
+    
+    eyePos = eyePos.*flips{bestflip};
+    fixatedXY = fixatedXY.*flips{bestflip};
 end
-
-eyePos = eyePos.*flips{bestflip};
-fixatedXY = fixatedXY.*flips{bestflip};
-
 %% redo calibration using 2nd-order polynomial
 
 targXY = targets(round(fixatedTarget),:);

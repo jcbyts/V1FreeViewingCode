@@ -320,20 +320,9 @@ m = geomean(frStimR(:,2)./frStimS(:,2));
 ci = bootci(nboot, @geomean, frStimR(:,2)./frStimS(:,2));
 
 fprintf("geometric mean stim-driven firing rate ratio (Running:Stationary) is %02.3f [%02.3f, %02.3f] (n=%d)\n", m, ci(1), ci(2), NC)
-%%
-mean(corrPval < 0.05)
-
-figure(1); clf
-histogram(corrRho, -.5:.025:.5); hold on
-histogram(corrRho(corrPval < 0.05), -.5:.025:.5)
-xlabel("Spearman's Rho")
-ylabel('Count')
-legend({'All', 'p<0.05'})
 
 
-%%
 
-goodix = getStableRange(R, 'plot', false); % key function: finds stable region of firing
 
 %% Do direction / orientation decoding
 

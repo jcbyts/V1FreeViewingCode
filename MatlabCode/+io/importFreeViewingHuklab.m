@@ -71,10 +71,9 @@ saveas(fig, fullfile(figDir, 'eye_calibration_from_file.pdf'))
 if any(isnan(S.CalibMat))
     disp('Running Manual Calibration')
     Exp.FileTag = S.processedFileName;
-    C = calibGUI(Exp);
+    C = calibGUI(Exp, 'datasetFile', fullfile(datashare, 'datasets.xls'));
     keyboard
     S.CalibMat = C.cmat;
-    eyePos0 = C.get_eyepos();
 end
 % redo calibration offline using FaceCal data
 [eyePos, eyePos0] = io.getEyeCalibrationFromRaw(Exp, 'cmat', S.CalibMat);
