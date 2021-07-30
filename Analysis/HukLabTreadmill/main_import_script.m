@@ -18,7 +18,7 @@ sesslist = io.dataFactoryTreadmill();
 
 %% Step 1.1: Try importing a session
 
-sessionId = 27;
+sessionId = 23;
 Exp = io.dataFactoryTreadmill(sessionId);
 
 % get directory to save QA figures in
@@ -339,49 +339,6 @@ stat = tuning_empirical(D, 'binsize', 10e-3, ...
     'nboot', 500, ...
     'seed', 1234);
 
-%% plot running tuning?
-
-NC = numel(stat.TCfitR);
-runrat = stat.speedTuning.rateSpdMu./stat.speedTuning.rateSpdMu(1,:);
-[~, ind] = sort(runrat(end,:));
-
-
-sx = ceil(sqrt(NC));
-sy = round(sqrt(NC));
-
-
-figure(1); clf
-ax = plot.tight_subplot(sx, sy, 0.001, 0.001);
-cmap = lines;
-cmap(1,:) = .2*[1 1 1];
-for i = 1:(sx*sy)
-    
-    
-    set(gcf, 'currentaxes', ax(i))
-    
-    if i > NC
-        axis off
-        continue
-    end
-    
-    fprintf('Unit %d/%d\n', i, NC)
-    
-    cc = ind(i);
-    
-    plot.errorbarFill(stat.speedTuning.bins, stat.speedTuning.rateSpdMu(:,cc), stat.speedTuning.rateSpdSe(:,cc), 'b', 'FaceColor', cmap(1,:), 'EdgeColor', 'none', 'FaceAlpha', .5); hold on
-    plot(stat.speedTuning.bins, stat.speedTuning.rateSpdMu(:,cc), 'o', 'Color', cmap(1,:))
-    
-%     plot.errorbarFill(stat.speedTuning.bins, stat.speedTuning.rateSpdMuStim(:,cc), stat.speedTuning.rateSpdSeStim(:,cc), 'r')
-    plot(xlim, (stat.speedTuning.rateSpdMu(1,cc) + stat.speedTuning.rateSpdSe(1,cc))*[1 1], 'k--')
-    plot(xlim, (stat.speedTuning.rateSpdMu(1,cc) - stat.speedTuning.rateSpdSe(1,cc))*[1 1], 'k--')
-%     plot(xlim, stat.speedTuning.rateSpdMu(1,cc)*[1 1], 'k')
-    xlabel('Speed (cm / s)')
-    ylabel('Firing Rate')
-    axis off
-    
-    drawnow
-    
-end
 
 
 %% Plot all tuning curves
