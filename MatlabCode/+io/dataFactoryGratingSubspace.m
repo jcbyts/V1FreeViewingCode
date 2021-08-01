@@ -4,6 +4,11 @@ function varargout = dataFactoryGratingSubspace(sessionId, varargin)
 %
 % Input:
 %   Session [Number or ID string]
+%   or
+%   <empty> => will print out all possible sessions
+%   or
+%   argument pairs for AND conditioning
+%   e.g., {'StimulusSuite', 'MarmoV5', 'Chamber', 'MT'}
 % Output: 
 %   Exp [struct]
 %
@@ -21,6 +26,22 @@ meta_file = fullfile(fileparts(which('addFreeViewingPaths')), 'Data', 'datasets.
 
 data = readtable(meta_file);
 nSessions = size(data,1);
+
+
+if nargin >=1 && iscell(sessionId) % assume that inputs are condition combinations
+    
+    argConds = sessionId; % AND conditioned arguments (as pairs)
+    
+    [~, idx] = io.get_experiments_and(data, argConds{:});
+    idx = find(idx);
+    for i = idx(:)'
+        fprintf('%d) %s\n', i, data.Tag{i})
+    end
+    
+    varargout{1} = data.Tag(idx);
+    return
+end
+
 
 if nargin < 1
     sessionId = [];
@@ -45,7 +66,7 @@ end
     
 
 S.Latency = 8.3e-3; % delay from PTB time to actual monitor refresh (even at 240Hz there's about an 8ms latency)
-S.rect = [-20 -60 50 10];; % default gaze-centered ROI (pixels)
+S.rect = [-20 -60 50 10]; % default gaze-centered ROI (pixels)
 
 S.processedFileName = [thisSession.Tag{1} '.mat'];
 
