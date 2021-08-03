@@ -30,3 +30,6 @@ checkpoints/checkpoints/
 Analysis/notebooks/*.pt
 Analysis/notebooks/*.hdf5
 Analysis/notebooks/deprecated
+events.out.tfevents.*
+*.pth
+latest_*

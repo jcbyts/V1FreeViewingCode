@@ -1,12 +1,12 @@
 # from scipy.io import loadmat
 # from scipy.sparse import csr_matrix, find
 import numpy as np
-import sklearn.linear_model as lm
+# import sklearn.linear_model as lm
 from scipy import ndimage
 import pandas as pd
 
 import matplotlib.pyplot as plt
-import seaborn as sns
+# import seaborn as sns
 
 from .Utils import bin_at_frames, downsample_time
 import NDN3.NDNutils as NDNutils

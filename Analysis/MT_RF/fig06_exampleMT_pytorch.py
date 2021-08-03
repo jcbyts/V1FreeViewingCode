@@ -1,27 +1,23 @@
 #%% set paths
 import sys
 sys.path.insert(0, '/home/jake/Data/Repos/')
-# import deepdish as dd
-import Utils as U
+
 import V1FreeViewingCode.Analysis.notebooks.gratings as gt
 
-import warnings; warnings.simplefilter('ignore')
-import NDN3.NDNutils as NDNutils
-
-which_gpu = NDNutils.assign_gpu()
-from scipy.ndimage import gaussian_filter
+# from scipy.ndimage import gaussian_filter
 from copy import deepcopy
 
 import numpy as np
-import tensorflow as tf
 
 import matplotlib.pyplot as plt  # plotting
-# import seaborn as sns
 
-import NDN3.NDN as NDN
-import NDN3.Utils.DanUtils as DU
+import torch
+import torch.nn as nn
 
+from V1FreeViewingCode.models.trainers import Trainer, EarlyStopping
+from V1FreeViewingCode.models.datasets import generic_recording 
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # %% load example sessions
 
 datadir = '/home/jake/Data/Datasets/MitchellV1FreeViewing/MT_RF/'
@@ -37,7 +33,7 @@ frameTime = X[:,0]
 # stim is NT x (NX*NY). Any non-zero value is the drift direction (as an integer) of a dot (at that spatial location)
 Stim = X[:,3:]
 
-#%%
+#%% convert direciton stimulus to dx and dy
 
 # convert drift direction to degrees
 dbin = 360/np.max(Stim)
@@ -56,14 +52,14 @@ yax = np.arange(matdat['GRID']['box'][1], matdat['GRID']['box'][3], matdat['GRID
 
 xx = np.meshgrid(xax, yax)
 
-#%% plot single frame
+# plot single frame
 plt.figure()
 vframes = np.where(np.sum(dx**2 + dy**2, axis=1)==6)[0]
 iframe = vframes[0]
 plt.quiver(xx[0].flatten(), xx[1].flatten(), dx[iframe,:], dy[iframe,:], scale=10)
 plt.title(iframe)
 
-#%% concatenate dx/dy into one velocity stimulus
+# concatenate dx/dy into one velocity stimulus
 NT = Stim.shape[0]
 NC = Robs.shape[1]
 NX = len(xax)
@@ -75,22 +71,27 @@ v_reshape = np.reshape(vel,[NT, 2, NX*NY])
 vel = np.transpose(v_reshape, (0,2,1)).reshape((NT, NX*NY*2))
 
 
-#%% compute STAs
-
+#%% Build dataset
+from V1FreeViewingCode.models.utils import create_time_embedding, generate_xv_folds
 print("Creating Time Embedding for stimulus shape (%d,%d)" %(NT,NX*NY))
 num_lags = 18
-Xstim = NDNutils.create_time_embedding( vel, [num_lags, NX*2, NY], tent_spacing=1 )
+Xstim = create_time_embedding( vel, [num_lags, NX*2, NY], tent_spacing=1 )
+Ui, Xi = generate_xv_folds(NT)
+
+cids = [13, 16, 18, 20, 21, 22, 25, 27, 28, 29, 32, 33, 36, 47,61,64,65,66,68,78,79,80]
+NC = len(cids)
+R = Robs[:,cids]
+train_ds = generic_recording(Xstim[Ui,:], R[Ui,:], device=device)
+test_ds = generic_recording(Xstim[Ui,:], R[Ui,:], device=device)
+
+#%%
 print("Computing STA")
-
-Y = Robs - np.mean(Robs, axis=0)
-
-sta = Xstim.T @ Y
+Y = Robs[Ui,:] - np.mean(Robs[Ui,:], axis=0)
+sta = Xstim[Ui,:].T @ Y
 
 print("Done")
 
 #%%
-# plot STAS
-# plot STA for target neuron
 from scipy.stats import median_absolute_deviation
 
 sx = np.ceil(np.sqrt(NC)).astype(int)
@@ -125,7 +126,6 @@ for cc in range(NC):
 
 #%% Select subset of units
 cids = [13, 16, 18, 20, 21, 22, 25, 27, 28, 29, 32, 33, 36, 47,61,64,65,66,68,78,79,80]
-
 NC = len(cids)
 sx = np.ceil(np.sqrt(NC)).astype(int)
 sy = np.round(np.sqrt(NC)).astype(int)
@@ -207,54 +207,201 @@ for cc in range(NC):
 
 #%% GLM time
 
-NC = len(cids)
 
-# set optimization parmeters
-adam_params = NDN.NDN.optimizer_defaults(opt_params={'use_gpu': True}, learning_alg='adam')
+def ndGraphLap(nn):
+    '''
+        Graph Laplacian of a ND array to regularize smoothness
+    '''
+    if type(nn) is not list:
+        nn = [nn]
 
-early_stopping = 100
+    from scipy.sparse import spdiags, kron
 
-adam_params['batch_size'] = 1000
-adam_params['display'] = 30
-adam_params['MAPest'] = True
-adam_params['epochs_training'] = 1000
-adam_params['early_stop'] = early_stopping
-adam_params['early_stop_mode'] = 1
-adam_params['epsilon'] = 1e-8
-adam_params['data_pipe_type'] = 'data_as_var' # 'feed_dict'
-adam_params['learning_rate'] = 1e-3
+    ndim = len(nn)
+    L = []
+    for j in range(ndim):
+        if nn[j] <= 2:
+            L.append(spdiags([np.ones(nn[j])], [0], nn[j], nn[j]))
+        else:
+            ectr = np.concatenate( [np.ones(1), 2*np.ones(nn[j]-2), np.ones(1)])
+            eoff = -np.ones(nn[j])
+            L.append(spdiags([eoff, ectr, eoff], [-1, 0, 1], nn[j], nn[j]))
 
-lbfgs_params = NDN.NDN.optimizer_defaults(opt_params={'use_gpu': True, 'display': True}, learning_alg='lbfgs')
-lbfgs_params['maxiter'] = 1000
+    M = 0
+    for j in range(ndim):
+        
+        nbefore = np.prod(nn[:j]).astype(int)
+        nafter = np.prod(nn[j+1:]).astype(int)
 
-# setup training indices
-valdata = np.arange(0,NT,1)
+        Mtmp = kron(L[j], np.eye(nbefore))
+        Mtmp = kron(np.eye(nafter), Mtmp)
+        M += Mtmp
+    
+    return M.toarray()
 
-Ui, Xi = NDNutils.generate_xv_folds(NT, num_blocks=2)
+# specify models
+class Poisson(nn.Module):
+    
+    def __init__(self):
+        super().__init__()
+        self.loss = nn.PoissonNLLLoss(log_input=False)
 
-# NDN parameters for processing the stimulus
-par = NDNutils.ffnetwork_params( 
-    input_dims=[2,NX,NY,num_lags],
-    layer_sizes=[NC],
-    layer_types=['normal'], normalization=[0],
-    act_funcs=['softplus'], verbose=True,
-    reg_list={'d2t': [.01], 'd2x':[0.01], 'glocal':[0.01]})
+    def regularlizer(self):
+        return 0.0
 
-# initialize GLM
-glm0 = NDN.NDN([par],  noise_dist='poisson')
+    def training_step(self, batch):
+        x = batch['stim']
+        y = batch['robs']
+        yhat = self(x)
+        loss = self.loss(yhat, y)
+        regpen = self.regularlizer()
+        return {'loss': loss + regpen}
 
-v2f0 = glm0.fit_variables(fit_biases=False)
-v2f0[-1][-1]['biases'] = True
+    def validation_step(self, batch):
+        x = batch['stim']
+        y = batch['robs']
+        yhat = self(x)
+        loss = self.loss(yhat, y)
+        return {'loss': loss, 'val_loss': loss}
 
-R = Robs[:,cids].astype('float32')
-# train initial model
-_ = glm0.train(input_data=[Xstim], output_data=R,
-    train_indxs=Ui, test_indxs=Xi,
-    learning_alg='lbfgs', opt_params=lbfgs_params,
-     fit_variables=v2f0, output_dir=datadir)     
+class GLM(Poisson):
 
-# plot filters
-DU.plot_3dfilters(glm0)
+    def __init__(self, dims, num_output=10, reg_amount = 0.01):
+        super().__init__()
+
+        # Set our init args as class attributes
+        self.num_output = num_output
+
+        self.dims = dims
+
+        self.register_buffer("reg_mat", torch.tensor(ndGraphLap(dims), dtype=torch.float32))
+        self.reg_amount = reg_amount
+
+        # Define PyTorch model
+        self.net = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(np.prod(self.dims), self.num_output),
+            nn.Softplus()
+        )
+        
+    def regularlizer(self):
+        
+        pen = self.net[1].weight@self.reg_mat@self.net[1].weight.T
+        pen = pen.trace() + torch.sqrt(torch.sum(model.net[1].weight**2))
+        return self.reg_amount * pen
+
+    def forward(self, x):
+        x = self.net(x)
+        return x
+
+class simpleNIM(Poisson):
+
+    def __init__(self, dims, hidden_size=64, num_output=10):
+
+        super().__init__()
+
+        # Set our init args as class attributes
+        self.hidden_size = hidden_size
+        self.num_output = num_output
+
+        self.dims = dims
+
+        # Define PyTorch model
+        self.net = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(np.prod(self.dims), hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, num_output),
+            nn.Softplus(),
+        )
+
+    def forward(self, x):
+        x = self.net(x)
+
+        return x
+
+
+#%% make dataset
+
+model = GLM([NY, NX, 2, num_lags], num_output=NC, reg_amount = .1)
+model.to(device)
+
+
+#%%
+sample = train_ds[:10]
+yhat = model.forward(sample['stim'])
+print(yhat.shape, yhat.dtype)
+
+#%%
+import os
+from torch.utils.data import DataLoader
+
+# optimizer = torch.optim.AdamW(model.parameters(),
+#                 lr=0.001,
+#                 betas=[0.9, 0.999],
+#                 weight_decay=10,
+#                 amsgrad=True)
+
+# optimizer = torch.optim.Adam(model.parameters(),
+#                 lr=0.001,
+#                 betas=[0.9, 0.999])
+
+from V1FreeViewingCode.models.LBFGS import LBFGS, FullBatchLBFGS
+optimizer = LBFGS(model.parameters(), lr=1, history_size=10, line_search='Wolfe', debug=False)
+# optimizer = FullBatchLBFGS(model.parameters(), lr=1., history_size=10, line_search='Wolfe', debug=True)
+# # from torch.optim import LBFGS
+# from NDN.LBFGSnew import LBFGS
+# optimizer = LBFGS(model.parameters(), history_size=10, max_iter=4,line_search_fn=True,batch_mode=False)
+
+batch_size = 8192
+# batch_size = 1000
+# from NDN.trainers import Trainer
+traindl = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+testdl = DataLoader(test_ds, batch_size=batch_size, shuffle=True)
+
+earlystopping = EarlyStopping(patience=7,delta=0)
+
+trainer = Trainer(model, optimizer, early_stopping=earlystopping)
+
+#%% fit
+num_epochs = 100
+trainer.fit(num_epochs, traindl, testdl)
+
+#%% plot weights
+w = trainer.model.net[1].weight.data.cpu().numpy()
+w1 = model.net[1].weight.data.cpu().numpy()
+
+from scipy.stats import median_absolute_deviation
+sta = w.T
+NC = w.shape[0]
+sx = np.ceil(np.sqrt(NC)).astype(int)
+sy = np.round(np.sqrt(NC)).astype(int)
+plt.figure(figsize=(10,10))
+
+# NC = Robs.shape[1] # plot all neurons
+mthresh = np.zeros(NC)
+for cc in range(NC):
+    plt.subplot(sx,sy,cc+1)
+
+    I = np.reshape(sta[:,cc], [NX*2*NY, num_lags])
+
+    m = median_absolute_deviation(I.flatten())
+    mthresh[cc] = np.sum(I.flatten() > m*4)
+
+    tpower = np.std(I,axis=0)
+
+    peak_lag = np.argmax(tpower)
+
+    I = np.reshape(sta[:,cc], [NY, NX, 2, num_lags])
+    dx = I[:,:,0,peak_lag]
+    dy = I[:,:,1,peak_lag]
+
+    plt.imshow(dx)
+    # plt.quiver(xx[0], xx[1], dx, dy, np.sqrt(dx**2 + dy**2), cmap=plt.cm.gray_r,
+    #     pivot='tail',units='width',
+    #     scale=1, headwidth=10, headlength=10)
+    plt.axis("off")
+    plt.title(cc)
 
 
 #%% Find best regularization
@@ -389,7 +536,7 @@ dirs = np.unique(ds)
 dstim = np.zeros( (NT, len(dirs)))
 dstim[inds[0], (ds-1).astype(int)] = 1.0
 
-dXstim = NDNutils.create_time_embedding(dstim, [num_lags, len(dirs)])
+dXstim = create_time_embedding(dstim, [num_lags, len(dirs)])
 
 dsta = (dXstim.T@R[:,cc]) / np.sum(dXstim, axis=0) * 100
 
