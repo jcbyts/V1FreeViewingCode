@@ -32,7 +32,7 @@ treadTime = treadTime(treadSessIx);
 treadSpeed = treadSpeed(treadSessIx);
 
 % resample time with new binsize
-newTreadTime = D.treadTime(1):binsize:D.treadTime(end);
+newTreadTime = treadTime(1):binsize:treadTime(end);
 newTreadSpeed = interp1(treadTime, treadSpeed, newTreadTime);
 
 % figure(1); clf
