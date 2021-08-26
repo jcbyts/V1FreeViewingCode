@@ -40,7 +40,7 @@ def get_trainer(dataset,
 
     # Train
     early_stop_callback = EarlyStopping(monitor='val_loss', min_delta=0.0, patience=earlystoppingpatience)
-    checkpoint_callback = ModelCheckpoint(monitor='val_loss')
+    # checkpoint_callback = ModelCheckpoint(monitor='val_loss')
 
     logger = TestTubeLogger(
         save_dir=save_dir,
@@ -51,7 +51,6 @@ def get_trainer(dataset,
     # ckpt_folder = save_dir / sessid / 'version_{}'.format(version) / 'checkpoints'
     if earlystopping:
         trainer = Trainer(gpus=1, callbacks=[early_stop_callback],
-            checkpoint_callback=checkpoint_callback,
             logger=logger,
             deterministic=False,
             gradient_clip_val=gradient_clip_val,
@@ -61,7 +60,6 @@ def get_trainer(dataset,
             auto_lr_find=auto_lr)
     else:
         trainer = Trainer(gpus=1,
-            checkpoint_callback=checkpoint_callback,
             logger=logger,
             deterministic=False,
             gradient_clip_val=gradient_clip_val,
