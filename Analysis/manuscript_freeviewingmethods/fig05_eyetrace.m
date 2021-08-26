@@ -127,6 +127,8 @@ for isess = 1:nsess
     ix = ix & hypot(eyeX,eyeY) < 1;
     cnt = histcounts2(eyeX(ix), eyeY(ix), bins, bins);
     
+%     Fstat(isess).eyeX = eyeX(ix);
+%     Fstat(isess).eyeY = eyeY(ix);
     Fstat(isess).cnt = cnt;
     stime = Exp.vpx2ephys(Exp.slist(:,1));
     trial = repmat(struct('time', [], 'x', [], 'y', []), numel(validTrials),1);
@@ -141,11 +143,23 @@ for isess = 1:nsess
         eyeX = sgolayfilt(eyeX, 1, eyesmoothing);
         eyeY = Exp.vpx.smo(inds,3);
         eyeY = sgolayfilt(eyeY, 1, eyesmoothing);
+        trial(itrial).trial_start = tstart(itrial);
         trial(itrial).time = tt;
         trial(itrial).x = eyeX;
         trial(itrial).y = eyeY;
         trix = stime > tstart(itrial) & stime < tend(itrial);
         trial(itrial).saccades = Exp.slist(trix,:);
+        start_ind = 100;
+        stop_ind = find(hypot(eyeX(start_ind:end), eyeY(start_ind:end))>1, 1);
+        if isempty(stop_ind)
+            stop_ind = numel(eyeX);
+        else
+            stop_ind = start_ind + stop_ind;
+        end
+        
+        trial(itrial).start_ind = start_ind;
+        trial(itrial).stop_ind = stop_ind-10;
+        
     end
     
     
@@ -159,6 +173,8 @@ end
 %% plot fixation scatter
 
 iix = find(arrayfun(@(x) ~isempty(x.cnt), Fstat));
+
+%%
 
 cnt = 0;
 for i = iix(:)'
@@ -226,54 +242,30 @@ tstop = Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, Exp.D(validTrials)));
 eyeTime = Exp.vpx2ephys(Exp.vpx.smo(:,1));
 
 %%
-
+ii = ii + 1;
 figure(1); clf
-plot(Exp.D{thisTrial}.PR.fixList(:,3), Exp.D{thisTrial}.PR.fixList(:,4), 'o')
-plot(Exp.D{thisTrial}.PR.fixList(:,3), Exp.D{thisTrial}.PR.fixList(:,4), 'o')
-
+for tt = 1:numel(Fstat(ii).trial)
+    
+    tinds = Fstat(ii).trial(tt).start_ind:Fstat(ii).trial(tt).stop_ind;
+    
+    plot(Fstat(ii).trial(tt).time(tinds), hypot(Fstat(ii).trial(tt).x(tinds), Fstat(ii).trial(tt).y(tinds))); hold on
+    
+end
 
 %%
-validIx = getTimeIdx(eyeTime, tstart, tstop);
 
-xy = Exp.vpx.smo(validIx,2:3);
-
-% target locations
-[xx,yy] = meshgrid(-10:5:10, -10:5:10);
-
-xd = xy(:,1) - xx(:)';
-yd = xy(:,2) - yy(:)';
-
-% distance from targets
-d = hypot(xd, yd);
-
-% assign targets id
-[d,id] = min(d, [], 2);
-
-thresh = 1.5; % trheshold to count fixation
-xy = xy(d<thresh,:);
-id = id(d<thresh);
-
-if ip.Results.plot
-figure(1); clf
-bins = {-20:.25:20, -20:.25:20};
-C = hist3(xy, 'Ctrs', bins ); colormap parula
-C = log(C');
-C(C<1) = 0;
-imagesc(bins{1}, bins{2},C ); hold on
-colorbar
-xlim([-18 18])
-ylim([-18 18])
-
-plot(xlim, [0 0], 'r')
-plot([0 0], ylim, 'r')
-
-plot(xx(:), yy(:), 's')
+ttime = cell2mat(arrayfun(@(x) cell2mat(arrayfun(@(y) y.time(y.start_ind:y.stop_ind), x.trial(:), 'uni', 0)), Fstat(iix), 'uni', 0)); 
+eyeX = cell2mat(arrayfun(@(x) cell2mat(arrayfun(@(y) y.x(y.start_ind:y.stop_ind), x.trial(:), 'uni', 0)), Fstat(iix), 'uni', 0));
+eyeY = cell2mat(arrayfun(@(x) cell2mat(arrayfun(@(y) y.y(y.start_ind:y.stop_ind), x.trial(:), 'uni', 0)), Fstat(iix), 'uni', 0));
 
 
-% Exp.D{validTrials(1)}.PR.NoiseHistory
+dist = hypot(eyeX, eyeY);
 
-figure(2); clf
-plot(xx(id), xy(:,1), '.'); hold on
-plot(yy(id)+.5, xy(:,2), '.')
-plot(xlim, xlim)
-end
+m = nanmedian(dist);
+bootdist = prctile(dist(randi(numel(dist), [numel(dist) 500])), 50);
+ci = prctile(bootdist, [2.5 97.5]);
+
+fprintf('median distance from center: %02.5f [%02.5f,%02.5f]\n arcminutes', 60*m, 60*ci(1), 60*ci(2))
+bins = (0:.1:1);
+plot(bins, mean(dist < bins))
+
