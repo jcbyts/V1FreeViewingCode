@@ -1,7 +1,9 @@
 #%% use loco workspace in conda
 
 import os, sys
+import h5py
 import matplotlib
+from numpy.lib.arraysetops import unique
 sys.path.insert(0, '/mnt/Data/Repos/')
 
 import numpy as np
@@ -9,21 +11,45 @@ import pandas as pd
 
 import matplotlib.pyplot as plt
 from scipy.interpolate.interpolate import interp1d
-# %matplotlib ipympl
-%matplotlib inline
+%matplotlib ipympl
+# %matplotlib inline
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 
 from neureye.models.display import animshow
 
-#%% load dataset
+#%% load huklab dataset
+import data_factory as dfac
+sessions = dfac.get_huklab_sessions()
 
+num_sessions = len(sessions[0])
+
+
+session = dfac.get_huklab_session(sessions[1], sessions[0], 0)
+
+D = dfac.process_huklab_session(session)
+
+#%% load allen dataset
+import os
 import data_factory as dfac
 sessions, cache = dfac.get_allen_sessions()
-session = dfac.get_allen_session(cache, sessions, 40)
-D = dfac.process_allen_dataset(session)
 
+
+downloaded_sessions = [f for f in os.listdir('/mnt/Data/Datasets/allen/ecephys_cache_dir/') if 'session_' in f]
 
 #%%
+i = 1
+sessid = np.where(int(downloaded_sessions[i][8:]) == sessions.index.values)[0][0]
+print(sessid)
+#%%
+
+session = dfac.get_allen_session(cache, sessions, 41)
+
+#%%
+session = dfac.get_allen_session(cache, sessions, sessid)
+D = dfac.process_allen_dataset(session)
+
+#%%
+%matplotlib ipympl
 plt.figure()
 onsets = D.gratings.start_time.to_numpy()
 igrat = 1
@@ -45,10 +71,12 @@ ax1.set_ylim( (-10, 10))
 ax2 = plt.subplot(3,1,2)
 plt.plot(D.eye_data['eye_time'], D.eye_data['pupil'], color='k')
 ax2.set_xlim( (0 + onsets[igrat], onsets[igrat] + 60))
-ax2.set_ylim((0, .005))
+# ax2.set_ylim((0, .005))
 
 ax3 = plt.subplot(3,1,3)
 plt.plot(D.run_data['run_time'], D.run_data['run_spd'], color='k')
+for i in range(len(D.run_epochs['start_time'])):
+    plt.axvspan(D.run_epochs['start_time'][i], D.run_epochs['stop_time'][i], color='gray', alpha=.5)
 ax3.set_xlim( (0 + onsets[igrat], onsets[igrat] + 60))
 ax3.set_ylim((0, 45))
 
@@ -56,96 +84,364 @@ ax3.set_ylim((0, 45))
 igrat = igrat + 10
 for ax in [ax1, ax2, ax3]:
     ax.set_xlim( (0 + onsets[igrat], onsets[igrat] + 60))
+    ax3.set_ylim((0, 45))
+#%% Make animation
+%matplotlib inline
+anim = dfac.make_animation(D)
 
-#%% Make animation of it
-from matplotlib import animation
+print("Saving... this can be slow")
+anim.save(D.files.session + '.mp4', fps=10)
+print("Done")
 
-# First set up the figure, the axis, and the plot element we want to animate
-fig = plt.figure(figsize=(10,10))
-ax = plt.axes(xlim=(0, 10), ylim=(-2, 2))
-igrat = 0
 
-ax1 = plt.subplot(3,1,1)
-plt.plot(D.eye_data['eye_time'], D.eye_data['eye_y'], color='k')
+#%% helper functions for main analysis
+def save_analyses(D, fpath='./analyses/'):
+    import pickle
+    fname = os.path.join(fpath, D.files.session + '.pkl')
+    # save the data to a file with pickle
+    with open(fname, 'wb') as f:
+        pickle.dump(D, f)
 
-nsac = len(D.saccades['start_time'])
-for ii in range(nsac):
-    iix = np.arange(D.saccades['start_index'][ii], D.saccades['stop_index'][ii], 1, dtype=int)
-    plt.plot(D.eye_data['eye_time'][iix], D.eye_data['eye_y'][iix], color='r')
+def load_analyses(session_name, fpath='./analyses/'):
+    import pickle
+    fname = os.path.join(fpath, session_name + '.pkl')
+    D = pickle.load(open(fname, 'rb'))
+    return D
 
-ax1.set_xlim( (-1 + onsets[igrat], onsets[igrat] + 60))
-ax1.set_ylim( (-10, 10))
-ax1.set_ylabel('Eye Y (deg)')
+def main_analysis(D):
+    D['psths'] = dfac.struct({'saccade_onset': dfac.struct(),
+    'run_onset': dfac.struct(),
+    'grat_onset': dfac.struct(),
+    'grat_tuning': dfac.struct()})
 
-ax2 = plt.subplot(3,1,2)
-plt.plot(D.eye_data['eye_time'], D.eye_data['pupil'], color='k')
-for i in range(len(D.saccades['start_time'])):
-    plt.axvline(D.saccades['start_time'][i], color='r', linestyle='-')
-ax2.set_xlim( (0 + onsets[igrat], onsets[igrat] + 60))
-ax2.set_ylim((0, .005))
-ax2.set_ylabel('Pupil Area')
+    #%% plot average running speed aligned to saccade onset
+    from scipy.signal import savgol_filter
 
-ax3 = plt.subplot(3,1,3)
-line = plt.plot(D.run_data['run_time'], D.run_data['run_spd'], color='k')[0]
-for i in range(len(D.saccades['start_time'])):
-    plt.axvline(D.saccades['start_time'][i], color='r', linestyle='-')
-ax3.set_xlim( (0 + onsets[igrat], onsets[igrat] + 60))
-ax3.set_ylim((0, 55))
-ax3.set_xlabel('Seconds')
-ax3.set_ylabel('Speed (cm/s)')
-# line, = ax.plot([], [], lw=2)
+    time_bins = np.arange(-4, 4, .01)
 
-def init():
-    line.set_data(D.run_data['run_time'], D.run_data['run_spd'])
-    return line,
+    run_time = D.run_data.run_time
+    run_spd = np.maximum(D.run_data.run_spd, 0)
+    eye_time = D.eye_data.eye_time
+    pupil = D.eye_data.pupil
 
-# animation function.  This is called sequentially
-def animate(i):
-    ax1.set_xlim( (0 + onsets[i], onsets[i] + 60))
-    ax2.set_xlim( (0 + onsets[i], onsets[i] + 60))
-    ax3.set_xlim( (0 + onsets[i], onsets[i] + 60))
-    line.set_data(D.run_data['run_time'], D.run_data['run_spd'])
-    return line,
-    
-anim = animation.FuncAnimation(fig, animate, init_func=init,
-                               frames=range(400), interval=1, blit=True, repeat=False)
+
+    sac_onsets = D.saccades['start_time']
+    sac_onsets = sac_onsets[np.logical_and(sac_onsets > run_time[0] + .5, sac_onsets < run_time[-1] - .5)]
+    breaks = np.where(np.diff(sac_onsets)>5)[0]
+
+    plt.figure()
+    plt.plot(sac_onsets, np.ones(len(sac_onsets)), 'o')
+    val_ix = np.ones(len(run_time), dtype=bool)
+    for i in range(len(breaks)):
+        plt.axvline(sac_onsets[breaks[i]], color='k', linestyle='--')
+        plt.axvline(sac_onsets[breaks[i]+1], color='r', linestyle='--')
+        ix = np.logical_and(run_time >= sac_onsets[breaks[i]], run_time <= sac_onsets[breaks[i]+1])
+        val_ix[ix] = False
+
+    good = val_ix #~np.isnan(run_time)
+
+    plt.plot(run_time, run_spd/np.max(run_spd), 'k')
+    plt.plot(run_time, good)
+
+    rspd = dfac.psth_interp(run_time[good], run_spd[good], sac_onsets, time_bins)
+    m = np.nanmean(rspd, axis=1)
+    sd = np.nanstd(rspd, axis=1) / np.sqrt(rspd.shape[1])
+    plt.figure()
+
+    f = plt.fill_between(time_bins, m-sd*2, m+sd*2, color='k', alpha=.5)
+    plt.plot(time_bins, m, 'k')
+    # val_ix = D.run_data.run_time > 0
+    plt.axhline(np.mean(run_spd[good]), color='k', linestyle='--')
+    plt.xlabel('Saccade Onset (sec)')
+    plt.ylabel('Running Speed (cm/s)')
+
+    D.psths.saccade_onset['run_spd'] = dfac.struct({'mean': m, 'std_error': sd, 'time_bins': time_bins})
+
+    #%% plot histogram of saccade onsets around running onset
+    run_onsets = D.run_epochs.start_time
+    time_bins = np.arange(-1, 2.5, .02)
+    sachist = dfac.psth([D.saccades['start_time']], run_onsets, time_bins)
+    plt.figure()
+    plt.fill_between(time_bins, np.zeros(len(time_bins)), np.sum(sachist, axis=1).flatten(), color='k', alpha=.5)
+    plt.plot(time_bins, np.sum(sachist, axis=1), color='k')
+    plt.xlabel("Time from Running Onset (s)")
+    plt.ylabel("Saccade Count")
+
+    D.psths.run_onset['saccade_onset'] = dfac.struct({'hist': np.sum(sachist, axis=1).flatten(), 'time_bins': time_bins})
+
+    #%% plot pupil area aligned to saccade onset and running onset
+
+    pupsac = dfac.psth_interp(eye_time, pupil, sac_onsets, time_bins)
+    puprun = dfac.psth_interp(eye_time, pupil, run_onsets, time_bins)
+    runrun = dfac.psth_interp(run_time[good], run_spd[good], run_onsets, time_bins)
+
+    # pupil area aligned to saccade onset
+    plt.figure()
+    plt.subplot(1,2,1)
+    m = np.nanmean(pupsac, axis=1)
+    s = np.nanstd(pupsac, axis=1) / np.sqrt(pupsac.shape[1])
+    D.psths.saccade_onset['pupil'] = dfac.struct({'mean': m, 'std_error': s, 'time_bins': time_bins})
+
+    plt.fill_between(time_bins, m-s*2, m+s*2, color='k', alpha=.5)
+    plt.plot(time_bins, m, 'k')
+    plt.xlabel('Time from Saccade Onset (s)')
+    plt.ylabel('Pupil Area (?)')
+
+    plt.subplot(1,2,2)
+    m = np.nanmean(puprun, axis=1)
+    s = np.nanstd(puprun, axis=1) / np.sqrt(puprun.shape[1])
+    plt.fill_between(time_bins, m-s*2, m+s*2, color='k', alpha=.5)
+    plt.plot(time_bins, m, 'k')
+    plt.xlabel('Time from Running Onset (s)')
+    plt.ylabel('Pupil Area (?)')
+
+    D.psths.run_onset['pupil'] = dfac.struct({'mean': m, 'std_error': s, 'time_bins': time_bins})
+
+    #%% control: running speed as a function of runing onset
+    plt.figure()
+
+    m = np.nanmean(runrun, axis=1)
+    s = np.nanstd(runrun, axis=1) / np.sqrt(runrun.shape[1])
+    plt.fill_between(time_bins, m-s*2, m+s*2, color='k', alpha=.5)
+    plt.plot(time_bins, m, 'k')
+    plt.xlabel('Time from Running Onset (s)')
+    plt.ylabel('Running Speed (cm/s)')
+
+    D.psths.run_onset['run_spd'] = dfac.struct({'mean': m, 'std_error': s, 'time_bins': time_bins})
+
+    #%% Analyze spikes!
+    from scipy.signal import savgol_filter
+
+    idx = dfac.get_valid_time_idx(D.saccades['start_time'], D.gratings['start_time'].to_numpy(), D.gratings['stop_time'].to_numpy())
+
+    units = D.units[D.units["ecephys_structure_acronym"] == 'VISp']
+    # units = D.units
+    spike_times = [D.spikes[id] for id in units.index.values]
+
+    bin_size = 0.001
+    time_bins = np.arange(-.5, .5, bin_size)
+
+
+    plt.figure(figsize=(10,3))
+    Robs = dfac.psth(spike_times, D.gratings['start_time'].to_numpy(), time_bins)
+    m = np.mean(Robs, axis=1).squeeze()/bin_size
+    sd = np.std(Robs, axis=1).squeeze()/bin_size / np.sqrt(Robs.shape[1])
+    plt.subplot(1,3,1)
+    f = plt.plot(time_bins, savgol_filter(m, 101, 3, axis=0))
+    plt.title("Grating")
+    plt.ylabel("Firing Rate (sp / s)")
+    plt.xlabel("Time from Onset (s)")
+
+    D.psths.grat_onset['spikes'] = dfac.struct({'mean': m, 'std_error': sd, 'time_bins': time_bins})
+
+
+    Robs = dfac.psth(spike_times, D.saccades['start_time'], time_bins)
+    m = np.mean(Robs, axis=1).squeeze()/bin_size
+    sd = np.std(Robs, axis=1).squeeze()/bin_size / np.sqrt(Robs.shape[1])
+    plt.subplot(1,3,2)
+    f = plt.plot(time_bins, savgol_filter(m, 101, 3, axis=0))
+    plt.title("Saccade")
+    plt.xlabel("Time from Onset (s)")
+
+    D.psths.saccade_onset['spikes'] = dfac.struct({'mean': m, 'std_error': sd, 'time_bins': time_bins})
+
+    Robs = dfac.psth(spike_times, D.run_epochs.start_time, time_bins)
+    m = np.mean(Robs, axis=1).squeeze()/bin_size
+    sd = np.std(Robs, axis=1).squeeze()/bin_size / np.sqrt(Robs.shape[1])
+    plt.subplot(1,3,3)
+    f = plt.plot(time_bins, savgol_filter(m, 101, 3, axis=0))
+    plt.title("Running")
+    plt.xlabel("Time from Onset (s)")
+
+    D.psths.run_onset['spikes'] = dfac.struct({'mean': m, 'std_error': sd, 'time_bins': time_bins})
+
+
+    #%% PSTH / Tuning Curve analysis
+    # %matplotlib ipympl
+
+    bin_size = .02
+    t1 = np.max(D.gratings.duration )
+    time_bins = np.arange(-.25, t1+.25, bin_size)
+    Robs = dfac.psth(spike_times, D.gratings['start_time'].to_numpy(), time_bins)
+    run_spd  = dfac.psth_interp(D.run_data.run_time, D.run_data.run_spd, D.gratings['start_time'].to_numpy(), time_bins)
+    pupil  = dfac.psth_interp(D.eye_data.eye_time, D.eye_data.pupil, D.gratings['start_time'].to_numpy(), time_bins)
+    saccades = dfac.psth([D.saccades['start_time']], D.gratings['start_time'].to_numpy(), time_bins).squeeze()
+
+    eye_dx = savgol_filter(D.eye_data.eye_x, 101, 3, axis=0, deriv=1, delta=1/D.eye_data.fs)
+    eye_dy = savgol_filter(D.eye_data.eye_y, 101, 3, axis=0, deriv=1, delta=1/D.eye_data.fs)
+    eye_spd = np.hypot(eye_dx, eye_dy)
+    eye_vel = dfac.psth_interp(D.eye_data.eye_time, eye_spd, D.gratings['start_time'].to_numpy(), time_bins)
+
+    wrapAt = 180
+    conds = np.unique(D.gratings.orientation%wrapAt)
+    Nconds = len(conds)
+
+    #%%
+    plt.figure(figsize=(10,3))
+    plt.subplot(1,4,1)
+    plt.imshow(run_spd.T, aspect='auto')
+    plt.subplot(1,4,2)
+    plt.imshow(pupil.T, aspect='auto')
+    plt.subplot(1,4,3)
+    plt.imshow(eye_vel.T, aspect='auto')
+
+    # main boot analysis
+    run_mod = dict()
+
+    def nanmean(x):
+        return np.mean(x*~np.isnan(x), axis=0)
+
+    stationary_trials = np.where(nanmean(run_spd) < 3)[0]
+    num_stat = len(stationary_trials)
+    running_trials = np.where(nanmean(run_spd) > 5)[0]
+    num_run = len(running_trials)
+
+    num_trials = np.minimum(num_stat, num_run)
+    print("using %d trials [%d run, %d stationary]" % (num_trials, num_run, num_stat))
+
+    tstim = np.logical_and(time_bins > 0.05, time_bins < t1 + 0.05)
+    tbase = time_bins < 0
+
+    spctrun = Robs[:, running_trials, :]
+    spctstat = Robs[:, stationary_trials, :]
+
+    def boot_ci(data, n = None, nboot=500):
+        if n is None:
+            n = data.shape[1]
+        bootix = np.random.randint(0,n-1,size=(nboot,n))
+        return np.percentile(np.nanmean(data[bootix,:], axis=1), (2.5, 50, 97.5), axis=0)
+
+    frbaseR = boot_ci(np.mean(spctrun[tbase,:,:], axis=0), n = num_trials, nboot=500)/bin_size
+    frbaseS = boot_ci(np.mean(spctstat[tbase,:,:], axis=0), n = num_trials, nboot=500)/bin_size
+    frstimR = boot_ci(np.mean(spctrun[tstim,:,:], axis=0), n = num_trials, nboot=500)/bin_size
+    frstimS = boot_ci(np.mean(spctstat[tstim,:,:], axis=0), n = num_trials, nboot=500)/bin_size
+
+    plt.figure()
+    plt.subplot(1,2,1)
+    plt.errorbar(frbaseS[1,:], frbaseR[1,:], yerr=np.abs(frbaseR[(0,2),:] - frbaseR[1,:]),
+        xerr=np.abs(frbaseS[(0,2),:] - frbaseS[1,:]), fmt='o')
+    plt.plot(plt.xlim(), plt.xlim(), 'k--')
+    plt.xlabel('Stationary')
+    plt.ylabel('Running')
+
+    plt.subplot(1,2,2)
+    plt.errorbar(frstimS[1,:], frstimR[1,:], yerr=np.abs(frstimR[(0,2),:] - frstimR[1,:]),
+        xerr=np.abs(frstimS[(0,2),:] - frstimS[1,:]), fmt='o')
+    plt.plot(plt.xlim(), plt.xlim(), 'k--')
+    plt.xlabel('Stationary')
+    plt.ylabel('Running')
+
+    D['firing_rate'] = dfac.struct({'base_rate_stat': frbaseS, 'base_rate_run': frbaseR,
+        'stim_rate_run': frstimR, 'stim_rate_stat': frstimS})
+
+    #%% analyze tuning curves
+
+    nboot = 500
+    def bootstrap_ci(data, n = None, nboot=500):
+        if n is None:
+            n = data.shape[1]
+        bootix = np.random.randint(0,n-1,size=(nboot,n))
+        return np.percentile(np.nanmean(data[:,bootix,:], axis=2), (15.75, 84.25), axis=1)
+
+
+    NC = Robs.shape[-1]
+    mu_rate = dfac.struct({'all':np.zeros((Nconds, len(time_bins), NC)),
+        'running': np.zeros((Nconds, len(time_bins), NC)),
+        'stationary': np.zeros((Nconds, len(time_bins), NC)),
+        'running_ns': np.zeros((Nconds, len(time_bins), NC)),
+        'stationary_ns': np.zeros((Nconds, len(time_bins), NC)),
+        'pupil_large': np.zeros((Nconds, len(time_bins), NC)),
+        'pupil_small': np.zeros((Nconds, len(time_bins), NC))})
+
+    n = dict()
+    ci_rate = dict()
+    for key in mu_rate.keys():
+        n[key] = np.zeros(Nconds)
+        ci_rate[key] = np.zeros((Nconds, 2, len(time_bins), NC))
+
+    condition = D.gratings.orientation % wrapAt
+
+    for icond, cond in enumerate(conds):
+        
+        # all trials
+        idx = np.logical_and(condition == cond, D.gratings.duration > .6)
+        idx = np.where(idx)[0]
+        mu_rate['all'][icond, :, :] = np.nanmean(Robs[:, idx, :], axis=1)
+        ci_rate['all'][icond,:] = bootstrap_ci(Robs[:, idx, :], nboot=nboot)
+        n['all'][icond] = np.sum(idx)
+
+        idx = np.logical_and(condition == cond, np.nanmean(run_spd, axis=0) > 5)
+        mu_rate['running'][icond, :, :] = np.nanmean(Robs[:, idx, :], axis=1)
+        ci_rate['running'][icond,:] = bootstrap_ci(Robs[:, idx, :], nboot=nboot)
+        n['running'][icond] = np.sum(idx)
+
+        idx = np.logical_and(condition == cond, np.nanmean(run_spd, axis=0) < 3)
+        mu_rate['stationary'][icond, :, :] = np.nanmean(Robs[:, idx, :], axis=1)
+        ci_rate['stationary'][icond,:] = bootstrap_ci(Robs[:, idx, :], nboot=nboot)
+        n['stationary'][icond] = np.sum(idx)
+
+        idx = np.logical_and(condition == cond, np.nanmean(pupil, axis=0) > np.nanmedian(pupil))
+        mu_rate['pupil_large'][icond, :, :] = np.nanmean(Robs[:, idx, :], axis=1)
+        ci_rate['pupil_large'][icond,:] = bootstrap_ci(Robs[:, idx, :], nboot=nboot)
+        n['pupil_large'][icond] = np.sum(idx)
+
+        idx = np.logical_and(condition == cond, np.nanmean(pupil, axis=0) < np.nanmedian(pupil))
+        mu_rate['pupil_small'][icond, :, :] = np.nanmean(Robs[:, idx, :], axis=1)
+        ci_rate['pupil_small'][icond,:] = bootstrap_ci(Robs[:, idx, :], nboot=nboot)
+        n['pupil_small'][icond] = np.sum(idx)
+
+        idx = np.logical_and(condition == cond, np.nanmean(run_spd, axis=0) > 5)
+        # stat_time = np.expand_dims(eye_vel[:,idx]<25, axis=2)
+        # mu_rate['running_ns'][icond, :, :] = np.mean(Robs[:, idx, :]*stat_time, axis=1)
+        
+        # idx = np.logical_and(idx, np.sum(saccades, axis=0) == 0)
+        idx = np.logical_and(idx, np.sum(eye_vel > 50, axis=0) == 0)
+        mu_rate['running_ns'][icond, :, :] = np.mean(Robs[:, idx, :], axis=1)
+        n['running_ns'][icond] = np.sum(idx)
+
+        idx = np.logical_and(condition == cond, np.mean(run_spd, axis=0) < 3)
+        # stat_time = np.expand_dims(eye_vel[:,idx]<25, axis=2)
+        # mu_rate['stationary_ns'][icond, :, :] = np.mean(Robs[:, idx, :]*stat_time, axis=1)
+
+        idx = np.logical_and(idx, np.sum(eye_vel > 50, axis=0) == 0)
+        mu_rate['stationary_ns'][icond, :, :] = np.mean(Robs[:, idx, :], axis=1)
+
+        n['stationary_ns'][icond] = np.sum(idx)
+        
+    D.psths.grat_tuning = dfac.struct({'mu_rate': mu_rate, 'n': n, 'ci_rate': ci_rate, 'time_bins': time_bins})
+    return D
 
 #%%
-anim.save('running_data2.mp4', fps=10)
+%matplotlib inline
+D = main_analysis(D)
 
 #%%
-# First set up the figure, the axis, and the plot element we want to animate
-from IPython.display import HTML
-fig = plt.figure()
-ax = plt.axes(xlim=(0, 2), ylim=(-2, 2))
-line, = ax.plot([], [], lw=2)
+save_analyses(D, fpath='./analyses/')
 
-# initialization function: plot the background of each frame
-def init():
-    line.set_data([], [])
-    return line,
 
-# animation function.  This is called sequentially
-def animate(i):
-    x = np.linspace(0, 2, 1000)
-    y = np.sin(2 * np.pi * (x - 0.01 * i))
-    line.set_data(x, y)
-    ax.set_title(str(i))
-    return line,
-
-# call the animator.  blit=True means only re-draw the parts that have changed.
-anim = animation.FuncAnimation(fig, animate, init_func=init,
-                               frames=range(400), interval=20, blit=True,repeat=False)
-anim.save('basic_animation.mp4', fps=30)
-# HTML(anim.to_html5_video())
-#%%
-
-# from scipy.signal import interp1d
-
-onsets = np.where(np.diff( (D.run_data.run_spd > 3).astype(float)) == 1)[0]
-onsets = D.run_data.run_time[onsets]
 
 #%%
+#%%
+#%% load huklab dataset
+import data_factory as dfac
+sessions = dfac.get_huklab_sessions()
+
+num_sessions = len(sessions[0])
+%matplotlib inline
+
+for 3 in range(num_sessions):
+    session = dfac.get_huklab_session(sessions[1], sessions[0], i)
+
+    try:
+        D = dfac.process_huklab_session(session)
+
+        D = main_analysis(D)
+        save_analyses(D, fpath='./analyses/')
+    except:
+        print("ERROR on session %d" %i)
+        pass
+
+
 
 #%% check main sequence
 
@@ -156,167 +452,72 @@ plt.plot(amp, vel, '.')
 plt.xlabel('Saccade Amplitude (deg)')
 plt.ylabel('Saccade Velocity (deg/s)')
 
-
 #%%
-def psth_interp(time, data, onsets, time_bins):
-    NT = len(time_bins)
-    NStim = len(onsets)
-    rspd = np.zeros((NT, NStim))
-    fint = interp1d(time, data, kind='linear')
+mu_rate = D.psths.grat_tuning.mu_rate
+ci_rate = D.psths.grat_tuning.ci_rate
+n = D.psths.grat_tuning.n
 
-    for istim in range(NStim):
-        rspd[:,istim] = fint(time_bins + onsets[istim])
+from scipy.signal import savgol_filter
+def get_ylim(x,y):
+    mx = np.nanmax((x, y))
+    mn = np.nanmin((x, y))
+    return mn, mx
+
+smfun = lambda x: savgol_filter(x, 11, 3, axis=0)/savgol_filter(np.ones(len(x)), 11, 3, axis=0)/bin_size
+
+cc = 0
+plt.figure(figsize=(10,3))
+
+cond1 = 'running'
+cond2 = 'stationary'
+cond3 = 'all'
+cond4 = 'all'
+
+cidx = np.where(n['all']>0)[0]
+# cidx = np.intersect1d(np.where(n[cond1]>0)[0],np.where(n[cond2]>0)[0])
+lines_cond1=[]
+lines_cond2=[]
+lines_cond3=[]
+lines_cond4=[]
+ax = []
+
+cmap = plt.cm.winter(np.linspace(0,1,len(cidx)))
+
+for i,c in enumerate(cidx):
+    ax.append(plt.subplot(1, len(cidx), i+1))
+    lines_cond3.append(plt.fill_between(time_bins, smfun(ci_rate[cond1][c,0,:,cc]),
+         smfun(ci_rate[cond1][c,1,:,cc]), color=cmap[i,:], alpha=.25))
+    lines_cond4.append(plt.fill_between(time_bins, smfun(ci_rate[cond2][c,0,:,cc]),
+         smfun(ci_rate[cond2][c,1,:,cc]), color=cmap[i,:]*(1,1,1,.5), alpha=.1))
     
-    return rspd
-
-# import interp1d from scipy
-def psth(spike_times, onsets, time_bins):
-    bin_size = np.mean(np.diff(time_bins))
-    NC = len(spike_times)
-    NStim = len(onsets)
-    NT = len(time_bins)
-    Robs = np.zeros((NT, NStim, NC))
-    for istim in range(NStim):
-        for iunit in range(NC):
-            st = spike_times[iunit]-onsets[istim]
-            st = st[np.logical_and(st >= time_bins[0], st <= (time_bins[-1]+bin_size))]
-            Robs[np.digitize(st, time_bins)-1,istim, iunit] += 1
-
-    return Robs
-
-def get_valid_time_idx(times, valid_start, valid_stop):
-    valid = np.zeros(len(times), dtype=bool)
-    for t in range(len(valid_start)):
-        valid = np.logical_or(valid, np.logical_and(times >= valid_start[t], times <= valid_stop[t]))
-    return valid
+    lines_cond1.append(plt.plot(time_bins, smfun(mu_rate[cond1][c,:,cc].T), color=cmap[i])[0])
+    lines_cond2.append(plt.plot(time_bins, smfun(mu_rate[cond2][c,:,cc].T), color=cmap[i]*(1,1,1,.5))[0])
+    ax[i].set_xlim((time_bins[3], time_bins[-3]))
+    
+    ax[i].set_ylim(get_ylim(mu_rate[cond1][:,:,cc]/bin_size, mu_rate[cond2][:,:,cc]/bin_size) )
+    ax[i].spines['top'].set_visible(False)
+    ax[i].spines['right'].set_visible(False)
+    if i>0:
+        ax[i].set_yticklabels([])
 
 #%%
-from scipy.signal import savgol_filter
-time_bins = np.arange(-2, 2, .01)
-run_time = D.run_data.run_time.to_numpy()
-sac_onsets = D.saccades['start_time']
-sac_onsets = sac_onsets[np.logical_and(sac_onsets > run_time[0] + .5, sac_onsets < run_time[-1] - .5)]
-rspd = psth_interp(run_time, D.run_data.run_spd, sac_onsets, time_bins)
-m = np.mean(rspd, axis=1)
-sd = np.std(rspd, axis=1) / np.sqrt(rspd.shape[1]) * 2
-plt.figure()
-f = plt.errorbar(time_bins, m, sd)
-plt.xlabel('Saccade Onset (sec)')
-plt.ylabel('Running Speed (cm/s)')
 
-#%%
-idx = get_valid_time_idx(D.saccades['start_time'], D.gratings['start_time'].to_numpy(), D.gratings['stop_time'].to_numpy())
+def update_fill_plot(collection, y1, y2):
+    path = collection.get_paths()
+    path[0].vertices[range(0,len(y1)),1] = y2
+    path[0].vertices[range(len(y1), len(y1)+len(y2)),1] = y1
 
-units = D.units[D.units["ecephys_structure_acronym"] == 'VISp']
-# units = D.units
-spike_times = [D.spikes[id] for id in units.index.values]
+cc += 1
+if cc >= NC:
+    cc = 0
 
-time_bins = np.arange(-.5, .5, .001)
-Robs = psth(spike_times, D.saccades['start_time'][idx], time_bins)
-# Robs = psth(spike_times, D.gratings['start_time'].to_numpy(), time_bins)
+for cond in range(len(cidx)):
+    lines_cond1[cond].set_ydata(smfun(mu_rate[cond1][cidx[cond],:,cc].T))
+    lines_cond2[cond].set_ydata(smfun(mu_rate[cond2][cidx[cond],:,cc].T))
+    
+    update_fill_plot(lines_cond3[cond], smfun(ci_rate[cond1][cidx[cond],0,:,cc]), smfun(ci_rate[cond1][cidx[cond],1,:,cc]))
+    update_fill_plot(lines_cond4[cond], smfun(ci_rate[cond2][cidx[cond],0,:,cc]), smfun(ci_rate[cond2][cidx[cond],1,:,cc]))
+    
+    ax[cond].set_ylim(get_ylim(mu_rate[cond1][:,:,cc]/bin_size, mu_rate[cond2][:,:,cc]/bin_size) )
 
-m = np.mean(Robs, axis=1).squeeze()
-from scipy.signal import savgol_filter
-plt.figure()
-f = plt.plot(time_bins, savgol_filter(m, 101, 3, axis=0))
-
-#%%
-time_bins = np.arange(-2.5, 2.5, .01)
-sachist = psth([D.saccades['start_time']], onsets.to_numpy(), time_bins)
-plt.figure()
-plt.plot(time_bins, np.mean(sachist, axis=1))
-#%%
-plt.figure()
-# m = savgol_filter(m, 101, 3, axis=0)
-plt.imshow(m - np.mean(m, axis=0), aspect='auto')
-
-
-#%%
-from scipy.interpolate import interp1d
-
-time_bins = session.running_speed['start_time'].values
-NC = len(units.index.values)
-stim_dur = np.max(presentations.duration.values)
-time_bins = np.arange(-.5, stim_dur + .5, .01)
-NT = len(time_bins)
-NStim = len(presentations)
-
-Robs = np.zeros((NT, NStim, NC))
-rspd = np.zeros((NT, NStim))
-pup = np.zeros((NT, NStim))
-
-fpup = interp1d(D.eye_data.eye_time, D.eye_data.pupil, kind='linear')
-frun = interp1d(D.run_data.run_time, D.run_data.run_spd, kind='linear')
-
-for istim in range(NStim):
-    pup[:,istim] = fpup(time_bins + onset[istim])
-    rspd[:,istim] = frun(time_bins + onset[istim])
-    for iunit, unit in zip(range(NC), units.index.values):
-        st = session.spike_times[unit]-onset[istim]
-        st = st[np.logical_and(st > -.5, st < stim_dur + .5)]
-        Robs[np.digitize(st, time_bins)-1,istim, iunit] += 1
-
-#%%
-plt.figure(figsize=(10,10))
-plt.subplot(1,3,1)
-# plt.plot(run_time, run_spd)
-# plt.plot(onset, np.zeros(NStim), 'o')
-plt.imshow(rspd.T, aspect='auto', cmap='viridis')
-
-plt.subplot(1,3,2)
-plt.imshow(pup.T, aspect='auto', cmap='viridis')
-
-plt.subplot(1,3,3)
-plt.imshow(np.mean(Robs, axis=2).T, aspect='auto', cmap='viridis')
-
-
-#%%
-# plt.plot(np.mean(Robs, axis=1), running_speed.velocity.values/100, '.')
-plt.figure()
-plt.plot(eye_time, pupil*10000)
-plt.plot(run_time, run_spd)
-plt.plot(time_bins, gaussian_filter1d(np.mean(Robs, axis=1), sigma=15)*100 - 10)
-plt.show()
-# plt.plot(running_speed.velocity.values/100)
-# plt.xlim((0, 10000))
-# plt.ylim((0, 1))
-
-
-#%%
-plt.figure()
-f = plt.plot(pup[:,10:12])
-plt.show()
-
-#%%
-time_step = 0.01
-time_bins = np.arange(-0.1, 0.5 + time_step, time_step)
-
-histograms = session.presentationwise_spike_counts(
-    stimulus_presentation_ids=presentations.index.values,  
-    bin_edges=time_bins,
-    unit_ids=units.index.values
-)
-
-histograms.coords
-
-# %%
-mean_histograms = histograms.mean(dim="stimulus_presentation_id")
-
-fig, ax = plt.subplots(figsize=(8, 8))
-ax.pcolormesh(
-    mean_histograms["time_relative_to_stimulus_onset"], 
-    np.arange(mean_histograms["unit_id"].size),
-    mean_histograms.T, 
-    vmin=0,
-    vmax=1
-)
-
-ax.set_ylabel("unit", fontsize=24)
-ax.set_xlabel("time relative to stimulus onset (s)", fontsize=24)
-ax.set_title("peristimulus time histograms for VISp units on flash presentations", fontsize=24)
-
-plt.show()
-# %%
-
-mean_histograms
-# %%
+plt.title(cc)

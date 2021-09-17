@@ -33,3 +33,4 @@ Analysis/notebooks/deprecated
 events.out.tfevents.*
 *.pth
 latest_*
+*.pkl
