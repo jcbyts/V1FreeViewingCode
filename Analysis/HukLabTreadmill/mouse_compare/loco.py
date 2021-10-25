@@ -1,3 +1,8 @@
+'''
+Loco is a set of data management and analyses functions for comparing marmoset and mouse locomotion modulation.
+To analyze marmoset data, you need the data files from the Huk Lab.
+Mouse data is available through the Allen institute brain observatory.
+'''
 import os
 
 import numpy as np
@@ -10,11 +15,19 @@ from scipy.signal import savgol_filter
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 
 class struct(dict):
+    '''
+    Dictionary that can be indexed with dot notation.
+    s = struct()
+    s.a = 1 # s['a'] = 1
+    '''
     def __init__(self, *args, **kwargs):
         super(struct, self).__init__(*args, **kwargs)
         self.__dict__ = self
 
+
 class GratingDataset(struct):
+    '''Currently this is just a struct, but it should become an object with its own support functions
+    '''
     def __init__(self,
         dataset_name,
         subject):
@@ -22,6 +35,9 @@ class GratingDataset(struct):
         self.dataset_name = dataset_name
         self.subject = subject
 
+'''
+HUKLAB: Loading and preprocessing functions
+'''
 def get_huklab_sessions(data_directory = '/home/jake/Data/Datasets/HuklabTreadmill/processed/'):
     flist = [f for f in os.listdir(data_directory) if '_grat.mat' in f]
     return flist, data_directory
@@ -41,7 +57,7 @@ def process_huklab_session(session):
     run_spd = session['treadSpeed'][0][:]
     nans = np.isnan(run_spd)
     fint = interp1d(run_time[~nans], run_spd[~nans], kind='linear')
-    new_time = np.arange(run_time[0], run_time[-1], 0.001)
+    new_time = np.arange(run_time[~nans][0], run_time[~nans][-1], 0.001)
     run_spd = fint(new_time)
     run_time = new_time
     D = struct()
@@ -118,6 +134,9 @@ def process_huklab_session(session):
 
     return D
 
+'''
+Allen DATA: Loading and preprocessing functions
+'''
 # get "sessions"
 def get_allen_sessions(data_directory = '/mnt/Data/Datasets/allen/ecephys_cache_dir/'):
     manifest_path = os.path.join(data_directory, "manifest.json")
@@ -410,6 +429,10 @@ def detect_saccades(eye_data, vel_thresh=30,
 def get_run_epochs(run_time, run_spd,
     refrac = 1.0, thresh = 3,
     win = 100, debug=False):
+    '''
+    Get Running Epochs
+
+    '''
 
     from scipy.signal import savgol_filter
 
@@ -499,6 +522,16 @@ def get_run_epochs(run_time, run_spd,
     return run_epochs
 
 def psth_interp(time, data, onsets, time_bins):
+    '''
+    Calculate PSTH using interpolation
+    time: time vector (T x 1)
+    data: data vector (T x 1)
+    onsets: vector of onsets (N x 1)
+    time_bins: vector of time bins (M x 1)
+
+    This will return a matrix size (M x N)
+    '''
+
     NT = len(time_bins)
     NStim = len(onsets)
     rspd = np.zeros((NT, NStim))
@@ -529,12 +562,25 @@ def psth(spike_times, onsets, time_bins):
     return Robs
 
 def get_valid_time_idx(times, valid_start, valid_stop):
+    '''
+    Get valid time indices
+    times: sample times (vector of length T)
+    valid_start: start of valid time (vector of length N)
+    valid_stop: stop of valid time (vector of length N)
+
+    returns valid_idx: logical index of valid time (vector of length T)
+    '''
     valid = np.zeros(len(times), dtype=bool)
     for t in range(len(valid_start)):
         valid = np.logical_or(valid, np.logical_and(times >= valid_start[t], times <= valid_stop[t]))
     return valid
 
 def make_animation(D):
+    '''
+    Make animation of the experiment
+    Pass in a D struct
+    TODO: needs options
+    '''
     #%% Make animation of it
     import matplotlib.pyplot as plt
     from matplotlib import animation
@@ -595,9 +641,8 @@ def make_animation(D):
 
     return anim
 
-def nanmean(x):
-    return np.mean(x*~np.isnan(x), axis=0)
-
+def nanmean(x, axis=0):
+    return np.mean(x*~np.isnan(x), axis=axis)
 
 def save_analyses(D, fpath='./analyses/'):
     import pickle
@@ -613,17 +658,71 @@ def load_analyses(session_name, fpath='./analyses/'):
     return D
 
 # TODO: oof, this is bad form. Clean these up ASAP
-def bootstrap_ci(data, n = None, nboot=500):
+def bootstrap_ci(data, n=None, boot_dim=1, mean_dim=2, nboot=500, ci=68):
+    '''
+    TODO: Okay, this is bad. I'll fix later.
+    This calculates a bootstrap
+    '''
+    assert len(data.shape)>boot_dim, 'specified boot boot_dim is too high'
+
+    if ci is int or ci is float:
+        offset = (100-ci)/2
+        ci = (offset, 100-offset)
+    
+    if isinstance(ci, list):
+        ci = tuple(ci)
+
     if n is None:
-        n = data.shape[1]
-    bootix = np.random.randint(0,n-1,size=(nboot,n))
-    return np.percentile(np.nanmean(data[:,bootix,:], axis=2), (15.75, 84.25), axis=1)
+        n = data.shape[boot_dim]
+
+    sz = data.shape
+    bootix = np.random.randint(0,data.shape[boot_dim]-1,size=(nboot,n))
+    if boot_dim==0:
+        if len(sz)==1:
+            assert boot_dim == 0, "data only has 1 dimension. boot_dim must be 0"
+            pci = np.percentile(np.nanmean(data[bootix], axis=mean_dim), ci, axis=boot_dim)
+        else:
+            pci = np.percentile(np.nanmean(data[bootix,:], axis=mean_dim), ci, axis=boot_dim)
+    elif boot_dim==1:
+        pci = np.percentile(np.nanmean(data[:,bootix,:], axis=mean_dim), ci, axis=boot_dim)
+    return pci
 
 def boot_ci(data, n = None, nboot=500):
+    '''
+    This one computes bootstrap confidence intervals
+    '''
     if n is None:
         n = data.shape[1]
     bootix = np.random.randint(0,n-1,size=(nboot,n))
     return np.percentile(np.nanmean(data[bootix,:], axis=1), (2.5, 50, 97.5), axis=0)
+
+def linear_regression(X,y, lam=0):
+    from scipy import stats
+    
+    if len(X.shape)==1:
+        X = X[:,None]
+
+    newX = np.append(np.ones((len(X),1)), X, axis=1)
+    XX = np.dot(newX.T,newX) + lam * np.eye(newX.shape[1])
+    params = np.linalg.lstsq(XX, newX.T.dot(y), rcond=None)[0]
+    predictions = newX @ params
+    MSE = (sum((y-predictions)**2))/(len(newX)-len(newX[0]))
+
+    var_b = MSE*(np.linalg.pinv(XX).diagonal())
+    sd_b = np.sqrt(var_b)
+    ts_b = params/ sd_b
+
+    p_values =[2*(1-stats.t.cdf(np.abs(i),(len(newX)-len(newX[0])))) for i in ts_b]
+
+    sd_b = np.round(sd_b,3)
+    ts_b = np.round(ts_b,3)
+    p_values = np.round(p_values,5)
+    params = np.round(params,4)
+
+    myDF3 = pd.DataFrame()
+    myDF3["Coefficients"],myDF3["Standard Errors"],myDF3["t values"],myDF3["Probabilities"] = [params,sd_b,ts_b,p_values]
+    print(myDF3)
+    return myDF3
 
 def main_analysis(D, hack_valid_run=False):
     D['psths'] = struct({'saccade_onset': struct(),
@@ -753,7 +852,6 @@ def main_analysis(D, hack_valid_run=False):
     plt.xlabel("Time from Onset (s)")
 
     D.psths.grat_onset['spikes'] = struct({'mean': m, 'std_error': sd, 'time_bins': time_bins})
-
 
     Robs = psth(spike_times, D.saccades['start_time'], time_bins)
     m = np.mean(Robs, axis=1).squeeze()/bin_size
@@ -921,7 +1019,7 @@ def main_analysis(D, hack_valid_run=False):
     return D
 
 # utility for checking size of a dict
-from __future__ import print_function
+# from __future__ import print_function
 from sys import getsizeof, stderr
 from itertools import chain
 from collections import deque
@@ -969,3 +1067,67 @@ def total_size(o, handlers={}, verbose=False):
         return s
 
     return sizeof(o)
+
+def get_super_session_inds(rbase, sessnum, thresh_across = 0.01, thresh_within = 0.0):
+    '''
+    get the valid indices to combine for analysis of the super session
+    Each unit will have N potential sessions that it belongs, but the the statistics
+    of that unit's firing may have changed from session to session (or within session)
+    We evaluate whether the baseline firing rate significantly changed between sessions
+    and whether it drifted within a session
+    We then find the combination of sievs that yields the most total trials
+    Inputs:
+        rbase: baseline firing rate [NT x 1]
+        sessnum: session number for each firing rate [NT x 1]
+        thresh_across: threshold for significanct change in firing rate (p value of rank sum test, default = 0.01)
+    Outputs:
+        comb_inds: indices into rbase to analyze as one super session
+    '''
+    from scipy import stats
+    sess_idx = np.unique(sessnum)
+    n_pot_sessions = len(sess_idx)
+    ratecompare = np.zeros( (n_pot_sessions, n_pot_sessions))
+    nTrials = np.zeros(n_pot_sessions)
+    coeffs = np.zeros( (n_pot_sessions, 3) )
+
+    for i in range(n_pot_sessions):
+        nTrials[i] = np.sum(sessnum==sess_idx[i])
+
+        trial = np.arange(0, nTrials[i])/nTrials[i]*100
+        lm = linear_regression(trial, rbase[sessnum==sess_idx[i]])
+        coeffs[i,0] = lm['Coefficients'][1]
+        coeffs[i,1] = lm['t values'][1]
+        coeffs[i,2] = lm['Probabilities'][1] # p value for
+
+        for j in range(n_pot_sessions):
+            r = stats.ranksums(rbase[sessnum==sess_idx[i]], rbase[sessnum==sess_idx[j]])
+            ratecompare[i,j] = r.pvalue
+
+    # find the session combinations with the most Trials
+    n_tot_trials = np.zeros(n_pot_sessions)
+    for i in range(n_pot_sessions):
+        iix = ratecompare[i,:] > thresh_across
+        # iix = np.logical_and(iix, coeffs[:,3] >= thresh_within)
+        n_tot_trials[i] = np.sum(nTrials[iix])
+
+
+    inds = np.argmax(n_tot_trials)
+    if isinstance(inds, np.int64):
+        base_session = inds
+    else:
+        base_session = inds[0]
+
+    iix = ratecompare[base_session,:] > thresh_across
+
+    comb_inds = []
+    for ss in sess_idx[iix]:
+        comb_inds.append(np.where(sessnum==ss)[0])
+        
+    comb_inds = np.array(comb_inds).flatten()
+
+    S = {'base_session': base_session, 'coeffs': coeffs, 'rate_compare': ratecompare, 'combined_sessions': sess_idx[iix]}
+# 
+    if len(comb_inds)<=n_pot_sessions:
+        comb_inds = np.concatenate(comb_inds)
+
+    return comb_inds, S

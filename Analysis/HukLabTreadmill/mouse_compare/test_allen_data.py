@@ -37,16 +37,21 @@ sessions, cache = dfac.get_allen_sessions()
 downloaded_sessions = [f for f in os.listdir('/mnt/Data/Datasets/allen/ecephys_cache_dir/') if 'session_' in f]
 
 #%%
-i = 1
+i = 0
 sessid = np.where(int(downloaded_sessions[i][8:]) == sessions.index.values)[0][0]
 print(sessid)
-#%%
 
-session = dfac.get_allen_session(cache, sessions, 41)
+#%%
+todownload = np.where(sessions.session_type=='functional_connectivity')
+
+downloaded_index = [np.where(int(downloaded_sessions[i][8:]) == sessions.index.values)[0][0] for i in range(len(downloaded_sessions))]
+print(downloaded_index)
+#%%
+sessid = 27
 
 #%%
 session = dfac.get_allen_session(cache, sessions, sessid)
-D = dfac.process_allen_dataset(session)
+# D = dfac.process_allen_dataset(session)
 
 #%%
 %matplotlib ipympl
@@ -95,6 +100,7 @@ print("Done")
 
 
 #%% helper functions for main analysis
+%matplotlib inline
 def save_analyses(D, fpath='./analyses/'):
     import pickle
     fname = os.path.join(fpath, D.files.session + '.pkl')
@@ -108,7 +114,7 @@ def load_analyses(session_name, fpath='./analyses/'):
     D = pickle.load(open(fname, 'rb'))
     return D
 
-def main_analysis(D):
+def main_analysis(D, hack_valid_run=False):
     D['psths'] = dfac.struct({'saccade_onset': dfac.struct(),
     'run_onset': dfac.struct(),
     'grat_onset': dfac.struct(),
@@ -138,7 +144,10 @@ def main_analysis(D):
         ix = np.logical_and(run_time >= sac_onsets[breaks[i]], run_time <= sac_onsets[breaks[i]+1])
         val_ix[ix] = False
 
-    good = val_ix #~np.isnan(run_time)
+    if hack_valid_run:
+        good = val_ix #
+    else:
+        good = ~np.isnan(run_time)
 
     plt.plot(run_time, run_spd/np.max(run_spd), 'k')
     plt.plot(run_time, good)
@@ -273,7 +282,11 @@ def main_analysis(D):
     eye_vel = dfac.psth_interp(D.eye_data.eye_time, eye_spd, D.gratings['start_time'].to_numpy(), time_bins)
 
     wrapAt = 180
-    conds = np.unique(D.gratings.orientation%wrapAt)
+    bad_ix = (D.gratings.orientation=='null')
+    condition = D.gratings.orientation
+    condition[bad_ix] = 0.1
+    condition = condition % wrapAt
+    conds = np.unique(condition)
     Nconds = len(conds)
 
     #%%
@@ -359,7 +372,6 @@ def main_analysis(D):
         n[key] = np.zeros(Nconds)
         ci_rate[key] = np.zeros((Nconds, 2, len(time_bins), NC))
 
-    condition = D.gratings.orientation % wrapAt
 
     for icond, cond in enumerate(conds):
         
@@ -412,6 +424,11 @@ def main_analysis(D):
     return D
 
 #%%
+# win = 200
+# run_time = D.run_data.run_time
+# run_spd = D.run_data.run_spd
+# run_epochs = dfac.get_run_epochs(run_time, run_spd, win=win)
+#%%
 %matplotlib inline
 D = main_analysis(D)
 
@@ -429,13 +446,13 @@ sessions = dfac.get_huklab_sessions()
 num_sessions = len(sessions[0])
 %matplotlib inline
 
-for 3 in range(num_sessions):
+for i in range(3,num_sessions):
     session = dfac.get_huklab_session(sessions[1], sessions[0], i)
 
     try:
         D = dfac.process_huklab_session(session)
 
-        D = main_analysis(D)
+        D = main_analysis(D, hack_valid_run=True)
         save_analyses(D, fpath='./analyses/')
     except:
         print("ERROR on session %d" %i)
@@ -521,3 +538,206 @@ for cond in range(len(cidx)):
     ax[cond].set_ylim(get_ylim(mu_rate[cond1][:,:,cc]/bin_size, mu_rate[cond2][:,:,cc]/bin_size) )
 
 plt.title(cc)
+
+
+#%% summary plots
+
+
+
+def get_mu_ci(data):
+    mu = data[1,:]
+    ci = data[(0,2),:] - mu
+    return mu, ci
+
+def get_psth_rate(data):
+    if 'mean' in data.keys():
+        mu = data.mean
+    else:
+        mu = data.hist
+    bins = data.time_bins
+
+    return mu, bins
+
+def get_subj_frate(subj, fpath = './analyses/'):
+    flist = [f for f in os.listdir(fpath) if subj in f]
+
+    frate = {'base_rate_stat': np.empty(0), 'base_rate_run': np.empty(0), 'stim_rate_run': np.empty(0), 'stim_rate_stat': np.empty(0)}
+    frateci = {'base_rate_stat': np.empty(0), 'base_rate_run': np.empty(0), 'stim_rate_run': np.empty(0), 'stim_rate_stat': np.empty(0)}
+
+    for f in flist:
+        D = load_analyses(f.split('.')[0])
+
+        for k in D.firing_rate.keys():
+            mu,ci = get_mu_ci(D.firing_rate[k])
+            frate[k] = np.append(frate[k], mu)
+            frateci[k] = np.append(frateci[k], ci)
+    return frate, frateci
+
+def get_subj_psth(subj, alignment='run_onset', measured='run_spd', fpath = './analyses/'):
+    flist = [f for f in os.listdir(fpath) if subj in f]
+
+    mean_rate = []
+    time_bins = []
+    
+    for f in flist:
+        D = load_analyses(f.split('.')[0])
+
+        mu, t = get_psth_rate(D.psths[alignment][measured])
+        mean_rate.append(mu)
+        time_bins.append(t)
+    
+    if len(mean_rate[0].shape) == 1:
+        m = np.asarray(mean_rate).T
+    else:
+        m = np.empty((mean_rate[0].shape[0],0))
+        for i in range(len(mean_rate)):
+            m = np.append(m, mean_rate[i], axis=1)
+
+    return m, time_bins[0]
+
+
+frateGru, frateCiGru = get_subj_frate('gru')
+frateBrie, frateCiBrie = get_subj_frate('brie')
+frateMouse, frateCiMouse = get_subj_frate('mouse')
+
+plt.figure()
+plt.plot(frateGru['base_rate_stat'], frateGru['base_rate_run'], 'o')
+plt.plot(frateBrie['base_rate_stat'], frateBrie['base_rate_run'], 'o')
+plt.plot(frateMouse['base_rate_stat'], frateMouse['base_rate_run'], 'o')
+plt.plot(plt.xlim(), plt.xlim(), 'k--')
+plt.xlabel('Stationary')
+plt.ylabel('Running')
+plt.title("Baseline Firing Rate")
+
+
+plt.figure()
+plt.plot(frateGru['stim_rate_stat'], frateGru['stim_rate_run'], 'o')
+plt.plot(frateBrie['stim_rate_stat'], frateBrie['stim_rate_run'], 'o')
+plt.plot(frateMouse['stim_rate_stat'], frateMouse['stim_rate_run'], 'o')
+plt.xlabel('Stationary')
+plt.ylabel('Running')
+plt.title("Stim Firing Rate")
+plt.plot(plt.xlim(), plt.xlim(), 'k--')
+
+# %%
+
+
+D = load_analyses(f.split('.')[0])
+
+
+# %%
+
+cmap = plt.get_cmap('Set1')
+plt.figure()
+
+for i, subj in zip(range(3), ['gru', 'brie', 'mouse']):
+    mean_rate, time_bins = get_subj_psth(subj, alignment='run_onset', measured='run_spd')
+
+    plt.plot(time_bins, mean_rate, color=cmap(i))
+plt.xlabel('Time from running onset (s)')
+plt.ylabel('Running Speed (cm/s)')
+
+#%% run-aligned saccade onset
+plt.figure()
+from scipy.signal import savgol_filter
+for i, subj in zip(range(3), ['gru', 'brie', 'mouse']):
+    mean_rate, time_bins = get_subj_psth(subj, alignment='run_onset', measured='saccade_onset')
+    mean_rate = savgol_filter(np.mean(mean_rate, axis=1), 11, 3)
+    plt.fill_between(time_bins, np.zeros(len(mean_rate)), mean_rate, color=cmap(i), alpha=0.25)
+    plt.plot(time_bins, mean_rate, color=cmap(i))
+
+plt.xlabel('Time from running onset (s)')
+plt.ylabel('Saccade_count')
+
+#%% pupil aligned to running onset
+plt.figure()
+from scipy.signal import savgol_filter
+for i, subj in zip(range(3), ['gru', 'brie', 'mouse']):
+    mean_rate, time_bins = get_subj_psth(subj, alignment='run_onset', measured='pupil')
+    if mean_rate[0][0] > 1000:
+        for j in range(len(mean_rate)):
+            mean_rate[j]/=1000000
+    se = savgol_filter(np.std(mean_rate, axis=1), 11, 3) / np.sqrt(mean_rate.shape[1])
+    mean_rate = savgol_filter(np.mean(mean_rate, axis=1), 11, 3)
+    
+    
+    # plt.fill_between(time_bins, np.zeros(len(mean_rate)), mean_rate, color=cmap(i), alpha=0.25)
+    plt.fill_between(time_bins, mean_rate-se, mean_rate+se, color=cmap(i), alpha=0.25)
+    plt.plot(time_bins, mean_rate, color=cmap(i))
+
+plt.xlabel('Time from running onset (s)')
+plt.ylabel('Pupil Area (a.u.)')
+
+#%%
+plt.figure()
+from scipy.signal import savgol_filter
+for i, subj in zip(range(3), ['gru', 'brie', 'mouse']):
+    mean_rate, time_bins = get_subj_psth(subj, alignment='saccade_onset', measured='pupil')
+    if mean_rate[0][0] > 1000:
+        for j in range(len(mean_rate)):
+            mean_rate[j]/=1000000
+    se = savgol_filter(np.std(mean_rate, axis=1), 11, 3) / np.sqrt(mean_rate.shape[1])
+    mean_rate = savgol_filter(np.mean(mean_rate, axis=1), 11, 3)
+    
+    
+    # plt.fill_between(time_bins, np.zeros(len(mean_rate)), mean_rate, color=cmap(i), alpha=0.25)
+    plt.fill_between(time_bins, mean_rate-se, mean_rate+se, color=cmap(i), alpha=0.25)
+    plt.plot(time_bins, mean_rate, color=cmap(i))
+
+plt.xlabel('Time from running onset (s)')
+plt.ylabel('Pupil Area (a.u.)')
+
+#%%
+use = 'grat'
+
+plt.figure()
+
+for i, subj in zip(range(3), ['gru', 'brie', 'mouse']):
+
+    mean_rateS, time_bins = get_subj_psth(subj, alignment='saccade_onset', measured='spikes')
+    mean_rateG, time_bins = get_subj_psth(subj, alignment='grat_onset', measured='spikes')
+    mean_rateR, time_bins = get_subj_psth(subj, alignment='run_onset', measured='spikes')
+    
+    mS = np.mean(mean_rateS, axis=0)
+    mG = np.mean(mean_rateG, axis=0)
+    mR = np.mean(mean_rateR, axis=0)
+    mx = np.asarray([np.max( (mS[cc], mG[cc], mR[cc])) for cc in range(len(mS))])
+
+    if use == 'saccade':
+        mean_rate = mean_rateS
+    elif use == 'grat':
+        mean_rate = mean_rateG
+    elif use == 'run':
+        mean_rate = mean_rateR
+
+    for cc in range(len(mx)):
+        mean_rate[:,cc] = (savgol_filter(mean_rate[:,cc], 51,3) / mx[cc])
+
+    m = np.mean(mean_rate, axis=1)
+    s = 2*np.std(mean_rate, axis=1) / np.sqrt(mean_rate.shape[1])
+    plt.fill_between(time_bins, m-s, m+s, color=cmap(i), alpha=0.25)
+    plt.plot(time_bins, m, color=cmap(i))
+
+if use == 'saccade':
+    plt.xlabel('Time from saccade onset (s)')
+elif use == 'grat':
+    plt.xlabel('Time from grating onset (s)')
+elif use == 'run':
+    plt.xlabel('Time from running onset (s)')
+
+plt.ylabel('Spike Rate (Normalized)')
+#%%
+
+# NT = mean_rate.shape[0]
+# NC = [m.shape[1] for m in mean_rate]
+# NCtot = sum(NC)
+# m = np.zeros( (NT, NCtot) )
+
+# for i in range(len(mean_rate)):
+#     mean_rate[0].shape[1]
+
+
+
+
+# plt.plot(t, mu)
+# %%
