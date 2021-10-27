@@ -7,23 +7,24 @@ def get_subplot_dims(NC):
     sy = np.round(np.sqrt(NC)).astype(int)
     return sx,sy
 
-def downsample_time(x, ds):
+def downsample_time(x, ds, flipped=None):
     
     NTold = x.shape[0]
     dims = x.shape[1]
     
-    flipped = 0
-    if dims > NTold:
-	    # then assume flipped
-	    flipped = 1
-	    x = x.T
+    if flipped is None:
+        flipped = False
+        if dims > NTold:
+	        # then assume flipped
+	        flipped = True
+	        x = x.T
     
     NTnew = np.floor(NTold/ds).astype(int)
     y = np.zeros((NTnew, dims))
     for nn in range(ds-1):
-        y = y + x[nn + np.arange(0, NTnew, 1)*ds,:]
+        y[:,:] = y[:,:] + x[nn + np.arange(0, NTnew, 1)*ds,:]
     
-    if flipped==1:
+    if flipped:
         y = y.T
         
     return y
