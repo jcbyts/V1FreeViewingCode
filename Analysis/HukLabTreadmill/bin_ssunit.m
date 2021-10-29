@@ -14,8 +14,12 @@ ip.parse(varargin{:})
 
 %% bin spikes
 binsize = ip.Results.binsize; % 10 ms bins
+if isnan(unitId)
+    unitIx = true(size(D.spikeIds));
+else
+    unitIx = D.spikeIds == unitId;
+end
 
-unitIx = D.spikeIds == unitId;
 sessNums = unique(D.sessNumSpikes(unitIx));
 
 ix = ismember(D.sessNumGratings, sessNums);
@@ -31,16 +35,26 @@ treadSessIx = treadTime > (StimOnset(1) - 5) & treadTime < (StimOffset(end) + 5)
 treadTime = treadTime(treadSessIx);
 treadSpeed = treadSpeed(treadSessIx);
 
+
+frameTime = D.frameTimes(~isnan(D.frameTimes));
+framePhase = D.framePhase(~isnan(D.frameTimes));
+% framePhase = cosd(D.framePhase(~isnan(D.frameTimes))).*D.frameContrast(~isnan(D.frameTimes));
+
 % resample time with new binsize
 newTreadTime = treadTime(1):binsize:treadTime(end);
 newTreadSpeed = interp1(treadTime, treadSpeed, newTreadTime);
 
+newFrameTime = newTreadTime;
+newFramePhase = interp1(frameTime, framePhase, newFrameTime);
+
+pupil = interp1(D.eyeTime, D.eyePos(:,3), newFrameTime);
 % figure(1); clf
 % plot(treadTime, treadSpeed); hold on
 % plot(newTreadTime, newTreadSpeed);
 
 treadTime = newTreadTime;
 treadSpeed = newTreadSpeed;
+framePhase = newFramePhase;
 
 % find index into onsets and offsets
 [~, ~, idOn] = histcounts(StimOnset, treadTime);
@@ -67,18 +81,21 @@ opts.NLags = nbins;
 
 % get running speed aligned to stim onset
 runSpeed = zeros(NT, nbins);
+GratPhase = zeros(NT, nbins);
+PupilArea = zeros(NT, nbins);
 for i = 1:NT
     iix = blags + idOn(i);
     runSpeed(i,iix>0) = treadSpeed(iix(iix>0));
+    GratPhase(i,iix>0) = framePhase(iix(iix>0));
+    PupilArea(i,iix>0) = pupil(iix(iix>0));
 end
-
 
 SpikeTimes = D.spikeTimes(unitIx);
 SpikeIds = D.spikeIds(unitIx);
 UnitList = unique(SpikeIds);
 
 NC = numel(UnitList); % number of neurons
-assert(NC == 1, "You requested one unit and we have more than that")
+assert(NC == 1 | isnan(unitId), "You requested one unit and we have more than that")
 
 %%
 
@@ -125,5 +142,5 @@ end
 % output
 stim = StimDir(validStim);
 robs = scnt;
-behavior = runSpeed;
+behavior = {runSpeed, GratPhase, PupilArea};
 opts.lags = bins;

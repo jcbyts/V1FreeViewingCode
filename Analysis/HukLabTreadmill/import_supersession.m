@@ -34,7 +34,9 @@ goodEphysSessions = find(sessionMatch);
 
 Dbig = struct('GratingDirections', [], 'GratingFrequency', [], ...
     'GratingOffsets', [], 'GratingOnsets', [], 'GratingSpeeds', [], ...
+    'GratingContrast', [], ...
     'eyeLabels', [], 'eyePos', [], 'eyeTime', [], ...
+    'frameTimes', [], 'framePhase', [], 'frameContrast', [], ...
     'treadSpeed', [], 'treadTime', [], ...
     'sessNumSpikes', [], 'sessNumGratings', [], ...
     'sessNumTread', [], 'sessNumEye', [], 'spikeTimes', [], 'spikeIds', []);
@@ -43,8 +45,8 @@ fprintf('Loading and aligning spikes with behavior\n')
 
 startTime = 0; % all experiments start at zero. this number will increment as we concatenate sessions
 newOffset = 0;
-timingFields = {'GratingOnsets', 'GratingOffsets', 'spikeTimes', 'treadTime', 'eyeTime'};
-nonTimingFields = {'GratingDirections', 'GratingFrequency', 'GratingSpeeds', 'eyeLabels', 'eyePos', 'treadSpeed', 'spikeIds', 'sessNumSpikes', 'sessNumGratings', 'sessNumTread', 'sessNumEye'};
+timingFields = {'GratingOnsets', 'GratingOffsets', 'spikeTimes', 'treadTime', 'eyeTime', 'frameTimes'};
+nonTimingFields = {'GratingDirections', 'GratingFrequency', 'GratingSpeeds', 'eyeLabels', 'eyePos', 'treadSpeed', 'spikeIds', 'sessNumSpikes', 'sessNumGratings', 'sessNumTread', 'sessNumEye', 'framePhase', 'GratingContrast', 'frameContrast'};
 
 fprintf('Looping over %d sessions\n', numel(goodEphysSessions))
 for iSess = 1:numel(goodEphysSessions)
@@ -53,9 +55,14 @@ for iSess = 1:numel(goodEphysSessions)
     bSess = behave2ephysNum(goodEphysSessions(iSess));
     
     fprintf('Session %d/%d [ephys:%d , behav:%d]\n', iSess, numel(goodEphysSessions), rId, bSess)
+    D_ = io.dataFactoryTreadmill(bSess, 'abort_if_missing', true);
+    if isempty(D_)
+        fprintf('Not imported. Skipping. \n')
+        continue
+    end
     
     unitlist = find(cellfun(@(x) ~isempty(x), EphysData.z.Times{rId}));
-
+    
     st = [];
     clu = [];
 
@@ -67,10 +74,13 @@ for iSess = 1:numel(goodEphysSessions)
         clu = [clu; kunit*ones(numel(stmp),1)];
     end
     
-    D_ = io.dataFactoryTreadmill(bSess);
+    
     D_.spikeTimes = st;
     D_.spikeIds = clu;
     
+    if iSess == 4
+        keyboard
+    end
     % convert to D struct format
     D = io.get_drifting_grating_output(D_);
     D.sessNumSpikes = iSess*ones(size(D.spikeTimes));
@@ -78,9 +88,14 @@ for iSess = 1:numel(goodEphysSessions)
     D.sessNumTread = iSess*ones(size(D.treadTime));
     D.sessNumEye = iSess*ones(size(D.eyeTime));
     
+    sessStart = 0;
+    for iField = 1:numel(timingFields)
+        sessStart = min(sessStart, min(D.(timingFields{iField})));
+    end
+    
     % loop over timing fields and offset time
     for iField = 1:numel(timingFields)
-        Dbig.(timingFields{iField}) = [Dbig.(timingFields{iField}); D.(timingFields{iField}) + startTime];
+        Dbig.(timingFields{iField}) = [Dbig.(timingFields{iField}); D.(timingFields{iField}) - sessStart + startTime];
         newOffset = max(newOffset, max(Dbig.(timingFields{iField}))); % track the end of this session
     end
     

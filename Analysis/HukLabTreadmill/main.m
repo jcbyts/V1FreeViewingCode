@@ -72,9 +72,108 @@ Exp.spikeIds = Exp.osp.clu;
 
 % convert to D struct format
 D = io.get_drifting_grating_output(Exp);
-
+D.framePhaseOrig = D.framePhase;
 % Note: PLDAPS sessions and MarmoV5 will load into different formats
 
+%%
+figure(1); clf
+plot(D.frameTimes, D.frameContrast.*cosd(D.framePhaseOrig))
+
+NT = numel(D.frameTimes);
+NE = numel(D.eyeTime);
+bcar = ceil(NE / NT); 
+bcar = bcar - mod(bcar, 2) + 1; % must be odd
+direction = zeros(NT,1);
+freq = zeros(NT,1);
+evec = zeros(NT, 2);
+
+eyex = sgolayfilt(D.eyePos(:,1), 3, 3*bcar);
+eyey = sgolayfilt(D.eyePos(:,1), 3, 3*bcar);
+evec(:,1) = interp1(D.eyeTime, eyex, D.frameTimes);
+evec(:,2) = interp1(D.eyeTime, eyey, D.frameTimes);
+
+NS = numel(D.GratingDirections);
+for ii = 1:NS
+    iix = D.frameTimes >= D.GratingOnsets(ii) & D.frameTimes <= D.GratingOffsets(ii);
+    direction(iix) = D.GratingDirections(ii);
+    freq(iix) = D.GratingFrequency(ii);
+end
+
+svec = [cosd(direction) sind(direction)];
+eproj = sum(evec.*svec,2);
+clf
+eyePhase = (eproj./freq)*360;
+
+
+plot(eyePhase); hold on
+plot(wrapTo360(D.framePhaseOrig))
+plot(wrapTo360(D.framePhaseOrig - eyePhase), 'k')
+D.framePhase = wrapTo360(D.framePhaseOrig - eyePhase);
+i = 1;
+%%
+% clf
+% plot(D.frameContrast.*cosd(D.framePhase - eyePhase)); hold on
+% plot(D.frameContrast.*sind(D.framePhase - eyePhase));
+i = i + 500;
+xlim([0 200]+i)
+
+%%
+iix = 150e3+(1:25e3);
+figure(1); clf
+plot(D.treadTime, D.treadSpeed/5)
+hold on
+pupil = interp1(D.eyeTime, (D.eyePos(:,3)-nanmean(D.eyePos(:,3)))/nanstd(D.eyePos(:,3)), D.treadTime);
+plot(D.treadTime, pupil)
+
+ix = ~(isnan(pupil) | isnan(D.treadSpeed));
+
+[rho, pval] = corr(D.treadSpeed,pupil, 'type', 'Spearman', 'rows', 'complete');
+
+figure(2); clf
+plot(D.treadSpeed, pupil, '.')
+%%
+% pad nans
+pupil = D.eyePos(:,3);
+nanix = isnan(pupil);
+pad = filtfilt(ones(50,1)/50, 1, double(nanix));
+pupil(pad>0) = nan;
+plot(D.eyeTime(iix), D.eyePos(iix,3)); hold on
+plot(D.eyeTime(iix), pupil(iix))
+% plot(D.eyeTime(iix), [0; 0; diff(diff(D.eyePos(iix,3)))]);
+cc = 1;
+%%
+
+% figure(1); clf
+
+
+unitIds = unique(D.spikeIds);
+cc = cc + 1;
+if cc > numel(unitIds)
+    cc = 1;
+end
+
+unitId = unitIds(cc);
+[stimDir, robs, runSpd, opts] = bin_ssunit(D, unitId, 'win', [-.2 .2]);
+
+lag = find(opts.lags>0, 1) + (1:20);
+id = 4;
+if id==4
+    [~, ind] = sort(stimDir);
+    id = id - 1;
+    I = runSpd{id}(ind,:);
+elseif id==2
+    [~, ind] = sort(nanmean(cosd(runSpd{id}(:,lag)),2));
+    I = cosd(runSpd{id}(ind,:));
+else
+    [~, ind] = sort(nanmean(runSpd{id}(:,lag),2));
+    I = runSpd{id}(ind,:);
+end
+figure(10); clf
+subplot(1,2,1)
+imagesc(I)
+subplot(1,2,2)
+imagesc(robs(ind,:))
+title(cc)
 %% Step 1.2: Create a super session datafile for each subject
 % Create a supersession file for the subject you want to analyze
 
@@ -240,8 +339,9 @@ frStimS = zeros(NC,3);
 
 for cc = 1:NC
     unitId = unitList(cc);
-    [stimDir, robs, runSpd, opts] = bin_ssunit(D, unitId, 'win', [-.2 .2]);
+    [stimDir, robs, B, opts] = bin_ssunit(D, unitId, 'win', [-.2 .2]);
     
+    runSpd = B{1};
     goodIx = getStableRange(sum(robs,2), 'plot', false);
     
     stimDir = stimDir(goodIx);
