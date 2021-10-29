@@ -6,6 +6,7 @@ sesslist = sesslist(1:57); % exclude monash sessions
 
 % Spatial RFs
 sfname = fullfile('Data', 'spatialrfs.mat');
+sfname = fullfile('Data', 'spatialrfsreg.mat');
 load(sfname)
 
 % Grating RFs
@@ -14,7 +15,7 @@ gfname = fullfile('Data', sprintf('gratrf_%s.mat', fittype));
 load(gfname)
 
 % FFT RF
-fftname = fullfile('Data', 'fftrf.mat');
+fftname = fullfile('Data', 'fftrf_basis.mat');
 load(fftname)
 
 % Waveforms
@@ -24,7 +25,7 @@ load(wname)
 
 %% Explore
 
-iEx = 1;
+iEx = 56;
 fprintf('Loading session [%s]\n', sesslist{iEx})
 
 %% Refit space?
@@ -39,34 +40,38 @@ Sgt{iEx} = stat;
 
 %% refit fftrf?
 Exp = io.dataFactory(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);
-rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', true, 'plot', true, 'usestim', 'post', 'alignto', 'fixon');
+rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', false, 'plot', true, 'usestim', 'post', 'alignto', 'fixon');
+rf_pre = fixrate_by_fftrf_old(Exp, Srf{iEx}, Sgt{iEx}, 'debug', false, 'plot', true, 'usestim', 'post', 'alignto', 'fixon');
 fftrf{iEx}.rfs_post = rf_post;
+fftrf{iEx}.rfs_pre = rf_pre;
 
 
 %% step through units
-iEx = 1;
+iEx = 56;
 cc = 0;
 %%
 cc = cc + 1;
 % 
-if cc > numel(Srf{iEx}.rffit)
-    cc = 1;
-end
+
 % cc = 1
 fields = {'rfs_post', 'rfs_pre'};
+
 field = fields{1};
+if cc > numel(fftrf{iEx}.(field))
+    cc = 1;
+end
 cmap = lines;
 
 
 figure(100); clf
-subplot(3,2,1) % spatial RF
-imagesc(Srf{iEx}.xax, Srf{iEx}.yax, Srf{iEx}.spatrf(:,:,cc)); axis xy
-hold on
-plot(fftrf{iEx}.(field)(cc).rfLocation(1), fftrf{iEx}.(field)(cc).rfLocation(2), 'or')
-
-subplot(3,2,2) % grating fit
-imagesc(fftrf{iEx}.(field)(cc).rf.kx, fftrf{iEx}.(field)(cc).rf.ky, fftrf{iEx}.(field)(cc).rf.Ifit')
-title(cc)
+% subplot(3,2,1) % spatial RF
+% imagesc(Srf{iEx}.xax, Srf{iEx}.yax, Srf{iEx}.spatrf(:,:,cc)); axis xy
+% hold on
+% plot(fftrf{iEx}.(field)(cc).rfLocation(1), fftrf{iEx}.(field)(cc).rfLocation(2), 'or')
+% 
+% subplot(3,2,2) % grating fit
+% imagesc(fftrf{iEx}.(field)(cc).rf.kx, fftrf{iEx}.(field)(cc).rf.ky, fftrf{iEx}.(field)(cc).rf.Ifit')
+% title(cc)
 
 for  f = 1:2
     field = fields{f};
@@ -91,7 +96,25 @@ end
 
 plot.suplabel(strrep(sesslist{iEx}, '_', ' '), 't');
 
+figure(101); clf;
+for f = 1:2
+    field = fields{f};
+%     subplot(1,2,f)
+    plot(fftrf{iEx}.(field)(cc).lags, fftrf{iEx}.(field)(cc).corrrho, 'Linewidth', numel(fields)+2 - f); hold on
+end
 
+
+%%
+figure(101); clf;
+for f = 1:2
+    field = fields{f};
+    
+    m = mean(cell2mat(arrayfun(@(x) x.corrrho(:)', fftrf{iEx}.(field), 'uni', 0)));
+    plot(m); hold on
+end
+
+
+%%
 % frf = fftrf{iEx}.rfs_post(cc).frf;
 % nsteps = numel(fftrf{iEx}.rfs_post(cc).frfsteps);
 % figure(10); clf

@@ -1,4 +1,4 @@
-function Exp = importFreeViewingHuklab(S)
+function Exp = importFreeViewingHuklab(S, SERVER_DATA_DIR)
 close all
 % this function imports the data required for the FREEVIEWING project
 % It shares the same fundamentals as 
@@ -7,7 +7,9 @@ disp('THIS MUST BE RUN ON A COMPUTER CONNECTED TO THE HUKLAB DATASHARE DRIVE FOL
 disp('REQUIRES MARMOPIPE CODE IN THE PATH')
 
 % get paths
-SERVER_DATA_DIR = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+if nargin < 2
+    SERVER_DATA_DIR = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+end
 
 if contains(S.rawFilePath, SERVER_DATA_DIR)
     DataFolder = S.rawFilePath;

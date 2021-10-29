@@ -11,9 +11,11 @@ function varargout = dataFactoryTreadmill(sessionId, varargin)
 %   Exp = io.dataFactory(5); % load the 5th session
 ip = inputParser();
 ip.addParameter('spike_sorting', []) % pass in a spike sorting argument
+ip.addParameter('abort_if_missing', false)
 ip.parse(varargin{:});
 
 dataPath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+addpath(fullfile(dataPath, 'PLDAPStools'))
 
 meta_file = fullfile(dataPath, 'datasets.xls');
 
@@ -22,6 +24,20 @@ nSessions = size(data,1);
 
 if nargin < 1
     sessionId = [];
+end
+
+if nargin >=1 && iscell(sessionId) % assume that inputs are condition combinations
+    
+    argConds = sessionId; % AND conditioned arguments (as pairs)
+    
+    [~, idx] = io.get_experiments_and(data, argConds{:});
+    idx = find(idx);
+    for i = idx(:)'
+        fprintf('%d) %s\n', i, data.Tag{i})
+    end
+    
+    varargout{1} = data.Tag(idx);
+    return
 end
 
 if ischar(sessionId)
@@ -87,6 +103,9 @@ if exist(fname, 'file')
     end
     
     fprintf('Done\n')
+elseif ip.Results.abort_if_missing
+    Exp = [];
+    
 else % try importing the file
        
     S.importFun = str2func(['io.' thisSession.ImportFun{1}]);
@@ -114,6 +133,9 @@ else % try importing the file
     
     exname = strrep(S.processedFileName, '.mat', '');
     figDir = fullfile(dataPath, 'imported_sessions_qa', exname);
+    if ~exist(figDir, 'dir')
+        mkdir(figDir)
+    end
     
     recId = find(contains(D.z.RecId, dateStr));
     for rId = recId(:)'

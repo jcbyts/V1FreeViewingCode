@@ -31,7 +31,8 @@ ip.addParameter('numlags', 3)
 ip.addParameter('plot', true)
 ip.addParameter('sdthresh', 4)
 ip.addParameter('boxfilt', 5)
-ip.addParameter('spikesmooth', 0)
+ip.addParameter('frate', 120)
+ip.addParameter('spikesmooth', 3)
 ip.addParameter('stat', [])
 ip.addParameter('fitRF', true)
 ip.addParameter('debug', false)
@@ -55,11 +56,12 @@ else
     
     [Stim, RobsSpace, opts] = io.preprocess_spatialmapping_data(Exp, ...
         'ROI', ip.Results.ROI*Exp.S.pixPerDeg, 'binSize', ip.Results.binSize*Exp.S.pixPerDeg, ...
-        'eyePos', eyePos, 'frate', 30);
+        'eyePos', eyePos, 'frate', ip.Results.frate);
     
     
-    if ip.Results.spikesmooth > 0
-        RobsSpace = imgaussfilt(RobsSpace, [ip.Results.spikesmooth 0.001]);
+    smwin = ip.Results.spikesmooth - mod(ip.Results.spikesmooth, 2) + 1;
+    if smwin > 0
+        RobsSpace = imboxfilt(RobsSpace, [smwin 1]);
     end
         
     win = ip.Results.win;

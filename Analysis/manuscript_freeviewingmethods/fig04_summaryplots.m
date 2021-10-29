@@ -5,7 +5,7 @@ figstyle= 'nature';
 
 flist = dir('Figures/2021_pytorchmodeling/rfs*.mat');
 
-figDir = 'Figures/manuscript_freeviewing/fig06';
+figDir = 'Figures/manuscript_freeviewing/fig04';
 
 % 1) shifter patterns consistent
 % 2) shift amounts
@@ -184,7 +184,7 @@ grid on
 % t.YLabel.String = "Gaze Position (d.v.a.)";
 
 plot.formatFig(gcf, [1.3 1.4], figstyle);
-saveas(gcf,sprintf('Figures/manuscript_freeviewing/fig06/shifter_%s.pdf', rfs(ex).sessid))
+saveas(gcf,sprintf('Figures/manuscript_freeviewing/fig04/shifter_%s.pdf', rfs(ex).sessid))
 %% shifter max / median values and consistency across runs
 rng(1234) % fix jitter
 
@@ -522,7 +522,7 @@ md = median(amppost./amppre);
 mdci = bootci(1000, @median, amppost./amppre);
 fprintf(fid, 'Median amp ratio is: %02.3f [%02.3f, %02.3f]\n', md, mdci(1), mdci(2))
 
-[pval, ~, stats] = signrank(amppre, amppost);
+[pval, ~, stats] = signrank(amppost,amppre);
 fprintf('signrank test: p = %d (%02.5f), %02.3f, %d\n', pval, pval, stats.zval, stats.signedrank)
 
 plot(xd, md*xd, 'k:')

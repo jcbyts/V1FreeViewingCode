@@ -2,7 +2,7 @@
 user = 'jakelaptop';
 addFreeViewingPaths(user);
 addpath Analysis/manuscript_freeviewingmethods/
-figDir = 'Figures/manuscript_freeviewing/fig04';
+figDir = 'Figures/manuscript_freeviewing/fig02';
 
 %% Loop over examples, get Srf
 
@@ -20,6 +20,7 @@ if exist(sfname, 'file')==2
     disp('Loading Spatial RFs')
     load(sfname)
 else
+    rng(1234)
     for iEx = 1:numel(sesslist)
         if isempty(Srf{iEx})
 
@@ -33,6 +34,7 @@ else
     
     save(sfname, '-v7.3', 'Srf')
 end
+disp("Done")
 
 %% Grating RFs
 Sgt = cell(numel(sesslist),1);
@@ -63,6 +65,7 @@ else
     
     save(gfname, '-v7.3', 'Sgt')
 end
+disp("Done")
 
 %% get waveform stats
 Waveforms = cell(numel(sesslist), 1);
@@ -82,14 +85,13 @@ else
     
 end
 
-
+disp("Done")
 %% Example units
 exs = [25, 27, 45, 45, 5]; % session #
 ccs = [9, 8, 19, 35, 14]; % unit #
 
-
-ccs = 6;
-exs = 10*ones(1,numel(ccs));
+% ccs = 6;
+% exs = 10*ones(1,numel(ccs));
 % ex = ex - 1;
 % cc = 0;
 % sesslist{ex}
@@ -189,7 +191,7 @@ for ii = 1:numel(exs)
     ax2.XColor = [1 0 0];
     ax2.YColor = [1 0 0];
     ax2.Box = 'on';
-%     saveas(gcf, fullfile(figDir, sprintf('example_%s_%d.pdf', sesslist{ex}, cc)))
+    saveas(gcf, fullfile(figDir, sprintf('example_%s_%d.pdf', sesslist{ex}, cc)))
     
 end
 
@@ -326,7 +328,7 @@ x = ecc(six);
 scaleFactor = sqrt(-log(.5))*2; % scaling to convert from gaussian SD to FWHM
 y = ar(six) * scaleFactor;
 
-hPlot = plot(x, y, 'wo', 'MarkerFaceColor', .2*[1 1 1], 'MarkerSize', 2); hold on
+hPlot = plot(x, y, 'o', 'Color', .8*[1 1 1], 'MarkerFaceColor', .2*[1 1 1], 'MarkerSize', 1.5, 'Linewidth', .25); hold on
 
 
 
@@ -340,6 +342,16 @@ options.Display ='none';
 bhatci = nlparci(bhat, resid, 'jacobian', J);
 
 
+fprintf('Rosa Fit:\n')
+fprintf('A = %02.2f\n', b0(1))
+fprintf('B = %02.2f\n', b0(2))
+fprintf('C = %02.2f\n', b0(3))
+
+fprintf('OUR Fit:\n')
+fprintf('A = %02.2f [%02.2f, %02.2f]\n', bhat(1), bhatci(1,1), bhatci(1,2))
+fprintf('B = %02.2f [%02.2f, %02.2f]\n', bhat(2), bhatci(2,1), bhatci(2,2))
+fprintf('C = %02.2f [%02.2f, %02.2f]\n', bhat(3), bhatci(3,1), bhatci(3,2))
+
 hold on
 cmap = lines;
 [ypred, delta] = nlpredci(fun, eccx, bhat, resid, 'Jacobian', J);
@@ -350,7 +362,6 @@ hPlot(3) = plot(eccx, fun(b0,eccx), 'Color', cmap(5,:));
 xlim([0 20])
 ylim([0 20])
 
-
 r2rosa = rsquared(y,fun(b0,x));
 r2fit = rsquared(y, fun(bhat, x));
 fprintf('r-squared for fit %02.2f and rosa %02.2f\n', r2fit, r2rosa)
@@ -359,7 +370,14 @@ set(gca, 'xscale', 'log', 'yscale', 'log')
 xlabel('Eccentricity (d.v.a)')
 ylabel('RF size (d.v.a)')
 set(gcf, 'Color', 'w')
-legend(hPlot, {'Data', 'Polynomial Fit', 'Rosa 1997'}, 'Box', 'off')
+hLeg = legend(hPlot, {'Data', 'Polynomial Fit', 'Rosa 1997'}, 'Box', 'off');
+hLeg.ItemTokenSize = hLeg.ItemTokenSize/6;
+pos = hLeg.Position;
+hLeg.Position(1) = pos(1) - .1;
+hLeg.Position(2) = pos(2) - .05;
+hLeg.FontName = 'Helvetica';
+hLeg.FontSize = 5;
+
 set(gca, 'XTick', [.1 1 10], 'YTick', [.1 1 10])
 xt = get(gca, 'XTick');
 set(gca, 'XTickLabel', xt)
@@ -372,7 +390,9 @@ text(.25, 5, sprintf('n=%d', sum(six)))
 %     'LineWidth',.5, 'OffsetAxes', false);
 plot.formatFig(gcf, [1.75 1.5], 'nature')
 
-saveas(gcf, fullfile(figDir, 'fig04_ecc_vs_RFsize.pdf'))
+
+
+saveas(gcf, fullfile(figDir, 'fig02_ecc_vs_RFsize.pdf'))
 
 
 %% Orientation
@@ -384,17 +404,19 @@ fprintf('%d/%d units selective for Gratings\n', sum(gix), sum(validwf))
 
 
 figure(1); clf
-t = tiledlayout(2,1);
+t = tiledlayout(1,2);
 t.TileSpacing = 'compact';
 nexttile
 
 
 h = histogram(wrapTo180(oriPref(gix)), 'binEdges', 0:10:180, 'FaceColor', .1*[1 1 1]); hold on
-text(160, .7*max(h.Values), sprintf('n=%d', sum(gix)))
+text(105, .7*max(h.Values), sprintf('n=%d', sum(gix)))
 % xlabel('Orientation Preference ')
 ylabel('Count')
 set(gca,'XTick', 0:45:180, 'YTick', 0:25:50)
 plot.offsetAxes(gca, true, 0)
+xlabel('Orientation Preference (deg)')
+ylabel('Count')
 
 ax = nexttile;
 plot(wrapTo180(oriPref(gix)), oriBw(gix), 'wo', 'MarkerFaceColor', [1 1 1]*.1, 'MarkerSize', 2); hold on
@@ -429,14 +451,14 @@ options = optimset(@lsqcurvefit);
 options.Display = 'none';
     
 phat = lsqcurvefit(fun, par0, op, real(obw), [0 0 0 0], [max(obw), max(obw), 180, 2], options);
-plot(0:180, fun(phat, 0:180), 'b')
+% plot(0:180, fun(phat, 0:180), 'b')
 r2 = rsquared(obw, fun(phat, op));
 
 % plot.fixfigure(gcf, 7, [2 2], 'FontName', 'Arial', ...
 %     'LineWidth',.5, 'OffsetAxes', false);
 
-plot.formatFig(gcf, [1.75 1.9], 'nature')
-saveas(gcf, fullfile(figDir, 'fig04_Orientation.pdf'))
+plot.formatFig(gcf, [4 1.5], 'nature')
+saveas(gcf, fullfile(figDir, 'fig02_Orientation.pdf'))
 
 
 %% test for difference between cardinal and oblique
@@ -454,7 +476,7 @@ fprintf(fid, 'Oblique median bandwidth: %02.3f [%02.3f, %02.3f]\n', median(obw(o
 fprintf(fid, 'Cardinal median bandwidth: %02.3f [%02.3f, %02.3f]\n', median(obw(cardix)), bootci(500, @median, obw(cardix)))
 
 [pval, ~, stats] = ranksum(obw(obix), obw(cardix));
-fprintf(fid, 'Two-sided rank sum test: p=%d (%02.5f), ranksum=%d, zval=%d\n', pval, pval, stats.ranksum, stats.zval)
+fprintf(fid, 'Two-sided rank sum test: p=%d (%02.10f), ranksum=%d, zval=%d\n', pval, pval, stats.ranksum, stats.zval)
 
 %% plot spatial RF locations
 
@@ -485,46 +507,3 @@ ylim([0 10])
 
 
 %% 
-
-for ex = 39:numel(sesslist)
-    
-    if isempty(Srf{ex}) || ~isfield(Srf{ex}, 'coarse')
-        continue
-    end
-    figure(1); clf
-    NC = numel(Srf{ex}.coarse.rffit);
-    sx = ceil(sqrt(NC));
-    sy = round(sqrt(NC));
-    ax = plot.tight_subplot(sx,sy, .01, 0.01);
-    for cc = 1:(sx*sy)
-        if cc > NC
-            axis(ax(cc), 'off')
-            continue
-        end
-        
-        set(gcf, 'currentaxes', ax(cc));
-        I = Srf{ex}.coarse.srf(:,:,cc);
-%         I = (I - min(I(:))) / (max(I(:)) - min(I(:)));
-        imagesc(Srf{ex}.coarse.xax, Srf{ex}.coarse.yax, I);
-        hold on
-        if isfield(Srf{ex}, 'fine')
-            I = Srf{ex}.fine.srf(:,:,cc);
-%             I = (I - min(I(:))) / (max(I(:)) - min(I(:)));
-            imagesc(Srf{ex}.fine.xax, Srf{ex}.fine.yax, I);
-        end
-        
-        [xx, yy] = meshgrid(-15:5:15);
-        clr = .2*[1 1 1];
-        plot(xx, yy, 'Color', clr)
-        plot(xx', yy', 'Color', clr)
-        axis xy
-        axis off
-        
-        text(-12, 7, sprintf('%d', cc))
-        
-    end
-    
-    colormap(plot.coolwarm)
-    plot.formatFig(gcf, [sx sy], 'default')
-    saveas(gcf, fullfile(figDir, sprintf('rfs_%s.pdf', sesslist{ex})))
-end

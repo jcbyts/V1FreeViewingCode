@@ -7,7 +7,7 @@ addpath Analysis/manuscript_freeviewingmethods/
 
 fprintf(fid, '******************************************************************\n');
 fprintf(fid, '******************************************************************\n');
-fprintf(fid, 'Statistics for figure 03 (Eye position / saccades)\n\n\n')
+fprintf(fid, 'Statistics for (Eye position / saccades)\n\n\n')
 %% Run main analysis on each session
 fprintf(fid, '******************************************************************\n');
 fprintf(fid, '******************************************************************\n');
@@ -20,36 +20,8 @@ for sessId = 1:57
     fprintf(fid, 'Session %d\n', sessId)
     Exp = io.dataFactoryGratingSubspace(sessId);
       
-%     ds = io.detect_doublestep_saccades(Exp);
-%     % flag ds sacs
-%     ix = ds.dotprod > .9;
-%     
-%     % new end
-%     Exp.slist(ds.suspectSaccadePairs(ix,1), 2) = Exp.slist(ds.suspectSaccadePairs(ix,2), 2);
-%     Exp.slist(ds.suspectSaccadePairs(ix,1), 5) = Exp.slist(ds.suspectSaccadePairs(ix,2), 5);
-%     % remove second
-%     Exp.slist(ds.suspectSaccadePairs(ix,2), :) = [];
-    
     S(sessId) = sess_eyepos_summary(Exp);
 end
-
-
-%%
-% clear ds
-% for sessId = 1:57
-%     fprintf(fid, '******************************************************************\n');
-%     fprintf(fid, 'Session %d\n', sessId)
-%     Exp = io.dataFactoryGratingSubspace(sessId);
-% 
-%     ds(sessId) = io.detect_doublestep_saccades(Exp);
-% end
-% 
-% %%
-% 
-% dp = cell2mat(arrayfun(@(x) real(acosd(x.dotprod(:))), ds(:), 'uni', 0));
-% figure(1); clf
-% histogram(dp, 100);
-% xlabel('Angle between saccade vectors')
 
 %%
 stim = 'All'; % loop over stimuli
@@ -99,7 +71,7 @@ ylabel('Horizontal Eye Position (d.v.a.)')
 title(sprintf('Monkey: %s', monkey))
 
 plot.fixfigure(gcf, 10, [5 4])
-saveas(gcf, fullfile(figDir, sprintf('Fig02a_eyeposition_monk%s.pdf', monkey)))
+saveas(gcf, fullfile(figDir, sprintf('fig_eyeposition_monk%s.pdf', monkey)))
 
 % stim = 'All';
 totalDuration = arrayfun(@(x) x.(stim).totalDuration, S(good))/60;
@@ -140,7 +112,7 @@ xlabel('Fixation Duration (ms)')
 ylim([0 0.05])
 set(gca, 'XTick', 0:250:1000, 'YTick', 0:.025:.05, 'TickDir', 'out', 'Box', 'off')
 plot.fixfigure(gcf, 10, [3 3])
-saveas(gcf, fullfile(figDir, sprintf('Fig02d_fixationdur_monk%s.pdf', monkey)))
+saveas(gcf, fullfile(figDir, sprintf('fig_fixationdur_monk%s.pdf', monkey)))
 
 % --- Plot saccade amplitude
 figure(3); clf
@@ -189,7 +161,7 @@ set(axinset, 'Box', 'off', 'TickDir', 'out')
 % ylim([0 0.05])
 
 plot.fixfigure(gcf, 10, [3 3])
-saveas(gcf, fullfile(figDir, sprintf('Fig02d_saccadeamp_monk%s.pdf', monkey)))
+saveas(gcf, fullfile(figDir, sprintf('fig_saccadeamp_monk%s.pdf', monkey)))
 
 
 
@@ -214,7 +186,7 @@ xlim([0 20])
 ylim([0 .1])
 set(gca, 'XTick', 0:5:20, 'YTick', 0:.05:.1, 'TickDir', 'out', 'Box', 'off')
 plot.fixfigure(gcf, 10, [3 3])
-saveas(gcf, fullfile(figDir, sprintf('Fig02c_distance_monk%s.pdf', monkey)))
+saveas(gcf, fullfile(figDir, sprintf('fig_distance_monk%s.pdf', monkey)))
 % imagesc(cnt)
 
 %% Time fixating
@@ -250,7 +222,7 @@ set(gca, 'XTick', 1:3, 'XTickLabel', monkeys, 'YTick', 30:5:60, 'TickDir', 'Out'
 xlabel('Subject')
 ylabel('Time (s) per minute of recording')
 plot.fixfigure(gcf, 10, [4 4])
-saveas(gcf, fullfile(figDir, 'Fig02d_usableFixationTime.pdf'))
+saveas(gcf, fullfile(figDir, 'fig_usableFixationTime.pdf'))
 
 
 %% Percent time fixating by session
@@ -286,7 +258,7 @@ ylim(xd)
 
 plot.formatFig(gcf, [1 1], 'nature')
 set(gca, 'XTick', xd, 'YTick', xd)
-saveas(gcf, fullfile(figDir, 'Fig02_cumulativeFixTimeInset.pdf'))
+saveas(gcf, fullfile(figDir, 'fig_cumulativeFixTimeInset.pdf'))
 
 % fixTimeFor = arrayfun(@(x) mean(x.fixtime.fixTimeFor(:) ./ x.fixtime.exTimeFor(:)), Sc(good));
 fixTimeFix = arrayfun(@(x) mean(x.fixtime.fixTimeFix(:) ./ x.fixtime.exTimeFix(:)), Sc(good));
@@ -320,20 +292,21 @@ plot([0 5], [5 5], 'k:')
 plot([5 5], [0 5], 'k:')
 
 plot.formatFig(gcf, [2 1.8], 'nature')
-saveas(gcf, fullfile(figDir, 'Fig02_cumulativeFixTime.pdf'))
+saveas(gcf, fullfile(figDir, 'fig_cumulativeFixTime.pdf'))
 
 %% Total experiment time
+bnds = [0 100];
 totalTime = arrayfun(@(x) x.All.totalDuration, S)/60;
-fprintf('Experiment Duration = %02.2f [%02.2f, %02.2f] minutes (n=%d)\n', median(totalTime), prctile(totalTime, [2.5 97.5]), numel(S))
+fprintf('Experiment Duration = %02.2f, range = [%02.2f, %02.2f] minutes (n=%d)\n', median(totalTime), prctile(totalTime, bnds), numel(S))
 
 
 hasStim = arrayfun(@(x) isfield(x.Dots, 'totalDuration'), S);
 totalTime = arrayfun(@(x) x.Dots.totalDuration, S(hasStim))/60;
-fprintf('Dot-mapping Duration = %02.2f [%02.2f, %02.2f] minutes (n=%d)\n', median(totalTime), prctile(totalTime, [2.5 97.5]), sum(hasStim))
+fprintf('Dot-mapping Duration = %02.2f, range [%02.2f, %02.2f] minutes (n=%d)\n', median(totalTime), prctile(totalTime, bnds), sum(hasStim))
 
 hasStim = arrayfun(@(x) isfield(x.Grating, 'totalDuration'), S);
 totalTime = arrayfun(@(x) x.Grating.totalDuration, S(hasStim))/60;
-fprintf('Grating Duration = %02.2f [%02.2f, %02.2f] minutes (n=%d)\n', median(totalTime), prctile(totalTime, [2.5 97.5]), sum(hasStim))
+fprintf('Grating Duration = %02.2f, range = [%02.2f, %02.2f] minutes (n=%d)\n', median(totalTime), prctile(totalTime, bnds), sum(hasStim))
 
 
 figure(2); clf

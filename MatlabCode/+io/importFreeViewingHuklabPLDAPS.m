@@ -22,15 +22,21 @@ assert(exist(DataFolder, 'dir')==7, 'importFreeViewing: raw data path does not e
 pdsfiles = dir(fullfile(DataFolder, '*.PDS'));
 kwefiles = dir(fullfile(DataFolder, '*.kwe'));
 
+
+
 D = struct();
 D.treadTime = [];
 D.treadSpeed = [];
 D.treadPos = [];
 D.GratingOnsets = [];
 D.GratingOffsets = [];
+D.GratingContrast = [];
 D.GratingDirections = [];
 D.GratingFrequency = [];
 D.GratingSpeeds = [];
+D.frameTimes = [];
+D.framePhase = [];
+D.frameContrast = [];
 D.eyeTime = [];
 D.eyePos = [];
 D.eyeLabels = [];
@@ -125,6 +131,7 @@ for iFile = 1:numel(pdsfiles)
                 gratingOffset = ft(end) + trialStart;
             end
             
+            D.GratingContrast = [D.GratingContrast; gratParams.contrast];
             D.GratingOnsets = [D.GratingOnsets; gratingOnset];
             D.GratingOffsets = [D.GratingOffsets; gratingOffset];
             D.GratingDirections = [D.GratingDirections; gratParams.dirs];
@@ -182,7 +189,7 @@ for iFile = 1:numel(pdsfiles)
     end
     
     % --- exclude negative times
-    gratFields = {'GratingDirections', 'GratingFrequency', 'GratingOffsets', 'GratingOnsets', 'GratingSpeeds'};
+    gratFields = {'GratingDirections', 'GratingFrequency', 'GratingOffsets', 'GratingOnsets', 'GratingSpeeds', 'GratingContrast'};
     iix = D.GratingOnsets < 0;
     for iField = 1:numel(gratFields)
        D.(gratFields{iField})(iix) = [];

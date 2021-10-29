@@ -71,7 +71,7 @@ end
 
 ylim([-1 1]*40)
 
-saveas(gcf, 'Figures/manuscript_freeviewing/fig05_ExampleFixation.pdf')
+saveas(gcf, 'Figures/manuscript_freeviewing/fig_ExampleFixation.pdf')
 
 %% Loop over sessions, get distribution
 eyesmoothing = 19;
@@ -203,7 +203,7 @@ xlabel('Horizontal (arcmin)')
 ylabel('Vertical position (arcmin)')
 
 plot.fixfigure(gcf, 7, [2.5 2])
-saveas(gcf, 'Figures/manuscript_freeviewing/fig05_FixationDistribution.pdf')
+saveas(gcf, 'Figures/manuscript_freeviewing/fig_FixationDistribution.pdf')
 
 %%
 
@@ -225,7 +225,7 @@ xlabel('Miscrosaccade / Sec')
 ylabel('Proportion')
 
 plot.fixfigure(gcf, 7, [2.5 2])
-saveas(gcf, 'Figures/manuscript_freeviewing/fig05_MicrosacRate.pdf')
+saveas(gcf, 'Figures/manuscript_freeviewing/fig_MicrosacRate.pdf')
 
 fprintf('Microsaccade rate:\nmedian = %02.2f [%02.2f, %02.2f]\n', median(nsac./fdur), bootci(1000, @median, nsac./fdur))
 
@@ -241,16 +241,16 @@ tstop = Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, Exp.D(validTrials)));
 
 eyeTime = Exp.vpx2ephys(Exp.vpx.smo(:,1));
 
-%%
-ii = ii + 1;
-figure(1); clf
-for tt = 1:numel(Fstat(ii).trial)
-    
-    tinds = Fstat(ii).trial(tt).start_ind:Fstat(ii).trial(tt).stop_ind;
-    
-    plot(Fstat(ii).trial(tt).time(tinds), hypot(Fstat(ii).trial(tt).x(tinds), Fstat(ii).trial(tt).y(tinds))); hold on
-    
-end
+% %%
+% ii = ii + 1;
+% figure(1); clf
+% for tt = 1:numel(Fstat(ii).trial)
+%     
+%     tinds = Fstat(ii).trial(tt).start_ind:Fstat(ii).trial(tt).stop_ind;
+%     
+%     plot(Fstat(ii).trial(tt).time(tinds), hypot(Fstat(ii).trial(tt).x(tinds), Fstat(ii).trial(tt).y(tinds))); hold on
+%     
+% end
 
 %%
 

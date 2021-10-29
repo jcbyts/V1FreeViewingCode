@@ -28,7 +28,7 @@ load(wname)
 
 %% Explore
 
-iEx = 70;
+iEx = 45;
 
 fprintf('Loading session [%s]\n', sesslist{iEx})
 Exp = io.dataFactory(sesslist{iEx}, 'spike_sorting', Sgt{iEx}.sorter);

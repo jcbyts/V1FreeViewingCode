@@ -7,7 +7,7 @@ addFreeViewingPaths(user);
 
 % addpath Analysis/202001_K99figs_01  
 addpath Analysis/manuscript_freeviewingmethods/
-figDir = 'Figures/manuscript_freeviewing/fig07';
+figDir = 'Figures/manuscript_freeviewing/fig05';
 %% Load analyses from prior steps
 
 sesslist = io.dataFactory;
@@ -49,7 +49,7 @@ else
                 Exp = io.dataFactoryGratingSubspace(sesslist{iEx}, 'spike_sorting', Srf{iEx}.sorter);
                 
 %                 evalc('rf_pre = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, ''plot'', false, ''usestim'', ''pre'', ''alignto'', ''fixon'');');
-                evalc('rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, ''plot'', true, ''usestim'', ''post'', ''alignto'', ''fixon'');');
+                evalc('rf_post = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, ''plot'', false, ''usestim'', ''post'', ''alignto'', ''fixon'');');
                 
                 fftrf{iEx} = struct();
 %                 fftrf{iEx}.rfs_pre = rf_pre;
@@ -121,12 +121,14 @@ else
     save(wname, '-v7.3', 'Waveforms')
     
 end
-%% plot example Unit
-fields = {'rfs_post'}; %, 'rfs_pre'
+
+
+%% plot example Unit (if debugging)
+fields = {'rfs_post'};
 field = fields{1};
 cmap = lines;
 
-iEx = 56;
+iEx = 45;
 if ~exist('cc', 'var'), cc = 1; end
 cc = cc + 1;
 
@@ -176,6 +178,14 @@ for  f = 1
     xlabel('Time from fixation')
     ylabel('Firing Rate')
 end
+
+subplot(3,2,5)
+plot(fftrf{iEx}.(field)(cc).lags, fftrf{iEx}.(field)(cc).corrrho)
+
+subplot(3,2,6)
+plot(fixrat{iEx}.Grating.lags, fixrat{iEx}.Grating.meanRate(cc,:))
+hold on
+plot(fixrat{iEx}.BackImage.lags, fixrat{iEx}.BackImage.meanRate(cc,:))
 
 plot.suplabel(sprintf('%s Unit %d', strrep(sesslist{iEx}, '_', ' '), cc), 't');
 
@@ -323,14 +333,14 @@ iEx = 45;
 fprintf('Loading session [%s]\n', sesslist{iEx})
 Exp = io.dataFactory(sesslist{iEx}, 'spike_sorting', Srf{iEx}.sorter);
 % run fftrf analysis with additional meta data
-[rf_post, plotmeta] = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', false, 'plot', false, 'usestim', 'post', 'alignto', 'fixon');
+[rf_post, plotmeta] = fixrate_by_fftrf(Exp, Srf{iEx}, Sgt{iEx}, 'debug', false, 'plot', true, 'usestim', 'post', 'alignto', 'fixon');
 % run fixrate analysis with additional meta data
 [~, pmeta] = fixrate_by_stim(Exp, 'stimSets', {'Grating', 'BackImage'}, 'plot', false);
 
 %% MAKE FIGURE 07
          
 fig = figure(3); clf
-fig.Position = [100 100 600 400];
+fig.Position = [600 400 600 400];
 fig.Color = 'w';
 m = 3;
 n = 4;
@@ -338,16 +348,13 @@ layout1 = tiledlayout(m,n);
 layout1.TileSpacing = 'compact';
 layout1.Padding = 'compact';
 
-% cc = 17;
+cc = 19;
 % cc = cc + 1;
 % if cc > numel(rf_post)
 %     cc = 1;
 % end
 % disp(cc)
-cc = 40;
-% cc = 22; 35
-% cc = 38;
-% cc = 23; 
+
 % -- RASTER
 ax = nexttile([2 2]);
 
@@ -383,7 +390,7 @@ for istim = 1:2
         off = num;
     end
     
-    plot.raster(lags(j(ix)), i(ix)+off, 2, 'Color', clrs(istim,:)); axis tight
+    plot.raster(lags(j(ix)), i(ix)+off, 3, 'Color', clrs(istim,:), 'Linewidth', 1); axis tight
     hold on
     cmap = lines;
     plot.raster(fixdur(ind), (1:numel(ind))+off, 2, 'Color', 'k');
@@ -431,6 +438,7 @@ plot.offsetAxes(ax, true, 8)
 % -- POPULATION FIRING RATE
 ix = sigs & sigg;
 ix = ix & wfamp > 40; %ecrl > 1 & ecru > 2;
+ix = ix & nipeakt>0 & nipeakv>0 & grpeakt>0 & grpeakv>0;
 
 ax = nexttile(3, [2 2]);
 mnorm = median([nimrate(ix,:) grmrate(ix,:)],2);
@@ -478,18 +486,51 @@ ax.TickDir = 'out';
 ax.TickLength = ax.TickLength*2;
 
 plot.fixfigure(fig, 8, [5 4], 'offsetAxes', false)
-% saveas(gcf, fullfile(figDir, sprintf('stim_rate_%s_%d.pdf', sesslist{iEx}, cc)));
+saveas(gcf, fullfile(figDir, sprintf('stim_rate_%s_%d.pdf', sesslist{iEx}, cc)));
+
+%% --- print some statistics
+vrat = nipeakv(ix)./grpeakv(ix);
+[gm, gmci] = geomeanci(vrat);
+fprintf("Amplitude ratio: NI amplitudes %02.2f [%02.2f, %02.2f] times larger\n", gm, gmci(1), gmci(2))
+
+mu0 = 1;
+[h,pval,~,tstats] = ttest(vrat, mu0);
+if h
+    fprintf('Reject the null hypothesis that Grating and Nat Image amplitudes are the same\n')
+else
+    fprintf('Cannot reject the null hypothesis\n')
+end
+fprintf('two-sided ttest. t(%d) = %02.4f, p = %d\n', tstats.df, tstats.tstat, pval)
+
+
+trat = grpeakt(ix)./nipeakt(ix);
+[gm, gmci] = geomeanci(trat);
+fprintf("Latency ratio: gratings are %02.2f [%02.2f, %02.2f] times slower\n", gm, gmci(1), gmci(2))
+
+mu0 = 1;
+[h,pval,~,tstats] = ttest(trat, mu0);
+if h
+    fprintf('Reject the null hypothesis that Grating and Nat Image latencies are the same\n')
+else
+    fprintf('Cannot reject the null hypothesis\n')
+end
+fprintf('two-sided ttest. t(%d) = %02.4f, p = %d\n', tstats.df, tstats.tstat, pval)
+
+
+
+%%
+
 
 
 fig = figure(4); clf
-fig.Position = [100 100 600 400];
+fig.Position = [1 1 600 400];
 set(fig, 'Color', 'w')
 % -- FIXATIONS ON NATURAL IMAGE
 % 
 ax = axes('Position', [.05 .65 .25 .25]); %'Units', 'Pixels');
 % ax.Position = [40 280 150 100];
 C = plotmeta.clustMeta(plotmeta.clusts(cc));
-ii = 2168; %randi(size(C.fixMeta,1));
+ii = randi(size(C.fixMeta,1));
 thisTrial = C.fixMeta(ii,1);
 fixix = find(C.fixMeta(:,1)==thisTrial);
 fixix = fixix(1:4);
@@ -543,7 +584,7 @@ aa.HeadStyle = 'vback1';
 % -- FFT IN WINDOW
 ax = axes('Position', [.41 .75 .1 .15]);
 I = abs(squeeze(C.fftIms(:,:,fixix(end),2)));
-imagesc(fftrf{iEx}.rfs_post(cc).rf.kx, fftrf{iEx}.rfs_post(cc).rf.ky, I);
+imagesc(rf_post(cc).rf.kx, rf_post(cc).rf.ky, I);
 % ax.YTick = [-8 0 8]; ax.XTick = [];
 axis square
 title("Frequency")
@@ -558,7 +599,7 @@ aa.HeadStyle = 'vback1';
 
 % -- GRATING RF
 ax = axes('Position', [.56 .75 .1 .15]);
-imagesc(fftrf{iEx}.rfs_post(cc).rf.kx, fftrf{iEx}.rfs_post(cc).rf.ky, fftrf{iEx}.rfs_post(cc).rf.Ifit)
+imagesc(rf_post(cc).rf.kx, rf_post(cc).rf.ky, rf_post(cc).rf.Ifit)
 xlim([-8 8])
 ylim([-8 8])
 ax.YTick = []; ax.XTick = [];
@@ -571,19 +612,19 @@ aa.HeadStyle = 'vback1';
 
 % -- Generator Signal
 ax = axes('Position', [.72 .68 .25 .25]) ;
-[x,y] = stairs(fftrf{iEx}.rfs_post(cc).xproj.bins, fftrf{iEx}.rfs_post(cc).xproj.cnt);
+[x,y] = stairs(rf_post(cc).xproj.bins, rf_post(cc).xproj.cnt);
 mn = min(x);
 mx = max(x);
 my = max(y);
 fill([x(1) x' x(end)], [0 y' 0], 'k', 'FaceColor', .5*[1 1 1], 'EdgeColor', .5*[1 1 1]); hold on
 % Null
-iix = find(fftrf{iEx}.rfs_post(cc).xproj.bins <= fftrf{iEx}.rfs_post(cc).xproj.levels(1));
+iix = find(rf_post(cc).xproj.bins <= rf_post(cc).xproj.levels(1));
 if numel(iix) == 1, iix = [iix iix + 1]; end
-[x,y] = stairs(fftrf{iEx}.rfs_post(cc).xproj.bins(iix), fftrf{iEx}.rfs_post(cc).xproj.cnt(iix));
+[x,y] = stairs(rf_post(cc).xproj.bins(iix), rf_post(cc).xproj.cnt(iix));
 fill([x(1) x' x(end)], [0 y' 0], 'k', 'FaceColor', cmap(5,:), 'EdgeColor', cmap(5,:))
 % Preferred
-iix = fftrf{iEx}.rfs_post(cc).xproj.bins >= fftrf{iEx}.rfs_post(cc).xproj.levels(2);
-[x,y] = stairs(fftrf{iEx}.rfs_post(cc).xproj.bins(iix), fftrf{iEx}.rfs_post(cc).xproj.cnt(iix));
+iix = rf_post(cc).xproj.bins >= rf_post(cc).xproj.levels(2);
+[x,y] = stairs(rf_post(cc).xproj.bins(iix), rf_post(cc).xproj.cnt(iix));
 fill([x(1) x' x(end)], [0 y' 0], 'k', 'FaceColor', cmap(1,:), 'EdgeColor', cmap(1,:))
 ax.YTick = []; ax.XTick = [0];
 ax.TickDir = "out";
@@ -597,11 +638,11 @@ xlim([mn-.1*(mx-mn) max(xlim)])
 
 % --- FFTRF RATE (example unit)
 ax = axes('Position', [.08 .3 .25 .25]);
-lags = fftrf{iEx}.rfs_post(cc).lags;
-m1 = fftrf{iEx}.rfs_post(cc).rateHi;
-m2 = fftrf{iEx}.rfs_post(cc).rateLow;
-s1 = fftrf{iEx}.rfs_post(cc).stdHi/sqrt(fftrf{iEx}.rfs_post(cc).nHi);
-s2 = fftrf{iEx}.rfs_post(cc).stdLow/sqrt(fftrf{iEx}.rfs_post(cc).nLow);
+lags = rf_post(cc).lags;
+m1 = rf_post(cc).rateHi;
+m2 = rf_post(cc).rateLow;
+s1 = rf_post(cc).stdHi/sqrt(rf_post(cc).nHi);
+s2 = rf_post(cc).stdLow/sqrt(rf_post(cc).nLow);
 plot.errorbarFill(lags, m1, s1, 'k', 'FaceColor', cmap(1,:), 'EdgeColor', cmap(1,:)); hold on
 plot.errorbarFill(lags, m2, s2, 'k', 'FaceColor', cmap(5,:), 'EdgeColor', cmap(5,:));
 xlim([-.05 .3])
@@ -642,8 +683,8 @@ ylabel('Relative Rate')
 ax = axes('Position', [.75 .3 .22 .25]);
 % plot(lags, mean(fftpval < 0.05)); hold on
 % plot(lags, mean(fftpBH(ix,:))); hold on
-x = lags;
-y = mean(fftpBY(ix,:));
+% x = lags;
+% y = mean(fftpBY(ix,:));
 [x,y] = stairs(lags, mean(fftpBY(ix,:)));
 fill([x(1) x(:)' x(end)],[0 y(:)' 0], 'k', 'FaceColor', .5*[1 1 1], 'EdgeColor', 'none'); hold on
 plot(x, y, 'k')
@@ -662,173 +703,23 @@ fname = fullfile(figDir, sprintf('fft_rate_%s_%d.pdf', sesslist{iEx}, cc));
 % saveas(gcf, fname);
 print(gcf,fname,'-dpdf','-painters');
 
-
 %%
-figure(1); clf
+nboots = 500;
+ixearly = lags > 0 & lags < .1;
+ixlate = lags > .1 & lags < .2;
 
-psig = fftpBY(ix,:);
-rho = fftcorr(ix,:);
-rho(~psig) = nan;
-plot.errorbarFill(lags, nanmean(rho), nanstd(rho)./sqrt(sum(psig)), 'k--', 'FaceColor', 'w'); hold on
-plot(lags, nanmean(rho), 'k')
-xlabel('Time (s)')
-ylabel('Correlation Coefficient')
-xlim([-.05 .3])
-%%
-cc = cc + 1;
-if cc > numel(rf_post)
-    cc = 1;
-end
-figure(1); clf
-subplot(1,2,1);
-plot(rf_post(cc).lags, rf_post(cc).rateHi); hold on
-plot(rf_post(cc).lags, rf_post(cc).rateLow);
-xlim([-0.05 .3]);
+pIndexed = fftpBY(ix,:);
 
-subplot(1,2,2)
-plot(rf_post(cc).lags, rf_post(cc).corrrho); hold on
-sigix = benjaminiHochbergFDR(rf_post(cc).corrp, 0.05);
-plot(rf_post(cc).lags(sigix), rf_post(cc).corrrho(sigix), '.');
-sigix = benjaminiYekutieli(rf_post(cc).corrp, 0.05);
-plot(rf_post(cc).lags(sigix), rf_post(cc).corrrho(sigix), 'o');
-xlim([-0.05 .3]);
+fun = @(x) mean(sum(x,2) > 0);
+mu_early = fun(pIndexed(:,ixearly));
+ci_early = bootci(nboots, fun, pIndexed(:,ixearly));
+
+mu_late = fun(pIndexed(:,ixlate));
+ci_late = bootci(nboots, fun, pIndexed(:,ixlate));
+
+fprintf('%02.2f [%02.2f,%02.2f] significant in first 100ms\n', mu_early, ci_early(1), ci_early(2))
+fprintf('%02.2f [%02.2f,%02.2f] significant in second 100ms\n', mu_late, ci_late(1), ci_late(2))
 
 
 
 
-
-%%
-earlyix = lags > 0.01 & lags < 0.1;
-emodh = sum(nrateHi(ix, earlyix),2);
-emodl = sum(nrateLow(ix, earlyix),2);
-lateix = lags > 0.1 & lags < 0.25;
-lmodh = sum(nrateHi(ix, lateix),2);
-lmodl = sum(nrateLow(ix, lateix),2);
-
-figure(4); clf
-plot(lmodl, lmodh, 'o'); hold on
-plot(emodl, emodh, 'o'); hold on
-plot(xlim, xlim, 'k')
-
-%%
-cc = randsample(find(ix), 1);
-figure(4); clf; %plot(nrateHi(cc,:), nrateLow(cc,:)); hold on
-
-
-subplot(1,2,1)
-[cnt, xedges, yedges] = histcounts2(nrateHi(ix,earlyix), nrateLow(ix,earlyix), 0:.05:5, 0:.05:5);
-imagesc(xedges, yedges, cnt); hold on
-plot(xlim, xlim, 'r')
-plot([0 1], [1 1], 'r')
-plot([1 1], [0 1], 'r')
-axis xy
-
-subplot(1,2,2)
-[cnt, xedges, yedges] = histcounts2(nrateHi(ix,lateix), nrateLow(ix,lateix), 0:.05:5, 0:.05:5);
-imagesc(xedges, yedges, cnt); hold on
-plot(xlim, xlim, 'r')
-plot([0 1], [1 1], 'r')
-plot([1 1], [0 1], 'r')
-axis xy
-colormap(plot.viridis)
-%% Population summary
-
-lags = fftrf{1}.rfs_post(1).lags;
-iix = lags>-.05 & lags<0; 
-
-mnorm = mean(mrateHi(:,iix),2);
-
-nrateHi = mrateHi ./ mnorm;
-nrateLow = mrateLow ./ mnorm;
-
-% index
-ix = sigs & sigg;
-ix = ix & wfamp > 40; %ecrl > 1 & ecru > 2;
-
-figure(1); clf
-imagesc(lags, find(ix), (nrateHi(ix,:) - nrateLow(ix,:)))
-
-figure(2); clf
-cmap = lines;
-plot.errorbarFill(lags, nanmean(nrateHi(ix,:)), nanstd(nrateHi(ix,:))/sqrt(sum(ix)), 'k', 'FaceColor', cmap(1,:), 'EdgeColor', cmap(1,:), 'FaceAlpha', .8); hold on
-plot(lags, nanmean(nrateHi(ix,:)), 'Color', cmap(1,:));
-plot.errorbarFill(lags, nanmean(nrateLow(ix,:)), nanstd(nrateLow(ix,:))/sqrt(sum(ix)), 'k', 'FaceColor', cmap(5,:), 'EdgeColor', cmap(5,:), 'FaceAlpha', .8);
-plot(lags, nanmean(nrateLow(ix,:)), 'Color', cmap(5,:));
-xlim([-.05 .3])
-
-text(0.2, 4, sprintf("n=%d",sum(ix)))
-
-figure(3); clf
-X = [rflag(ix), nipeakt(ix)*1e3];
-mu = mean(X);
-[u,s] = svd(cov(X));
-plot(X(:,1), X(:,2), 'o')
-hold on
-m = u(2)./u(1);
-b = mu(2) - m * mu(1);
-xd = xlim;
-yd = ylim;
-xd(1) = min(xd(1), yd(1));
-xd(2) = max(xd(2), yd(2));
-plot(xd, b + m*xd, 'r')
-xlabel("Receptive Field Lag (ms)")
-ylabel("Fixation Transient (ms)")
-plot(xd, xd, 'k')
-xlim(xd)
-ylim(xd)
-
-
-X = [rflag(ix), nipeakt(ix)*1e3];
-[rho, pval] = corr(X(:,1), X(:,2));
-if pval < 0.001
-    fprintf("RF lag and Fixation transient are significantly correlated:\n")
-else
-    fprintf("RF lag and Fixation transient are NOT significantly correlated:\n")
-end
-fprintf("Rho: %02.3f, pval: %d\n", rho, pval)
-
-
-%% plot
-
-% ix = ix & nipeakt > -0.05 & nipeakt < 0.1 & nitrot > -0.05 & nitrot < 0.1;
-% ix = ix & grpeakt > -0.05 & grpeakt < 0.1 & grtrot > -0.05 & grtrot < 0.1;
-% 
-
-sum(ix)
-
-
-figure(1); clf
-relrateni = nimrate(ix,:) ./ median(nimrate(ix,:),2) - 1;
-relrategr = grmrate(ix,:) ./ median(grmrate(ix,:),2) - 1;
-lags = linspace(-.1, .5, 601);
-cmap = lines;
-plot.errorbarFill(lags, mean(relrateni), 2*std(relrateni)/sqrt(sum(ix)), 'k', 'FaceColor', cmap(1,:), 'EdgeColor', 'None', 'FaceAlpha', .8); hold on
-plot.errorbarFill(lags, mean(relrategr), 2*std(relrategr)/sqrt(sum(ix)), 'k', 'FaceColor', cmap(4,:), 'EdgeColor', 'None', 'FaceAlpha', .8);
-xlim([-.1 .25])
-
-
-figure(2); clf
-plot(nipeakt(ix), nipeakv(ix), 'o', 'Color', 'w', 'MarkerFaceColor', cmap(1,:)); hold on
-plot(grpeakt(ix), grpeakv(ix), 'o', 'Color', 'w', 'MarkerFaceColor', cmap(4,:));
-plot(nitrot(ix), nitrov(ix), 'o', 'Color', cmap(1,:), 'MarkerFaceColor', 'w'); hold on
-plot(grtrot(ix), grtrov(ix), 'o', 'Color', cmap(4,:), 'MarkerFaceColor', 'w');
-
-
-X = [nipeakt(ix), nipeakv(ix)];
-mu = mean(X);
-plot.plotellipse(mean(X), cov(X), 1, '-', 'Color', cmap(1,:), 'Linewidth', 2); hold on
-X = [grpeakt(ix), grpeakv(ix)];
-disp(mu-mean(X))
-plot.plotellipse(mean(X), cov(X), 1, '-', 'Color', cmap(4,:), 'Linewidth', 2);
-
-
-figure(4); clf
-plot(nipeakt(ix), grpeakt(ix), 'o'); hold on
-xlim([0 .2])
-ylim([0 .2])
-plot(xlim, xlim, 'k')
-xlabel('Natural Image (s)')
-ylabel('Flashed Gratings (s)')
-title('Peak Lag')
-
-%%

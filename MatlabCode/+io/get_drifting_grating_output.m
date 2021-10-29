@@ -4,6 +4,7 @@ function D = get_drifting_grating_output(Exp, varargin)
 ip = inputParser();
 ip.addParameter('plot', true)
 ip.addParameter('wheelsmoothing', 15)
+ip.addParameter('remove_breaks', false)
 ip.parse(varargin{:})
 %% Grating tuning
 
@@ -15,6 +16,10 @@ else
     tonsets = [];
     toffsets = [];
     directions = [];
+    contrasts = [];
+    frameContrast = [];
+    phases = [];
+    frameTimes = [];
     speeds = [];
     freq = [];
     treadTime = [];
@@ -22,7 +27,8 @@ else
     wheelpos = [];
     % figure(1); clf
     
-    for iTrial = validTrials(:)'
+    for iTrial = 1:numel(Exp.D)
+        
         % treadmill position and time
         pos = Exp.D{iTrial}.treadmill.locationSpace(:,4); % convert to meters
         ttime = Exp.D{iTrial}.treadmill.locationSpace(:,1);
@@ -79,7 +85,11 @@ else
         treadSpeed = [treadSpeed; spd];
         wheelpos = [wheelpos; pos(treadIx)];
         
-        % Fields:
+        if ~ismember(iTrial,validTrials)
+            continue
+        end
+        
+        % Stimulus Fields:
         % time, orientation, cpd, phase, direction, speed, contrast
         contrast = Exp.D{iTrial}.PR.NoiseHistory(:,7);
         
@@ -100,6 +110,10 @@ else
         TrialSpeeds = Exp.D{iTrial}.PR.NoiseHistory(onsets,6);
         TrialFreq = Exp.D{iTrial}.PR.NoiseHistory(onsets,3);
         
+        TrialPhase = Exp.D{iTrial}.PR.NoiseHistory(:,4);
+        TrialFrames = Exp.D{iTrial}.PR.NoiseHistory(:,1);
+        goodFrames = TrialFrames > trialStart;
+        
         goodStim = TrialOnsets > trialStart; % ignore stimuli in the bad zone at start of trial
         
         tonsets = [tonsets; TrialOnsets(goodStim)];
@@ -107,9 +121,15 @@ else
         directions = [directions;  TrialDirections(goodStim)];
         speeds = [speeds; TrialSpeeds(goodStim)];
         freq = [freq; TrialFreq(goodStim)];
+        contrasts = [contrasts; contrast(goodStim)];
+        
+        frameTimes = [frameTimes; TrialFrames(goodFrames)];
+        frameContrast = [frameContrast; contrast(goodFrames)];
+        phases = [phases; TrialPhase(goodFrames)];
         
     end
     
+    frameTimes = Exp.ptb2Ephys(frameTimes);
     tonsets = Exp.ptb2Ephys(tonsets);
     toffsets = Exp.ptb2Ephys(toffsets);
     treadTime = Exp.ptb2Ephys(treadTime);
@@ -118,7 +138,7 @@ else
     st = Exp.spikeTimes;
     clu = Exp.spikeIds;
     eyeTime = Exp.vpx2ephys(Exp.vpx.smo(:,1));
-    eyePos = Exp.vpx.smo(:,2:3);
+    eyePos = Exp.vpx.smo(:,2:4);
     
     % build struct
     D = struct();
@@ -132,6 +152,10 @@ else
     D.GratingDirections = directions;
     D.GratingFrequency = freq;
     D.GratingSpeeds = speeds;
+    D.GratingContrast = contrasts;
+    D.frameTimes = frameTimes;
+    D.framePhase = phases;
+    D.frameContrast = frameContrast;
     D.eyeTime = eyeTime;
     D.eyePos = eyePos;
     D.eyeLabels = Exp.vpx.Labels;
@@ -140,70 +164,90 @@ else
     
 end
 
-% --- cut out breaks in data (from other trial types)
-breaks = diff(D.GratingOnsets);
-breakStart = D.GratingOnsets(breaks>10) + 1;
-breakStop = D.GratingOnsets(find(breaks>10)+1) - 1;
-
 plotGratingData(D)
-t = breakStart;
-plot((t*[1 1])', (ones(numel(t),1)*ylim)', 'k', 'Linewidth', 2)
-t = breakStop;
-plot((t*[1 1])', (ones(numel(t),1)*ylim)', 'k--', 'Linewidth', 2)
-drawnow
 
-% remove spike times during brea
-lastOffset = D.GratingOffsets(end) + 2;
-firstOnset = D.GratingOnsets(1) - 2;
-ix = getTimeIdx(D.spikeTimes, breakStart, breakStop) | D.spikeTimes > lastOffset | D.spikeTimes < firstOnset;
-fprintf("Removing %d spikes that occured outside the stimulus trials\n", sum(ix));
-D.spikeTimes(ix) = [];
-D.spikeIds(ix) = [];
-
-ix = getTimeIdx(D.eyeTime, breakStart, breakStop) | D.eyeTime > lastOffset | D.eyeTime < firstOnset;
-fprintf("Removing %d eye pos samples that occured outside the stimulus trials\n", sum(ix));
-D.eyeTime(ix) = [];
-D.eyePos(ix,:) = [];
-D.eyeLabels(ix) = [];
-
-ix = getTimeIdx(D.treadTime, breakStart, breakStop) | D.treadTime > lastOffset | D.treadTime < firstOnset;
-fprintf("Removing %d eye pos samples that occured outside the stimulus trials\n", sum(ix));
-D.treadTime(ix) = [];
-D.treadSpeed(ix) = [];
-
-plotGratingData(D)
-t = breakStart;
-plot((t*[1 1])', (ones(numel(t),1)*ylim)', 'k', 'Linewidth', 2)
-t = breakStop;
-plot((t*[1 1])', (ones(numel(t),1)*ylim)', 'k--', 'Linewidth', 2)
-drawnow
-
-nBreaks = numel(breakStop);
-fprintf('Adjusting times to remove gaps\n')
-for iBreak = 1:nBreaks
+if ip.Results.remove_breaks
+    % --- cut out breaks in data (from other trial types)
+    breaks = diff(D.GratingOnsets);
+    breakStart = D.GratingOnsets(breaks>10) + 1;
+    breakStop = D.GratingOnsets(find(breaks>10)+1) - 1;
     
-    breakDur = breakStop(iBreak) - breakStart(iBreak);
     
-    plotGratingData(D)
-    plot(breakStart(iBreak)*[1 1], ylim, 'b', 'Linewidth', 2)
-    plot(breakStop(iBreak)*[1 1], ylim, 'b', 'Linewidth', 2)
+    t = breakStart;
+    plot((t*[1 1])', (ones(numel(t),1)*ylim)', 'k', 'Linewidth', 2)
+    t = breakStop;
+    plot((t*[1 1])', (ones(numel(t),1)*ylim)', 'k--', 'Linewidth', 2)
     drawnow
     
-    % adjust all subsequent times
-    D.spikeTimes(D.spikeTimes > breakStop(iBreak)) = D.spikeTimes(D.spikeTimes > breakStop(iBreak)) - breakDur;
-    D.GratingOnsets(D.GratingOnsets > breakStop(iBreak)) = D.GratingOnsets(D.GratingOnsets > breakStop(iBreak)) - breakDur;
-    D.GratingOffsets(D.GratingOffsets > breakStop(iBreak)) = D.GratingOffsets(D.GratingOffsets > breakStop(iBreak)) - breakDur;
-    D.eyeTime(D.eyeTime > breakStop(iBreak)) = D.eyeTime(D.eyeTime > breakStop(iBreak)) - breakDur;
-    D.treadTime(D.treadTime > breakStop(iBreak)) = D.treadTime(D.treadTime > breakStop(iBreak)) - breakDur;
+    % remove spike times during brea
+    lastOffset = D.GratingOffsets(end) + 2;
+    firstOnset = D.GratingOnsets(1) - 2;
+    ix = getTimeIdx(D.spikeTimes, breakStart, breakStop) | D.spikeTimes > lastOffset | D.spikeTimes < firstOnset;
+    fprintf("Removing %d spikes that occured outside the stimulus trials\n", sum(ix));
+    D.spikeTimes(ix) = [];
+    D.spikeIds(ix) = [];
     
-    if iBreak < nBreaks
-        breakStop((iBreak + 1):end) = breakStop((iBreak + 1):end) - breakDur;
-        breakStart((iBreak + 1):end) = breakStart((iBreak + 1):end) - breakDur;
+    ix = getTimeIdx(D.eyeTime, breakStart, breakStop) | D.eyeTime > lastOffset | D.eyeTime < firstOnset;
+    fprintf("Removing %d eye pos samples that occured outside the stimulus trials\n", sum(ix));
+    D.eyeTime(ix) = [];
+    D.eyePos(ix,:) = [];
+    D.eyeLabels(ix) = [];
+    
+    ix = getTimeIdx(D.treadTime, breakStart, breakStop) | D.treadTime > lastOffset | D.treadTime < firstOnset;
+    fprintf("Removing %d eye pos samples that occured outside the stimulus trials\n", sum(ix));
+    D.treadTime(ix) = [];
+    D.treadSpeed(ix) = [];
+    
+    ix = getTimeIdx(D.frameTimes, breakStart, breakStop) | D.frameTimes > lastOffset | D.frameTimes < firstOnset;
+    fprintf("Removing %d frames that occured outside the stimulus trials\n", sum(ix));
+    D.frameTimes(ix) = [];
+    D.framePhase(ix) = [];
+    D.frameContrast(ix) = [];
+    
+    plotGratingData(D)
+    t = breakStart;
+    plot((t*[1 1])', (ones(numel(t),1)*ylim)', 'k', 'Linewidth', 2)
+    t = breakStop;
+    plot((t*[1 1])', (ones(numel(t),1)*ylim)', 'k--', 'Linewidth', 2)
+    drawnow
+    
+    nBreaks = numel(breakStop);
+    fprintf('Adjusting times to remove gaps\n')
+    for iBreak = 1:nBreaks
+        
+        breakDur = breakStop(iBreak) - breakStart(iBreak);
+        
+        plotGratingData(D)
+        plot(breakStart(iBreak)*[1 1], ylim, 'b', 'Linewidth', 2)
+        plot(breakStop(iBreak)*[1 1], ylim, 'b', 'Linewidth', 2)
+        drawnow
+        
+        % adjust all subsequent times
+        D.spikeTimes(D.spikeTimes > breakStop(iBreak)) = D.spikeTimes(D.spikeTimes > breakStop(iBreak)) - breakDur;
+        D.frameTimes(D.frameTimes > breakStop(iBreak)) = D.frameTimes(D.frameTimes > breakStop(iBreak)) - breakDur;
+        D.GratingOnsets(D.GratingOnsets > breakStop(iBreak)) = D.GratingOnsets(D.GratingOnsets > breakStop(iBreak)) - breakDur;
+        D.GratingOffsets(D.GratingOffsets > breakStop(iBreak)) = D.GratingOffsets(D.GratingOffsets > breakStop(iBreak)) - breakDur;
+        D.eyeTime(D.eyeTime > breakStop(iBreak)) = D.eyeTime(D.eyeTime > breakStop(iBreak)) - breakDur;
+        D.treadTime(D.treadTime > breakStop(iBreak)) = D.treadTime(D.treadTime > breakStop(iBreak)) - breakDur;
+        
+        if iBreak < nBreaks
+            breakStop((iBreak + 1):end) = breakStop((iBreak + 1):end) - breakDur;
+            breakStart((iBreak + 1):end) = breakStart((iBreak + 1):end) - breakDur;
+        end
     end
+    
+    plotGratingData(D)
+    drawnow
 end
 
 D.sessNumGratings = ones(size(D.GratingOnsets));
 D.sessNumSpikes = ones(size(D.spikeTimes));
+
+pupil = D.eyePos(:,3);
+nanix = isnan(pupil);
+pad = filtfilt(ones(50,1)/50, 1, double(nanix));
+pupil(pad>0) = nan;
+D.eyePos(:,3) = pupil;
 
 function plotGratingData(D)
     figure(111); clf

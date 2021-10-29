@@ -1,4 +1,4 @@
-function [fftrf, plotopts] = fixrate_by_fftrf(Exp, srf, grf, varargin)
+function [fftrf, plotopts] = fixrate_by_fftrf_old(Exp, srf, grf, varargin)
 % S = fixrate_by_fftrf(Exp, srf, grf, varargin)
 % Calculate stimulus modulation using the spatial RF and grating RF
 % measured for each cell applied to the image at each fixation
@@ -43,32 +43,27 @@ end
 sm = ip.Results.smoothing;
 win = ip.Results.win; % centered on fixation start
 binsize = ip.Results.binsize; % raster resolution
-% valid fixations are longer than
-fixthresh = 0.2;
-    
+fixthresh = 0.25;
+
 stimulusSet = 'BackImage';
 validTrials = io.getValidTrials(Exp, stimulusSet);
 
-% trial starts and stops
 tstart = Exp.ptb2Ephys(cellfun(@(x) x.STARTCLOCKTIME, Exp.D(validTrials)));
 tstop = Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, Exp.D(validTrials)));
 
-% find all fixation times
+% fixation times
 fixon = Exp.vpx2ephys(Exp.slist(1:end-1,2));
 sacon = Exp.vpx2ephys(Exp.slist(2:end,1));
 
-% exclude fixations outside the ephys recording
 bad = (fixon+win(1)) < min(Exp.osp.st) | (fixon+win(2)) > max(Exp.osp.st);
 fixon(bad) = [];
 sacon(bad) = [];
 
-% which fixations coincided with this stimulus protocol?
 [valid, epoch] = getTimeIdx(fixon, tstart, tstop);
 fixon = fixon(valid);
 sacon = sacon(valid);
 fixTrial = epoch(valid);
 
-% sort by fixation duration
 fixdur = sacon - fixon;
 [~, ind] = sort(fixdur);
 
@@ -76,10 +71,10 @@ fixdur = sacon - fixon;
 eyeTime = Exp.vpx2ephys(Exp.vpx.smo(:,1)); % time
 remove = find(diff(eyeTime)==0); % bad samples
 
-% filter eye position with 1st order savitzy-golay filter
-eyeX = sgolayfilt(Exp.vpx.smo(:,2), 1, 19);
+% filter eye position with 3rd order savitzy-golay filter
+eyeX = sgolayfilt(Exp.vpx.smo(:,2), 3, 9); % smooth (preserving tremor)
 eyeX(isnan(eyeX)) = 0;
-eyeY = sgolayfilt(Exp.vpx.smo(:,3), 1, 19);
+eyeY = sgolayfilt(Exp.vpx.smo(:,3), 3, 9);
 eyeY(isnan(eyeY)) = 0;
 
 % remove bad samples
@@ -139,7 +134,7 @@ end
 
 disp('Done')
 
-%% For debugging: step through and check individual units
+%%
 %
 % cc = cc+1;
 % if cc > NC
@@ -172,10 +167,25 @@ condition = false;
 thresh = 2;
 collapse = true;
 
-rfLocations = srf.rfLocations;
-sig = srf.sig;
+rfLocations = nan(NC,2);
+sig = false(NC,1);
+sz = nan(NC,1);
+ms = nan(NC,1);
+for cc = 1:NC
+    if ~isempty(srf.rffit(cc).mu)
+        rfLocations(cc,:) = srf.rffit(cc).mu;
+        ms(cc) = (srf.rffit(cc).mushift/srf.rffit(cc).ecc);
+        sz(cc) = (srf.maxV(cc)./(srf.rffit(cc).ecc));
+        fprintf('%d) %02.2f, %02.2f\n', cc, ms(cc), sz(cc))
+        sig(cc) = ms(cc) < .5 & sz(cc) > 5;% & sz(cc) < 60;
+    end
+end
+
 
 rfLocations = rfLocations * Exp.S.pixPerDeg;
+
+%%
+
 
 nonsig = ~(sig);
 rfLocations(nonsig,:) = nan;
@@ -345,7 +355,7 @@ for clustGroup = unique(clusts(:)')
         open(vidObj);
     end
     
-    iic = clusts(:)==clustGroup & srf.sig(:);
+    iic = clusts==clustGroup & srf.maxV(:)>5;
     if sum(iic) == 1
         rfCenter = rfLocations(iic,:);
     else
@@ -354,25 +364,16 @@ for clustGroup = unique(clusts(:)')
     
     rfwidth = hypot(rfCenter(1), rfCenter(2));
     rfwidth = max(rfwidth, 1);
-    rfwidth = min(rfwidth, 3);
     rect = [-1 -1 1 1]*ceil(ppd*rfwidth); % window centered on RF
     dims = [rect(4)-rect(2) rect(3)-rect(1)];
-    
+    fixIms = zeros(dims(1), dims(2), nfix, 2);
+    fftIms = zeros(dims(1), dims(2), nfix, 2);
+    fixMeta = zeros(nfix, 4); % trial, x, y
     
     hwin = hanning(dims(1))*hanning(dims(2))';
     
-    nxfft = 2^nextpow2(dims(2));
-    nyfft = 2^nextpow2(dims(1));
-    
-%     nxfft = dims(2);
-%     nyfft = dims(1);
-    
-    xax = -nxfft/2:nxfft/2;
-    xax = xax / nxfft * ppd;
-    
-    fixIms = zeros(dims(1), dims(2), nfix, 2);
-    fftIms = zeros(nyfft, nxfft, nfix, 2);
-    fixMeta = zeros(nfix, 4); % trial, x, y
+    xax = -dims(1)/2:dims(1)/2;
+    xax = xax / dims(1) * ppd;
     
     %% do fixation clipping and compute fft
     nTrials = numel(validTrials);
@@ -382,7 +383,7 @@ for clustGroup = unique(clusts(:)')
     
     for iTrial = 1:nTrials
         
-        fprintf('%d/%d\t', iTrial, numel(validTrials))
+        fprintf('%d/%d\n', iTrial, numel(validTrials))
         
         thisTrial = validTrials(iTrial);
         
@@ -413,7 +414,6 @@ for clustGroup = unique(clusts(:)')
             drawnow
         end
         
-        fprintf('%d fixations...\n', nft)
         % loop over fixations
         for ifix = 1:nft
             
@@ -444,8 +444,6 @@ for clustGroup = unique(clusts(:)')
             end
             
             Iwin = (I - mean(I(:))).*hwin;
-            % window
-%             Iwin = I.*hwin;
             
             if ip.Results.makeMovie
                 subplot(132, 'align')
@@ -453,8 +451,8 @@ for clustGroup = unique(clusts(:)')
                 axis off
             end
             
-%             fIm = fftshift(fft2(Iwin));
-            fIm = fftshift(fft2(Iwin, nxfft, nyfft));
+            
+            fIm = fftshift(fft2(Iwin));
             
             
             if ip.Results.makeMovie
@@ -494,44 +492,20 @@ for clustGroup = unique(clusts(:)')
     
     %% Loop over units in group
     
-    % integration windows for spikes
-    Bearly = exp(- ((lags*1e3 - 80).^2/2/20^2));
-    Bearly = Bearly ./ sum(Bearly);
-    Blate = 1 ./ (1 + exp(- (lags*1e3 - 100) / 20));
-    Blate(lags>.3) = 0;
-    Blate = Blate ./ sum(Blate);
-    
-    
-        
-        
     clist = find(clusts==clustGroup);
     
-    % loop over cells in this cluster
     for cc = clist(:)'
-        
         [kx, ky] = meshgrid(xax(2:end), xax(2:end));
         [ori, cpd] = cart2pol(ky, kx);
         ori = wrapToPi(ori);
         
         params = grf.rffit(cc).pHat;
-        if isfield(grf.rffit(cc), 'fitfun')
-            fitfun = grf.rffit(cc).fitfun;
+        lg = strcmp(grf.sftuning, 'loggauss');
+        if ~isempty(params)
+            Ifit = prf.parametric_rf(params, [ori(:), cpd(:)], lg);
         else
-            fitfun = 'parametric_rf';
+            Ifit = randn(size(ori));
         end
-        
-        switch fitfun
-            case 'polarRF'
-                Ifit = prf.polarRF([ori(:)/pi*180 cpd(:)], params(1), params(2), params(3), params(4), params(5), params(6));
-            case 'parametric_rf'
-                lg = strcmp(grf.sftuning, 'loggauss');
-                if ~isempty(params)
-                    Ifit = prf.parametric_rf(params, [ori(:), cpd(:)], lg);
-                else
-                    Ifit = randn(size(ori));
-                end
-        end
-        
         
         oriPref = grf.rffit(cc).oriPref;
         if oriPref < 0
@@ -548,31 +522,30 @@ for clustGroup = unique(clusts(:)')
             xlabel('sf')
             ylabel('sf')
         end
-        
-        freshape = abs(reshape(fftIms(:,:,:,2), [nxfft*nyfft nfix]));
+        freshape = abs(reshape(fftIms(:,:,:,2), [prod(dims) nfix]));
         
         fproj = freshape'*rf(:);
         
-        good_trials= find(sum(freshape)~=0 & fixdur' > fixthresh);
+        good_trials= find(sum(freshape)~=0);
         if ip.Results.plot
             subplot(2,2,2)
             
         end
         
-        % get histogram of generator signal
-        [binCnt, binEdges] = histcounts(fproj(good_trials), 25);
-        binCenters = binEdges(1:end-1)+mean(diff(binEdges))/2;
+        % probably should switch to histcount (lazy)
+        h = histogram(fproj(good_trials), 'FaceColor', .5*[1 1 1]);
+        binEdges = h.BinEdges(1:end-1)+h.BinWidth/2;
+        binCnt = h.Values;
         
-        % percentile levels for generator signal
-        pref_null_levels = prctile(fproj(good_trials), [10 90]);
+        levels = prctile(fproj(good_trials), [10 90]);
         
-        lowix = good_trials(fproj(good_trials) < pref_null_levels(1));
-        hiix = good_trials(fproj(good_trials) > pref_null_levels(2));
+        lowix = good_trials(fproj(good_trials) < levels(1));
+        hiix = good_trials(fproj(good_trials) > levels(2));
         
         if ip.Results.plot
             hold on
-            plot(pref_null_levels(1)*[1 1], ylim, 'r', 'Linewidth', 2)
-            plot(pref_null_levels(2)*[1 1], ylim, 'b', 'Linewidth', 2)
+            plot(levels(1)*[1 1], ylim, 'r', 'Linewidth', 2)
+            plot(levels(2)*[1 1], ylim, 'b', 'Linewidth', 2)
             
             xlabel('Generator Signal')
             ylabel('Fixation Count')
@@ -581,9 +554,6 @@ for clustGroup = unique(clusts(:)')
             subplot(2,2,3)
         end
         
-        
-%         assert(sum(binCenters > pref_null_levels(2)) > 1)
-        
         spksfilt = filter(ones(sm,1), 1, squeeze(spks(:,cc,:))')';
         
         psthhi = mean(spksfilt(hiix,:))/binsize/sm;
@@ -591,24 +561,6 @@ for clustGroup = unique(clusts(:)')
         
         pstvhi = std(spksfilt(hiix,:))/binsize/sm;
         pstvlow = std(spksfilt(lowix, :))/binsize/sm;
-        
-        
-           
-       
-%         figure(2); clf
-%         plot(lags, Bearly); hold on
-%         plot(lags, Blate)
-        
-        % get pearson correlation between spikes and fftIm -- this is a
-        % sort of reverse correlation
-        y = spksfilt(good_trials,:);
-        X = abs(reshape(fftIms(:,:,:,2), [nxfft*nyfft nfix]));
-        X = X(:,good_trials);
-        
-        [rho, pval] = corr(fproj(good_trials,:), spksfilt(good_trials,:));
-        
-        nHi = numel(hiix);
-        nLow = numel(lowix);
         
         if ip.Results.plot
             plot.errorbarFill(lags, psthhi, pstvhi/sqrt(numel(hiix)), 'b', 'FaceColor', 'b'); hold on
@@ -620,145 +572,44 @@ for clustGroup = unique(clusts(:)')
             ylabel('Firing Rate')
             
             subplot(2,2,4)
-            plot(lags, rho, 'k'); hold on
+            plot(lags, (psthhi-psthlow) ./ sqrt( (pstvhi.^2 + pstvlow.^2)/2) , 'k'); hold on
+            % plot(xlim, [1 1], 'k--')
             xlim([-.05 .25])
             xlabel('Time from fix on (s)')
             ylabel('Ratio (pref / null)')
             
         end
-
-        steps = [.5 .15];
+        
+        
+        y = spksfilt;
+        X = abs(reshape(fftIms(:,:,:,2), [prod(dims) nfix]));
+        
+        steps = -.1:.05:.2;
         nsteps = numel(steps);
         frf = zeros([size(fIm) nsteps]);
         
-        ys = y*Bearly';
-        ysE = ys - mean(ys);
-        frf(:,:,1) = imgaussfilt(reshape(X*ysE./sum(X,2), size(fIm)));
-
-        ys = sum(y*Blate',2);
-        ysL = ys - mean(ys);
-        frf(:,:,2) = imgaussfilt(reshape(X*ysL./sum(X,2), size(fIm)), 1);
-        
-        % filter the stimulus in the orientation band but at different SFs
-        sfs = [1 2 4 8 10 16];
-        
-        switch fitfun
-            case 'polarRF'
-                sfbs = params(5)*[5 1 .5 .1 .5 1];
-                Ifits = nan(numel(ori), numel(sfs));
-                for i = 1:numel(sfs)
-                    Ifits(:,i) = prf.polarRF([ori(:)/pi*180 cpd(:)], params(1), params(2), sfs(i), params(4), sfbs(i), params(6));
-                end
-            case 'parametric_rf'
-                
-                
-                lg = strcmp(grf.sftuning, 'loggauss');
-                Ifits = nan(numel(ori), numel(sfs));
-                sfbs = nan*[5 1 .5 .1 .5 1];
-                if ~isempty(params)
-                    sfbs = params(4)*[5 1 .5 .1 .5 1];
-                    for i = 1:numel(sfs)
-                        params(3) = sfs(i);
-                        params(4) = sfbs(i);
-                        Ifits(:,i) = reshape(prf.parametric_rf(params, [ori(:), cpd(:)], lg), [], 1);
-                    end
-                end
+        for i = 1:nsteps
+            
+            win = [0 .1]+steps(i);
+            iix = lags > win(1) & lags < win(2);
+            ys = sum(y(:,iix),2);
+            ys = ys - mean(ys);
+            frf(:,:,i) = reshape(X*ys./sum(X,2), size(fIm));
         end
 
-        figure(2); clf
-        rhos = zeros(numel(lags), numel(sfs));
-        fprojs = freshape'*Ifits;
-        
-        vinds = double(lags <= fixdur(good_trials));
-        y = spksfilt(good_trials,:).*vinds;
-        for i = 1:numel(sfs)
-            subplot(1,numel(sfs), i)
-            imagesc(reshape(Ifits(:,i), size(ori)))
-            
-            [rhos(:,i), ~] = corr(fprojs(good_trials,i), y);
+        figure(10); clf
+        clim = [min(frf(:)) max(frf(:))];
+        for i = 1:nsteps
+            subplot(1,nsteps+1, i)
+            imagesc(frf(:,:,i), clim)
         end
+
+        subplot(1,nsteps+1,nsteps+1)
+        imagesc(xax, xax, rf)
+        colormap(viridis)
+        drawnow
         
-        %
-        figure(3); clf
-        cmap = jet(numel(sfs));
-        for i = 1:numel(sfs)
-            plot(lags, rhos(:,i), 'Color', cmap(i,:)); hold on
-        end
-        xlabel('Time from fixation')
-        ylabel('Pearson Correlation Coefficient')
-        legstr = arrayfun(@(x) sprintf('sf: %d', x), sfs, 'uni', 0);
-        legend(legstr{:})
-        
-        
-        figure(4); clf
-        plot(sfs, rhos'*Bearly', '-o'); hold on
-        plot(sfs, rhos'*Blate', '-o')
-        xlabel('Spatial Frequency')
-        ylabel('Rho')
-        legend({'Early spikes', 'Late Spikes'})
-        
-        mxspks = max(psthhi)*1.1;
-        
-        nsf = numel(sfs);
-        sfpsthhi = zeros(nlags, nsf);
-        sfpsthlow = zeros(nlags, nsf);
-        sfpstvhi = zeros(nlags, nsf);
-        sfpstvlow = zeros(nlags, nsf);
-        
-        if ip.Results.plot
-            figure(5); clf
-        end
-        
-        % loop over spatial frequencies, re compute levels and null pref
-        % plot
-        for i = 1:nsf
-            fproj = fprojs(:,i);
-            levels = prctile(fproj(good_trials), [10 90]);
-        
-            lowix = good_trials(fproj(good_trials) < levels(1));
-            hiix = good_trials(fproj(good_trials) > levels(2));
-        
-            sfpsthhi(:,i) = mean(spksfilt(hiix,:))/binsize/sm;
-            sfpsthlow(:,i) = mean(spksfilt(lowix, :))/binsize/sm;
-        
-            sfpstvhi(:,i) = std(spksfilt(hiix,:))/binsize/sm;
-            sfpstvlow(:,i) = std(spksfilt(lowix, :))/binsize/sm;
-            
-            if ip.Results.plot
-                try
-                subplot(1, numel(sfs), i)
-                plot.errorbarFill(lags, sfpsthhi(:,i), sfpstvhi(:,i)/sqrt(numel(hiix)), 'b', 'FaceColor', 'b'); hold on
-                plot.errorbarFill(lags, sfpsthlow(:,i), sfpstvlow(:,i)/sqrt(numel(lowix)), 'r', 'FaceColor', 'r');
-                ylim([0 mxspks(1)])
-                xlim([-0.05 .3])
-                title(sfs(i))
-                end
-            end
-        end
-        
-        if ip.Results.plot
-            figure(10); clf
-            clim = [min(frf(:)) max(frf(:))];
-            for i = 1:nsteps
-                subplot(1,nsteps+1, i)
-                imagesc(frf(:,:,i), clim)
-            end
-            
-            subplot(1,nsteps+1,nsteps+1)
-            imagesc(xax, xax, rf)
-            colormap(viridis)
-            drawnow
-        end
-        
-        fftrf(cc).sftuning = struct();
-        fftrf(cc).sftuning.B = [Bearly(:) Blate(:)];
-        fftrf(cc).sftuning.sfs = sfs;
-        fftrf(cc).sftuning.sfbw = sfbs;
-        fftrf(cc).sftuning.rhos = rhos;
-        fftrf(cc).sftuning.sfpsthhi = sfpsthhi;
-        fftrf(cc).sftuning.sfpsthlow = sfpsthlow;
-        fftrf(cc).sftuning.sfpstvhi = sfpstvhi;
-        fftrf(cc).sftuning.sfpstvlow = sfpstvlow;
+        [rho, pval] = corr(fproj, spksfilt);
         
         fftrf(cc).frfsteps = steps;
         fftrf(cc).frf = frf;
@@ -769,14 +620,14 @@ for clustGroup = unique(clusts(:)')
         fftrf(cc).rateLow = psthlow;
         fftrf(cc).stdHi = pstvhi;
         fftrf(cc).stdLow = pstvlow;
-        fftrf(cc).nHi = nHi;
-        fftrf(cc).nLow = nLow;
+        fftrf(cc).nHi = numel(hiix);
+        fftrf(cc).nLow = numel(lowix);
         fftrf(cc).rf.kx = xax;
         fftrf(cc).rf.ky = xax;
         fftrf(cc).rf.Ifit = reshape(Ifit, size(kx));
-        fftrf(cc).xproj.bins = binCenters;
+        fftrf(cc).xproj.bins = binEdges;
         fftrf(cc).xproj.cnt = binCnt;
-        fftrf(cc).xproj.levels = pref_null_levels;
+        fftrf(cc).xproj.levels = levels;
         fftrf(cc).cid = grf.rffit(cc).cid;
         fftrf(cc).rect = rect;
         fftrf(cc).corrrho = rho;
@@ -796,12 +647,7 @@ for clustGroup = unique(clusts(:)')
             title('spatial sta')
             
             subplot(2,2,4)
-            if isfield(grf.rffit(cc), 'srf')
-                imagesc(grf.rffit(cc).srf)
-            else
-                plot.polar_contourf(grf.xax, grf.yax, grf.srf(:,:,cc))
-            end
-                
+            imagesc(grf.rffit(cc).srf)
             title('hartley sta')
             xlabel('time lags')
             
@@ -822,6 +668,3 @@ if nargout > 1
     plotopts.spks = spks;
     plotopts.fixdur = fixdur;
 end
-
-%%
-
