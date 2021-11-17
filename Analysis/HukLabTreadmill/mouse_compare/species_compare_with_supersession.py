@@ -14,114 +14,88 @@ import matplotlib.pyplot as plt
 
 # from neureye.models.display import animshow
 
-#%% load huklab dataset
+fig_dir = '/mnt/Data/Figures/'
+
+#%% main functions
 import loco
-sessions = loco.get_huklab_sessions()
 
-num_sessions = len(sessions[0])
+def load_sessions(dataset, subj='all'):
 
-Ds = []
-unit_list = []
+    Ds = []
 
-num_sessions = 15
-print("Importing %d sessions" % num_sessions)
-for i in range(num_sessions):
-    print("\n\n\n")
-    session = loco.get_huklab_session(sessions[1], sessions[0], i)
-    fpath, fname = os.path.split(session.filename)
-    print("Importing Session %d [%s]" %(i, fname))
+    if dataset=='huk':
 
-    try:
-        Ds.append(loco.process_huklab_session(session))
-        unit_list.append(np.array(list(Ds[-1].spikes.keys())))
-    except:
-        print("Session %d [%s] failed" %(i, fname))
-        pass
+        sessions = loco.get_huklab_sessions()
 
-#%%
+        # remove bad sessions
+        sesslist = [s for s in sessions[0] if not s=='gru_20210426_grat.mat']
+        sessions = (sesslist, sessions[1])
 
-def main_analysis(Ds, cc, bin_size=0.02, wrapAt = 180):
-    from copy import deepcopy
-    from loco import nanmean
+        if not subj == 'all':
+            print("Selecting subject %s" %subj)
+            sessions_ = [session for session in sessions[0] if session.split('_')[0]==subj]
+            sessions = tuple([sessions_, sessions[1]])
 
-    sess_idx = np.where(np.array([cc in u for u in unit_list]))[0]
+        num_sessions = len(sessions[0])
 
-    gratings = pd.concat([Ds[ss].gratings for ss in list(sess_idx)]).reset_index()
-    sessnum = []
-    run_spd = []
-    robs = []
-    t1 = max([np.max(Ds[ss].gratings.duration) for ss in list(sess_idx)])
-    time_bins = np.arange(-.25, t1+.25, bin_size)
+        print("Importing %d sessions" % num_sessions)
+        for i in range(num_sessions):
+            print("\n\n\n")
+            session = loco.get_huklab_session(sessions[1], sessions[0], i)
+            fpath, fname = os.path.split(session.filename)
+            print("Importing Session %d [%s]" %(i, fname))
 
-    for ss in sess_idx:
-        D = Ds[ss]
+            try:
+                Ds.append(loco.process_huklab_session(session))
+            except:
+                print("Session %d [%s] failed" %(i, fname))
+                pass
+    
+    if dataset=='allen':
+        data_directory = '/mnt/Data/Datasets/allen/ecephys_cache_dir/'
+        sessions = loco.get_allen_sessions(data_directory = data_directory)
+
+        if subj == 'downloaded':
+            downloaded_sessions = [f for f in os.listdir(data_directory) if 'session_' in f]
+
+            # sessids = [np.where(int(s.split('_')[1])== sessions[0].index.values)[0][0] for s in downloaded_sessions]
+            sessids = [int(s.split('_')[1]) for s in downloaded_sessions]
+
+        elif subj == 'all':
+            sessids = sessions[0].index.values
+            
+        else:
+            sessids = sessions[0].index.values[sessions[0].session_type == subj]
         
-        sessnum.append( np.ones(len(D.gratings.duration))*ss )
-        robs.append(loco.psth([D.spikes[cc]], D.gratings['start_time'].to_numpy(), time_bins)[:,:,0].T)
-        run_spd.append(loco.psth_interp(D.run_data.run_time, D.run_data.run_spd, D.gratings['start_time'].to_numpy(), time_bins).T)
+        num_sessions = len(sessids)
+        print("Importing %d sessions based on filter [%s]" %(num_sessions, subj))
 
+        Ds = []
+        for i in range(num_sessions):
+            print("\n\n\n")
+            
+            print("Importing Session %d [%d]" %(i, sessids[i]))
+            try:
+                session = loco.get_allen_session(sessions[1], sessions[0], sessids[i])
+                Ds.append(loco.process_allen_dataset(session))
+            except:
+                print("Session %d [%d] failed" %(i, sessids[i]))
+                pass
 
-    sessnum = np.concatenate(sessnum)
-    robs = np.concatenate( tuple(robs), axis=0)
-    run_spd = np.concatenate(run_spd)
+    return Ds
 
-    rbase = np.sum(robs[:,time_bins < 0], axis=1)
+def analyze_super_session(Ds):
+    from tqdm import tqdm
 
-    comb_inds, S = loco.get_super_session_inds(rbase, sessnum)
+    unit_list = [D.units.index[D.units.ecephys_structure_acronym=='VISp'].values for D in Ds]
+    units = np.unique(np.concatenate(unit_list))
+    NC = len(units)
 
-    gratings = gratings.loc[comb_inds]
-    run_spd = run_spd[comb_inds,:]
-    robs = robs[comb_inds,:]
-    sessnum = sessnum[comb_inds]
-
-    bad_ix = (gratings.orientation=='null')
-    condition = gratings.orientation
-    condition[bad_ix] = 0.1
-    condition = condition % wrapAt
-    conds = np.unique(condition)
-    Nconds = len(conds)
-
-
-    stationary_trials = np.where(nanmean(run_spd, axis=1) < 3)[0]
-    num_stat = len(stationary_trials)
-    running_trials = np.where(nanmean(run_spd, axis=1) > 5)[0]
-    num_run = len(running_trials)
-
-    num_trials = np.minimum(num_stat, num_run)
-    print("using %d trials [%d run, %d stationary]" % (num_trials, num_run, num_stat))
-
-    tstim = np.logical_and(time_bins > 0.05, time_bins < t1 + 0.05)
-    tbase = time_bins < 0
-
-    spctrun = robs[running_trials, :]
-    spctstat = robs[stationary_trials, :]
-
-    frbaseR = loco.bootstrap_ci(np.mean(spctrun[:,tbase], axis=1), n = num_trials, nboot=500, boot_dim=0, mean_dim=1, ci=(2.5, 50, 97.5))/bin_size
-    frbaseS = loco.bootstrap_ci(np.mean(spctstat[:, tbase], axis=1), n = num_trials, nboot=500, boot_dim=0, mean_dim=1, ci=(2.5, 50, 97.5))/bin_size
-    frstimR = loco.bootstrap_ci(np.mean(spctrun[:,tstim], axis=1), n = num_trials, nboot=500, boot_dim=0, mean_dim=1, ci=(2.5, 50, 97.5))/bin_size
-    frstimS = loco.bootstrap_ci(np.mean(spctstat[:,tstim], axis=1), n = num_trials, nboot=500, boot_dim=0, mean_dim=1, ci=(2.5, 50, 97.5))/bin_size
-
-    # tuning curve linear regression
-    xax = np.unique(gratings.orientation.values)
-    isrunning = (nanmean(run_spd,axis=1) > 5)[:,None]
-    X = gratings.orientation.values[:,None] == xax
-    X = np.concatenate( (isrunning, X), axis=1)
-    R = np.mean(robs[:,tstim], axis=1) / bin_size
-    lm = loco.linear_regression(X, R, lam=.1)
-
-    out = {'frBaseR': frbaseR, 'frBaseS': frbaseS, 'frStimR': frstimR, 'frStimS': frstimS, 'xax': xax, 'lm': lm}
-
-    return out
-#%%
-
-units = np.unique(np.concatenate(unit_list))
-NC = len(units)
-
-S = []
-for cc in units:    
-    S.append(main_analysis(Ds, cc))
-
-#%% plot
+    S = []
+    print("Analyzing %d units" %NC)
+    for cc in tqdm(units):    
+        S.append(loco.spike_count_analysis(Ds, cc))
+    return S
 
 def plot_ellipse(ax, xctr, yctr, xwidth, ywidth, color='b', alpha=.25):
     from matplotlib.patches import Ellipse
@@ -149,200 +123,413 @@ def plot_ellipse_error(ax, xctr,yctr,xbounds, ybounds, color='b', alpha=.25):
 
     plot_ellipse(ax, exctr, eyctr, xwidth, ywidth, color=color, alpha=alpha)
 
-frBaseR = np.array([s['frBaseR'] for s in S])
-frBaseS = np.array([s['frBaseS'] for s in S])
+def plot_spike_count(S, cond, trial_thresh=50, color='b', alpha=.25, markersize=3, vis_only=False):
+    num_trials = np.array([S[i]['num_trials'] for i in range(len(S))])
+    iix = num_trials > trial_thresh
+    if vis_only:
+        pval = np.array([S[i]['stim_driven_pval'] for i in range(len(S))])
+        iix = np.logical_and(iix,pval<0.05)
+
+    if cond=='Base':
+        frR = np.array([s['frBaseR'] for s in S])
+        frS = np.array([s['frBaseS'] for s in S])
+
+    elif cond=='Stim':
+        frR = np.array([S[i]['frStimR'] for i in range(len(S))])
+        frS = np.array([S[i]['frStimS'] for i in range(len(S))])
+    elif cond=='Max':
+        frR = np.array([S[i]['frMaxR'] for i in range(len(S))])
+        frS = np.array([S[i]['frMaxS'] for i in range(len(S))])
+
+    frR = frR[iix,:]
+    frS = frS[iix,:]
+
+    iix = ~np.logical_or(np.isnan(frR[:,1]), np.isnan(frS[:,1]))
+    frR = frR[iix,:]
+    frS = frS[iix,:]
+
+    ax = plt.gca()
+    ells = plot_ellipse_error(ax, frS[:,1], frR[:,1], frS[:,(0,2)], frR[:,(0,2)], color=color, alpha=alpha)
+    plt.plot(frS[:,1], frR[:,1], 'o', color=color, markersize=markersize)
+
+    return frR, frS
+
+def sig_check(frR, frS):
+    from scipy import stats
+    
+
+    num_inc = np.sum(frR[:,1]>frS[:,2])
+    num_sup = np.sum(frR[:,1]<frS[:,0])
+    print("%d (%02.2f) neurons have increased firing during running" %(num_inc, num_inc/len(frR)))
+    print("%d (%02.2f) neurons have decreased firing during running" %(num_sup, num_sup/len(frR)))
+    
+    print("Wilcoxon signed rank test:")
+    med = np.median(frR[:,1]-frS[:,1])
+    res = stats.wilcoxon(frR[:,1], frS[:,1])
+    if res.pvalue < .05:
+        print("Significant difference in firing rate [med=%2.2f, p=%02.4f]" %(med, res.pvalue))
+    else:
+        print("No significant difference in firing rate [med=%2.2f, p=%02.4f]" %(med, res.pvalue))
+    
+    print("T-test on geometric mean ratio:")
+    iix = np.logical_and(frS[:,1] > 0, frR[:,1] > 0)
+    
+    lograt = np.log(frR[iix,1]) - np.log(frS[iix,1])
+
+    ci = loco.bootstrap1d(lograt, np.mean, 1000, len(lograt))
+    print("Bootstrapped 95%% CI: [%2.2f, %2.2f]" %(np.exp(ci[0]), np.exp(ci[1])))
+    res = stats.ttest_1samp(lograt, 0)
+    geomean = np.exp(np.mean(lograt))
+    if res.pvalue < .05:
+        print("Significant difference in firing rate [geomean=%2.2f, p=%02.4f]" %(geomean, res.pvalue))
+    else:
+        print("No significant difference in firing rate [geomean=%2.2f, p=%02.4f]" %(geomean, res.pvalue))
+
+def get_unit_rf(Ds, cc):
+    
+    unit_list = [np.array(list(D.spikes.keys())) for D in Ds]
+    units = np.unique(np.concatenate(unit_list))
+    assert cc in units, 'cc not in unit_list'
+
+    sess_idx = np.where(np.array([cc in u for u in unit_list]))[0]
+
+    nsess = len(sess_idx)
+    
+    rfmat = []
+    azimuth_rf = np.zeros(nsess)
+    elevation_rf = np.zeros(nsess)
+    xax = np.nan
+    yax = np.nan
+    success = False
+
+    for i in range(nsess):
+        D = Ds[sess_idx[i]]
+
+        try:
+            if np.sum(D.units['rf_mat'][cc]) > 0:
+                rfmat.append(D.units['rf_mat'][cc])
+                azimuth_rf[i] = D.units['azimuth_rf'][cc]
+                elevation_rf[i] = D.units['elevation_rf'][cc]
+                xax = D.units['xax'][cc].flatten()
+                yax = D.units['yax'][cc].flatten()
+                success = True
+        except:
+            pass
+    
+    return {'rf': rfmat, 'azimuth_rf': azimuth_rf, 'elevation_rf': elevation_rf, 'xax': xax, 'yax': yax, 'success': success}
+
+def get_all_rfs(Ds):
+    from tqdm import tqdm
+    unit_list = [np.array(list(D.spikes.keys())) for D in Ds]
+    units = np.unique(np.concatenate(unit_list))
+
+    rf = []
+    for cc in tqdm(units):
+        rf.append(get_unit_rf(Ds, cc))
+    return rf
+
+def sessionwise(Ds):
+    for i in range(len(Ds)):
+        try:
+            print("Analyzing session %d" %i)
+            Ds[i] = loco.sessionwise_analysis(Ds[i], hack_valid_run=False, plot_figures=False)
+        except:
+            print("Session %d failed" %i)
+            pass
+    return Ds
+
+def plot_behavior(Ds, alignment='run_onset', field='run_spd', color='k', normalize=False, smoothing=0):
+    from scipy.signal import savgol_filter
+    time_bins = [D['psths'][alignment][field]['time_bins'] for D in Ds]
+    try:
+        run_spd = [D['psths'][alignment][field]['mean'] for D in Ds]
+    except:
+        run_spd = [D['psths'][alignment][field]['hist'] for D in Ds]
+
+    if smoothing > 0:
+        run_spd = [savgol_filter(r, smoothing, 1) for r in run_spd]
+
+    if normalize:
+        # run_spd = [spd - np.nanmean(spd) for spd in run_spd]
+        run_spd = [spd/np.nanmax(spd) for spd in run_spd]
+        
+    f = plt.plot(np.asarray(time_bins).T, np.asarray(run_spd).T, color=color,alpha=.25)
+    plt.plot(time_bins[0], loco.nanmean(np.asarray(run_spd), axis=0), color=color, linewidth=4)
+
+cmap = plt.cm.tab10(np.arange(10))
+
+
+
+#%% Load data
+Dmouse = load_sessions('allen', subj='functional_connectivity')
+#%%
+Dmarm1 = load_sessions('huk', subj='gru')
+Dmarm2 = load_sessions('huk', subj='brie')
+
+#%%
+
+
+#%% run sessionwise analyses
+Dmarm1 = sessionwise(Dmarm1)
+Dmarm2 = sessionwise(Dmarm2) 
+Dmouse = sessionwise(Dmouse)
+
+
+#%%
+from scipy.signal import savgol_filter
+from copy import deepcopy
+
 
 plt.figure()
-ax = plt.gca()
-ells = plot_ellipse_error(ax, frBaseS[:,1], frBaseR[:,1], frBaseS[:,(0,2)], frBaseR[:,(0,2)], color=np.array([1,0,0]), alpha=.25)
-plt.plot(frBaseS[:,1], frBaseR[:,1], 'o', color=np.array([1,0,0]), markersize=3)
+for i in range(len(Dmouse)):
+    
+    
+    run_spd = savgol_filter(deepcopy(Dmouse[i]['run_data']['run_spd']), 31, 3)
+    Dmouse[i]['run_epochs'] = loco.get_run_epochs(Dmouse[i]['run_data']['run_time'], run_spd, debug=False, refrac=1, min_duration=1)
+    time_bins = np.linspace(-1, 4, 100)
+    plt.plot(Dmouse[i]['eye_data']['pupil'])
+    # X = loco.psth_interp(Dmouse[i]['run_data']['run_time'], run_spd, Dmouse[i]['run_epochs']['start_time'], time_bins)
+    X = loco.psth_interp(Dmouse[i]['eye_data']['eye_time'], Dmouse[i]['eye_data']['pupil'], Dmouse[i]['run_epochs']['start_time'], time_bins)
+    
+    # plt.plot(np.nanmean(X, axis=1))
+
+    
+
+    # Dmouse[i]['run_epochs']
+    # plt.plot(Dmouse[i]['run_data']['run_time'], Dmouse[i]['run_data']['run_spd'])
+
+plt.show()
+
+
+#%%
+
+for i in range(len(Dmarm2)):
+
+    Dmarm2[i]['run_epochs'] = loco.get_run_epochs(Dmarm2[i]['run_data']['run_time'], Dmarm2[i]['run_data']['run_spd'], debug=False, refrac=5)
+
+
+#%%
+Dmouse = sessionwise(Dmouse)
+#%% plot running speed
+import seaborn as sns
+
+# find marmov5 sessions for Marm1
+from datetime import datetime
+start = datetime.strptime('20210505', '%Y%m%d')
+datestr = [D['files']['session'].split('_')[1] for D in Dmarm1]
+gooddates = [datetime.strptime(d, '%Y%m%d')>start for d in datestr]
+Ds = [Dmarm1[i] for i in np.where(gooddates)[0]]
+
+plt.figure(figsize=(5,4))
+plot_behavior(Dmouse, alignment='run_onset', field='run_spd', color=cmap[0,:])
+plot_behavior(Ds, alignment='run_onset', field='run_spd', color=cmap[1,:])
+plot_behavior(Dmarm2, alignment='run_onset', field='run_spd', color=cmap[2,:])
+plt.xlabel('Time from running onset (s)')
+plt.ylabel('Running Speed (cm/s)')
+sns.despine(trim=True, offset=0)
+
+plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_run_speed_overlap.pdf'))
+
+#%% plot pupil area
+
+plt.figure(figsize=(5,4))
+plot_behavior(Dmouse, alignment='run_onset', field='pupil', color=cmap[0,:], normalize=True)
+plot_behavior(Ds, alignment='run_onset', field='pupil', color=cmap[1,:], normalize=True)
+plot_behavior(Dmarm2, alignment='run_onset', field='pupil', color=cmap[2,:], normalize=True)
+plt.xlabel('Time from running onset (s)')
+plt.ylabel('Pupil Area (normalized by maximum)')
+sns.despine(trim=True, offset=0)
+plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_pupil_overlap.pdf'))
+
+#%%
+
+plt.figure(figsize=(5,4))
+plot_behavior(Dmouse, alignment='run_onset', field='saccade_onset', color=cmap[0,:], normalize=False, smoothing=11)
+plot_behavior(Ds, alignment='run_onset', field='saccade_onset', color=cmap[1,:], normalize=False, smoothing=11)
+plot_behavior(Dmarm2, alignment='run_onset', field='saccade_onset', color=cmap[2,:], normalize=False, smoothing=11)
+plt.xlabel('Time from running onset (s)')
+plt.ylabel('Saccade Rate')
+sns.despine(trim=True, offset=0)
+plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_saccades_overlap.pdf'))
+
+#%% Example RFs
+rfs1 = get_all_rfs(Dmarm1)
+rfs2 = get_all_rfs(Dmarm2)
+
+#%%
+
+
+%matplotlib inline
+rf = rfs2 + rfs1
+inds = np.where([r['success'] for r in rf])[0]
+
+# restrict to clean examples
+x = np.asarray([np.std(rf[i]['rf'][0]) for i in inds])
+inds = inds[x>10]
+inds = inds[:-4]
+
+n = len(inds)
+plt.figure(figsize=(10,10))
+nx = int(np.sqrt(n))
+ny = int(np.ceil(n/nx))
+for i in range(n):
+    plt.subplot(nx, ny, i+1)
+    extent = [rf[inds[i]]['xax'][0], rf[inds[i]]['xax'][-1], rf[inds[i]]['yax'][0], rf[inds[i]]['yax'][-1]]
+    plt.imshow(rf[inds[i]]['rf'][0].T, origin='lower', cmap='coolwarm', extent=extent)
+    # plt.title("%2.0f" %x[i])
+    plt.axhline(0, color='k')
+    plt.axvline(0, color='k')
+    plt.axis('off')
+
+figname = os.path.join(fig_dir, 'huklab_loco_sfn_example_rfs.pdf')
+plt.savefig(figname, bbox_inches='tight')
+
+#%%
+
+
+#%%
+
+plt.figure(figsize=(2.5,2.5))
+
+
+inds = np.where([r['success'] for r in rfs1])[0]
+x = np.asarray([rfs1[i]['azimuth_rf'][0] for i in inds])
+y = np.asarray([rfs1[i]['elevation_rf'][0] for i in inds])
+iix = x > 0
+x = x[iix]
+y = y[iix]
+
+plt.plot(x,y,'o', markersize=2, alpha=.5, color=cmap[1,:])
+
+rfs2 = get_all_rfs(Dmarm2)
+inds = np.where([r['success'] for r in rfs2])[0]
+x = np.asarray([rfs2[i]['azimuth_rf'][0] for i in inds])
+y = np.asarray([rfs2[i]['elevation_rf'][0] for i in inds])
+iix = x > 0
+x = x[iix]
+y = y[iix]
+
+plt.plot(x,y,'o', markersize=2, alpha=.5, color=cmap[2,:])
+plt.grid('on')
+plt.axis('square')
+plt.xlim((-5, 5))
+plt.ylim((-5, 5))
+
+plt.xlabel('Azimuth')
+plt.ylabel('Elevation')
+
+plt.legend(['Marmoset 1', 'Marmoset 2'])
+# sns.despine(trim=True, offset=0)
+
+
+plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_rf_locations.pdf'), bbox_inches='tight')
+
+plt.show()
+
+
+
+#%%
+print("%d Mouse sessions" %len(Dmouse))
+print("%d Gru sessions" %len(Dmarm1))
+print("%d Brie sessions" %len(Dmarm2))
+
+#%%
+
+Smouse = analyze_super_session(Dmouse)
+Smarm1 = analyze_super_session(Dmarm1)
+Smarm2 = analyze_super_session(Dmarm2)
+
+#%%
+print("%d Mouse units" %len(Smouse))
+print("%d Gru units" %len(Smarm1))
+print("%d Brie units" %len(Smarm2))
+#%%
+
+
+cond = 'Stim'
+vis_only=True
+
+plt.figure(figsize=(5,5))
+
+print("Plotting %s Cond" %cond)
+print("Mouse")
+frR,frS = plot_spike_count(Smouse, cond, color=cmap[0,:], alpha=.1, markersize=1, trial_thresh=0, vis_only=vis_only)
+print("N=%d" %len(frR))
+sig_check(frR, frS)
+
+print("Gru")
+frR,frS = plot_spike_count(Smarm1, cond, color=cmap[1,:], trial_thresh=0, alpha=.1, markersize=1, vis_only=vis_only)
+print("N=%d" %len(frR))
+sig_check(frR, frS)
+
+print("Brie")
+frR,frS = plot_spike_count(Smarm2, cond, color=cmap[2,:], trial_thresh=0, alpha=.1, markersize=1, vis_only=vis_only)
+print("N=%d" %len(frR))
+sig_check(frR, frS)
+
+plt.plot(plt.xlim(), plt.xlim(), 'k--')
+plt.xlabel('Spike Rate (Stationary)')
+plt.ylabel('Spike Rate (Running)')
+plt.axis('square')
+
+plt.title(cond)
+
+plt.legend(['Mouse', 'Marmoset 1', 'Marmoset 2'])
+sns.despine(trim=True, offset=0)
+
+plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_spike_rate_overlap_%s_vis_%d.pdf' %(cond, vis_only)), bbox_inches='tight')
+
+
+
+#%%
+cond = 'Max'
+trialthresh = 0
+vis_only=True
+
+plt.figure(figsize=(8,4))
+
+print("Plotting %s Cond" %cond)
+print("Mouse")
+plt.subplot(1,3,1)
+frR,frS = plot_spike_count(Smouse, cond, color=cmap[0,:], alpha=.05, markersize=1, trial_thresh=trialthresh, vis_only=vis_only)
+sig_check(frR, frS)
+plt.axis('square')
 plt.plot(plt.xlim(), plt.xlim(), 'k--')
 plt.xlabel('Stationary')
 plt.ylabel('Running')
+plt.title("Mouse")
+sns.despine(trim=True, offset=0)
+
+plt.subplot(1,3,2)
+print("Gru")
+frR,frS = plot_spike_count(Smarm1, cond, color=cmap[1,:], trial_thresh=trialthresh, alpha=.05, markersize=1, vis_only=vis_only)
+sig_check(frR, frS)
+plt.axis('square')
+plt.plot(plt.xlim(), plt.xlim(), 'k--')
+plt.xlabel('Stationary')
+plt.title("Marmoset 1")
+sns.despine(trim=True, offset=0)
+
+plt.subplot(1,3,3)
+print("Brie")
+frR,frS = plot_spike_count(Smarm2, cond, color=cmap[2,:], trial_thresh=trialthresh, alpha=.05, markersize=1, vis_only=vis_only)
+sig_check(frR, frS)
+plt.axis('square')
+plt.plot(plt.xlim(), plt.xlim(), 'k--')
+plt.xlabel('Stationary')
+plt.title("Marmoset 2")
+sns.despine(trim=True, offset=0)
+
+
+plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_spike_rate_overlap_%s_vis_%d.pdf' %(cond, vis_only)), bbox_inches='tight')
+
 plt.show()
-
-#%%
-# plt.figure()
-# plt.subplot(1,2,1)
-# plt.errorbar(frbaseS[1,:], frbaseR[1,:], yerr=np.abs(frbaseR[(0,2),:] - frbaseR[1,:]),
-#     xerr=np.abs(frbaseS[(0,2),:] - frbaseS[1,:]), fmt='o')
-# plt.plot(plt.xlim(), plt.xlim(), 'k--')
-# plt.xlabel('Stationary')
-# plt.ylabel('Running')
-
-# plt.subplot(1,2,2)
-# plt.errorbar(frstimS[1,:], frstimR[1,:], yerr=np.abs(frstimR[(0,2),:] - frstimR[1,:]),
-#     xerr=np.abs(frstimS[(0,2),:] - frstimS[1,:]), fmt='o')
-
-
-#%%
-plt.figure()
-rbase = np.sum(robs[:,time_bins < 0], axis=1)
-trial = np.arange(0, len(rbase))
-rateci = np.zeros( (len(sess_idx),3) )
-nPotSess = len(sess_idx)
-for ss, ii in zip(sess_idx, range(nPotSess)):
-    rateci[ii,:] = loco.bootstrap_ci(rbase[sessnum==ss], boot_dim=0, mean_dim=0, ci=(.025, .5, .975))
-
-    plt.plot(trial[sessnum==ss], rbase[sessnum==ss], 'o')
-
-plt.show()
-
-plt.figure()
-for ss, ii in zip(sess_idx, range(nPotSess)):
-    plt.hist(rbase[sessnum==ss], bins=50, alpha=.5)
-plt.show()
-
-#%%
-from scipy import stats
-ratecompare = np.zeros( (nPotSess, nPotSess))
-nTrials = np.zeros(nPotSess)
-for i in range(nPotSess):
-    nTrials[i] = np.sum(sessnum==sess_idx[i])
-    for j in range(nPotSess):
-        r = stats.ranksums(rbase[sessnum==sess_idx[i]], rbase[sessnum==sess_idx[j]])
-        ratecompare[i,j] = r.pvalue
-
-thresh = 0.01
-
-# find the session combinations with the most Trials
-n_tot_trials = np.zeros(nPotSess)
-for i in range(nPotSess):
-    iix = ratecompare[i,:] > thresh
-    n_tot_trials[i] = np.sum(nTrials[iix])
-
-
-inds = np.argmax(n_tot_trials)
-if isinstance(inds, np.int64):
-    baseSession = inds
-else:
-    base_session = inds[0]
-
-iix = ratecompare[baseSession,:] > thresh
-
-comb_inds = []
-for ss in sess_idx[iix]:
-    comb_inds.append(np.where(sessnum==ss)[0])
-
-np.array(comb_inds)
-    
-comb_inds = np.array(comb_inds).flatten()
-
-
-# lm = loco.linear_regression(trial, rbase)
-# lm['Probabilities'][1]
-
-# stats.wilcoxon(rbase[sessnum==0], rbase[sessnum==1])
-# stats.ranksums(rbase[sessnum==0], rbase[sessnum==1])
-
-# loco.bootstrap_ci(rbase[sessnum==0], boot_dim=0, mean_dim=0, ci=(.025, .975))
-
-#%% debugging sketchpad
+#%% analyze session by session
 
 
 
-#%%
-D.spikes.keys()
 
-#%% load allen dataset
-import os
-import data_factory as dfac
-sessions, cache = dfac.get_allen_sessions()
-
-downloaded_sessions = [f for f in os.listdir('/mnt/Data/Datasets/allen/ecephys_cache_dir/') if 'session_' in f]
-
-#%%
-i = 0
-sessid = np.where(int(downloaded_sessions[i][8:]) == sessions.index.values)[0][0]
-print(sessid)
-
-#%%
-todownload = np.where(sessions.session_type=='functional_connectivity')
-
-downloaded_index = [np.where(int(downloaded_sessions[i][8:]) == sessions.index.values)[0][0] for i in range(len(downloaded_sessions))]
-print(downloaded_index)
-#%%
-sessid = 27
-
-#%%
-session = dfac.get_allen_session(cache, sessions, sessid)
-# D = dfac.process_allen_dataset(session)
-
-#%%
-D = Ds[0]
-%matplotlib ipympl
-plt.figure()
-onsets = D.gratings.start_time.to_numpy()
-igrat = 1
-
-ax1 = plt.subplot(3,1,1)
-plt.plot(D.eye_data['eye_time'], D.eye_data['eye_y'], color='k')
-
-nsac = len(D.saccades['start_time'])
-for ii in range(nsac):
-    iix = np.arange(D.saccades['start_index'][ii], D.saccades['stop_index'][ii], 1, dtype=int)
-    plt.plot(D.eye_data['eye_time'][iix], D.eye_data['eye_y'][iix], color='r')
-
-for i in range(len(onsets)):
-    plt.axvline(onsets[i], color='r', linestyle='--')
-
-ax1.set_xlim( (-1 + onsets[igrat], onsets[igrat] + 60))
-ax1.set_ylim( (-10, 10))
-
-ax2 = plt.subplot(3,1,2)
-plt.plot(D.eye_data['eye_time'], D.eye_data['pupil'], color='k')
-ax2.set_xlim( (0 + onsets[igrat], onsets[igrat] + 60))
-# ax2.set_ylim((0, .005))
-
-ax3 = plt.subplot(3,1,3)
-plt.plot(D.run_data['run_time'], D.run_data['run_spd'], color='k')
-for i in range(len(D.run_epochs['start_time'])):
-    plt.axvspan(D.run_epochs['start_time'][i], D.run_epochs['stop_time'][i], color='gray', alpha=.5)
-ax3.set_xlim( (0 + onsets[igrat], onsets[igrat] + 60))
-ax3.set_ylim((0, 45))
-
-#%%
-igrat = igrat + 10
-for ax in [ax1, ax2, ax3]:
-    ax.set_xlim( (0 + onsets[igrat], onsets[igrat] + 60))
-    ax3.set_ylim((0, 45))
-
-
-#%%
-# win = 200
-# run_time = D.run_data.run_time
-# run_spd = D.run_data.run_spd
-# run_epochs = dfac.get_run_epochs(run_time, run_spd, win=win)
-#%%
-%matplotlib inline
-D = loco.main_analysis(D)
-
-#%%
-save_analyses(D, fpath='./analyses/')
-
-
-
-#%%
-#%%
 #%% load huklab dataset
-import data_factory as dfac
-sessions = dfac.get_huklab_sessions()
-
-num_sessions = len(sessions[0])
-%matplotlib inline
-
-for i in range(3,num_sessions):
-    session = dfac.get_huklab_session(sessions[1], sessions[0], i)
-
-    try:
-        D = dfac.process_huklab_session(session)
-
-        D = main_analysis(D, hack_valid_run=True)
-        save_analyses(D, fpath='./analyses/')
-    except:
-        print("ERROR on session %d" %i)
-        pass
-
 
 
 #%% check main sequence
