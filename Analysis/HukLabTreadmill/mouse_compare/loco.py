@@ -1339,10 +1339,10 @@ def spike_count_analysis(Ds, cc, bin_size=0.02, wrapAt = 180, verbose=False):
         #     frmaxS = (np.nan, np.nan, np.nan)
 
         frmaxR = bootstrap1d(rstim[pref_run], np.mean, nboot=1000, batch=num_pref)
-        frmaxR = (frmaxR[0], np.mean(rstim[pref_run]), frmaxR[1])
+        frmaxR = (frmaxR[0]/bin_size, np.mean(rstim[pref_run])/bin_size, frmaxR[1]/bin_size)
 
         frmaxS = bootstrap1d(rstim[pref_stat], np.mean, nboot=1000, batch=num_pref)
-        frmaxS = (frmaxS[0], np.mean(rstim[pref_stat]), frmaxS[1])
+        frmaxS = (frmaxS[0]/bin_size, np.mean(rstim[pref_stat])/bin_size, frmaxS[1]/bin_size)
 
     # tuning curve linear regression
     isrunning = (nanmean(run_spd,axis=1) > 5)[:,None]
@@ -1392,7 +1392,7 @@ def spike_count_analysis(Ds, cc, bin_size=0.02, wrapAt = 180, verbose=False):
     psths = struct({'mu_rate': mu_rate, 'n': n, 'ci_rate': ci_rate, 'time_bins': time_bins})
 
     out = {'subj': subj, 'frBaseR': frbaseR, 'frBaseS': frbaseS, 'frStimR': frstimR, 'frStimS': frstimS,
-        'frMaxR': frmaxR, 'frMaxS': frmaxS, 'stim_driven_pval': stim_driven_pval,
+        'frMaxR': frmaxR, 'frMaxS': frmaxS, 'stim_driven_pval': stim_driven_pval, 'bin_size': bin_size,
         'xax': xax, 'lm': lm, 'num_trials': num_trials, 'num_trials_max': num_pref, 'psths': psths}
 
     return out

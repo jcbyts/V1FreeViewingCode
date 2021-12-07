@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 # from neureye.models.display import animshow
 
 fig_dir = '/mnt/Data/Figures/'
+import loco
 
 #%% main functions
-import loco
 
 def load_sessions(dataset, subj='all'):
 
@@ -230,12 +230,12 @@ def get_all_rfs(Ds):
 
 def sessionwise(Ds):
     for i in range(len(Ds)):
-        try:
-            print("Analyzing session %d" %i)
-            Ds[i] = loco.sessionwise_analysis(Ds[i], hack_valid_run=False, plot_figures=False)
-        except:
-            print("Session %d failed" %i)
-            pass
+        # try:
+        print("Analyzing session %d" %i)
+        Ds[i] = loco.sessionwise_analysis(Ds[i], hack_valid_run=False, plot_figures=False)
+        # except:
+        #     print("Session %d failed" %i)
+        #     pass
     return Ds
 
 def plot_behavior(Ds, alignment='run_onset', field='run_spd', color='k', normalize=False, smoothing=0):
@@ -256,8 +256,11 @@ def plot_behavior(Ds, alignment='run_onset', field='run_spd', color='k', normali
     f = plt.plot(np.asarray(time_bins).T, np.asarray(run_spd).T, color=color,alpha=.25)
     plt.plot(time_bins[0], loco.nanmean(np.asarray(run_spd), axis=0), color=color, linewidth=4)
 
+# Colormap for mouse and marmoset
 cmap = plt.cm.tab10(np.arange(10))
-
+cmap[3,:-1] = .25
+cmap[1,:] = cmap[0,:]
+cmap[0,:] = cmap[3,:]
 
 
 #%% Load data
@@ -267,7 +270,26 @@ Dmarm1 = load_sessions('huk', subj='gru')
 Dmarm2 = load_sessions('huk', subj='brie')
 
 #%%
+# save Dmarm1, Dmarm2, and Dmouse
+fpath = '/mnt/Data/Datasets/HuklabTreadmill/'
+import pickle
+with open(os.path.join(fpath, 'Dmarm1.pkl'), 'wb') as f:
+    pickle.dump(Dmarm1, f)
+with open(os.path.join(fpath, 'Dmarm2.pkl'), 'wb') as f:
+    pickle.dump(Dmarm2, f)
+with open(os.path.join(fpath, 'Dmouse.pkl'), 'wb') as f:
+    pickle.dump(Dmouse, f)
+print("Done")
 
+#%% Load sessions alltogether for plotting
+fpath = '/mnt/Data/Datasets/HuklabTreadmill/'
+import pickle
+with open(os.path.join(fpath, 'Dmarm1.pkl'), 'rb') as f:
+    Dmarm1 = pickle.load(f)
+with open(os.path.join(fpath, 'Dmarm2.pkl'), 'rb') as f:
+    Dmarm2 = pickle.load(f)
+with open(os.path.join(fpath, 'Dmouse.pkl'), 'rb') as f:
+    Dmouse = pickle.load(f)
 
 #%% run sessionwise analyses
 Dmarm1 = sessionwise(Dmarm1)
@@ -303,13 +325,10 @@ plt.show()
 
 #%%
 
-for i in range(len(Dmarm2)):
+# for i in range(len(Dmarm2)):
 
-    Dmarm2[i]['run_epochs'] = loco.get_run_epochs(Dmarm2[i]['run_data']['run_time'], Dmarm2[i]['run_data']['run_spd'], debug=False, refrac=5)
+#     Dmarm2[i]['run_epochs'] = loco.get_run_epochs(Dmarm2[i]['run_data']['run_time'], Dmarm2[i]['run_data']['run_spd'], debug=False, refrac=5)
 
-
-#%%
-Dmouse = sessionwise(Dmouse)
 #%% plot running speed
 import seaborn as sns
 
@@ -439,6 +458,24 @@ Smouse = analyze_super_session(Dmouse)
 Smarm1 = analyze_super_session(Dmarm1)
 Smarm2 = analyze_super_session(Dmarm2)
 
+#%% save 
+print("Saving Analyses...")
+with open(os.path.join(fpath, 'Smarm1.pkl'), 'wb') as f:
+    pickle.dump(Smarm1, f)
+with open(os.path.join(fpath, 'Smarm2.pkl'), 'wb') as f:
+    pickle.dump(Smarm2, f)
+with open(os.path.join(fpath, 'Smouse.pkl'), 'wb') as f:
+    pickle.dump(Smouse, f)
+print("Done")
+
+#%% Load sessions alltogether for plotting
+with open(os.path.join(fpath, 'Smarm1.pkl'), 'rb') as f:
+    Smarm1 = pickle.load(f)
+with open(os.path.join(fpath, 'Smarm2.pkl'), 'rb') as f:
+    Smarm2 = pickle.load(f)
+with open(os.path.join(fpath, 'Smouse.pkl'), 'rb') as f:
+    Smouse = pickle.load(f)
+
 #%%
 print("%d Mouse units" %len(Smouse))
 print("%d Gru units" %len(Smarm1))
@@ -450,6 +487,7 @@ cond = 'Stim'
 vis_only=True
 
 plt.figure(figsize=(5,5))
+
 
 print("Plotting %s Cond" %cond)
 print("Mouse")
@@ -482,43 +520,55 @@ plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_spike_rate_overlap_%s_vis_%d.
 
 
 #%%
+fig_dir = '.'
 cond = 'Max'
 trialthresh = 0
 vis_only=True
 
-plt.figure(figsize=(8,4))
+# plt.figure(figsize=(8,4))
+plt.figure(figsize=(16,8))
+xd = 50
 
 print("Plotting %s Cond" %cond)
 print("Mouse")
 plt.subplot(1,3,1)
-frR,frS = plot_spike_count(Smouse, cond, color=cmap[0,:], alpha=.05, markersize=1, trial_thresh=trialthresh, vis_only=vis_only)
+frR,frS = plot_spike_count(Smouse, cond, color=cmap[0,:], alpha=.025, markersize=1, trial_thresh=trialthresh, vis_only=vis_only)
 sig_check(frR, frS)
 plt.axis('square')
+plt.xlim(0,xd)
+plt.ylim(0,xd)
 plt.plot(plt.xlim(), plt.xlim(), 'k--')
 plt.xlabel('Stationary')
 plt.ylabel('Running')
 plt.title("Mouse")
-sns.despine(trim=True, offset=0)
+sns.despine(trim=True, offset=5)
+
 
 plt.subplot(1,3,2)
 print("Gru")
 frR,frS = plot_spike_count(Smarm1, cond, color=cmap[1,:], trial_thresh=trialthresh, alpha=.05, markersize=1, vis_only=vis_only)
 sig_check(frR, frS)
+
 plt.axis('square')
+plt.xlim(0,xd)
+plt.ylim(0,xd)
 plt.plot(plt.xlim(), plt.xlim(), 'k--')
 plt.xlabel('Stationary')
 plt.title("Marmoset 1")
-sns.despine(trim=True, offset=0)
+sns.despine(trim=True, offset=5)
 
 plt.subplot(1,3,3)
 print("Brie")
 frR,frS = plot_spike_count(Smarm2, cond, color=cmap[2,:], trial_thresh=trialthresh, alpha=.05, markersize=1, vis_only=vis_only)
 sig_check(frR, frS)
 plt.axis('square')
+plt.xlim(0,xd)
+plt.ylim(0,xd)
+
 plt.plot(plt.xlim(), plt.xlim(), 'k--')
 plt.xlabel('Stationary')
 plt.title("Marmoset 2")
-sns.despine(trim=True, offset=0)
+sns.despine(trim=True, offset=5)
 
 
 plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_spike_rate_overlap_%s_vis_%d.pdf' %(cond, vis_only)), bbox_inches='tight')
