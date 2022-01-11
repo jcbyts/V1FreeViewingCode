@@ -6,14 +6,14 @@ addpath Analysis/manuscript_freeviewingmethods/
 
 %%
 close all
-sessId = 13;
+sessId = 46;
 [Exp, S] = io.dataFactoryTreadmill(sessId);
 Exp.osp.cgs = ones(size(Exp.osp.cids))*2;
 
 io.checkCalibration(Exp);
 %%
 % BIGROI = [-10 -8 10 8];
-BIGROI = [-4 -4 4 4];
+BIGROI = [-30 -15 1 15];
 
 % eyePos = eyepos;
 eyePos = Exp.vpx.smo(:,2:3);
@@ -22,7 +22,7 @@ eyePos = Exp.vpx.smo(:,2:3);
 
 stat = spat_rf_helper(Exp, 'ROI', BIGROI, ...
     'win', [0 12],...
-    'binSize', .3, 'plot', true, 'debug', false, 'spikesmooth', 1, 'eyePos', eyePos);
+    'binSize', .5, 'plot', true, 'debug', false, 'spikesmooth', 1, 'eyePos', eyePos);
 
 %%
 

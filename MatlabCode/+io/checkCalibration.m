@@ -2,7 +2,7 @@ function fig = checkCalibration(Exp, varargin)
 
 % Check the existing gaze calibration
 %% organize the data
-fprintf('Correcting eye pos by reanalyzing FaceCal\n')
+% fprintf('Correcting eye pos by reanalyzing FaceCal\n')
 
 validTrials = io.getValidTrials(Exp, 'FaceCal');
 

@@ -15,6 +15,8 @@ ip = inputParser();
 ip.addParameter('TAGSTART', 63)
 ip.addParameter('TAGEND', 62)
 ip.addParameter('fid', 1)
+ip.addParameter('zero_mean', false)
+ip.addParameter('normalize', false)
 ip.parse(varargin{:});
 
 TAGSTART = ip.Results.TAGSTART;
@@ -93,6 +95,19 @@ for zk = FileSort(:,1)'
                 vpx.raw(:,1) = vpx.raw(:,1) + BigN;  % add time offset before concat
                 vpx.smo(:,1) = vpx.smo(:,1) + BigN;
                 vpx.tstrobes = vpx.tstrobes + BigN;
+            end
+
+            if ip.Results.zero_mean
+                lost_track = vpx.raw(:,2)==max(vpx.raw(:,2)) | vpx.raw(:,3)==max(vpx.raw(:,3));
+                
+                vpx.raw(~lost_track,2) = vpx.raw(~lost_track,2) - mean(vpx.raw(~lost_track,2));
+                vpx.raw(~lost_track,3) = vpx.raw(~lost_track,3) - mean(vpx.raw(~lost_track,3));
+
+                if ip.Results.normalize
+                    vpx.raw(~lost_track,2) = vpx.raw(~lost_track,2) / std(vpx.raw(~lost_track,2));
+                    vpx.raw(~lost_track,3) = vpx.raw(~lost_track,3) / std(vpx.raw(~lost_track,3));
+                end
+
             end
             %******* concatenate large file stream **********
             Exp.vpx.raw = [Exp.vpx.raw ; vpx.raw];

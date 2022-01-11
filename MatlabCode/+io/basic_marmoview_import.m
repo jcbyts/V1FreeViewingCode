@@ -5,6 +5,7 @@ ip.addParameter('Protocols', [])
 ip.addParameter('TAGSTART', 63)
 ip.addParameter('TAGEND', 62)
 ip.addParameter('EphysFreq', 30e3)
+ip.addParameter('Timestamps', [])
 ip.addParameter('fid', 1) % default is to dump to the command window
 ip.parse(varargin{:});
 
@@ -20,65 +21,77 @@ fid = ip.Results.fid; % fprintf target (1 = command window)
 
 %% Events File importing
 %******** now grab the events file with strobes
-EventFiles = dir([DataFolder,filesep,'*.events']);
 HASEPHYS = false;
 
-if ~isempty(EventFiles)
-    ext = 'events';
+if ~isempty(ip.Results.Timestamps)
     HASEPHYS = true;
+    tstrobes = ip.Results.Timestamps.tstrobes;
+    strobes = ip.Results.Timestamps.strobes;
+    fprintf('Using Timestamps struct to synch ephys\n')
 else
-    EventFiles = dir(fullfile(DataFolder,'*.kwe'));
+
+
+    EventFiles = dir([DataFolder,filesep,'*.events']);
+
     if ~isempty(EventFiles)
-        ext = 'kwe';
+        ext = 'events';
         HASEPHYS = true;
-    else
-        fprintf(fid, 'basic_marmoview_import: No ephys found\n');
-    end
-end
-
-if HASEPHYS
-    switch ext
-        case 'events'
-            fprintf(fid, 'Reading strobe times from [%s] .events file\n', EventFiles(1).name);
-            [evdata,evtime,evinfo] = read_ephys.load_open_ephys_data_faster([DataFolder,filesep,EventFiles(1).name]);
-        case 'kwe'
-            fprintf(fid, 'Reading strobe times from [%s] .kwe file\n', EventFiles(1).name);
-            [evdata,evtime,evinfo] = read_ephys.load_kwe(fullfile(DataFolder,EventFiles(1).name));
-            evtime = double(evtime) / ip.Results.EphysFreq; % convert to seconds
-    end
-    %**** convert events into strobes with times
-    [tstrobes,strobes] = read_ephys.convert_data_to_strobes(evdata,evtime,evinfo);
-    strobes = read_ephys.fix_missing_strobes(strobes);
-    fprintf(fid, 'Strobes are loaded\n');
-            
-end
-
-if ~HASEPHYS
-    % check for "Digital In" files from an intan system
-    diginFile = dir(fullfile(DataFolder, '*DigIn.mat'));
-    if ~isempty(diginFile)
-        disp("Found INTAN strobe file")
-        dig = load(fullfile(DataFolder, diginFile(1).name));
-    
-        % This is a hacky piece of code to recover the strobes from the
-        % intan system
-        % The state of the Digital INs is sampled at the full sampling rate 
-        % of the system (30kHz) meaning we get many samples with the same
-        % bit on and we have to find the set and unset times after the
-        % fact.
-        tstrobes = find(diff(dig.board_dig_in_data(6,:))>0)+1; % find set times
-        nbitflips = numel(tstrobes);
-        strobes = zeros(nbitflips, 1);
-        for i = 1:nbitflips
-            ind = tstrobes(i);
-            strobes(i) = bin2dec(num2str(dig.board_dig_in_data(:,ind)'));
+        EventFiles = dir(fullfile(DataFolder,'*.kwe'));
+        if ~isempty(EventFiles)
+            ext = 'kwe';
+            HASEPHYS = true;
+        else
+            fprintf(fid, 'basic_marmoview_import: No ephys found\n');
         end
-        
-        tstrobes = tstrobes / ip.Results.EphysFreq; % convert to seconds
-        HASEPHYS = true;
     end
 
-    
+
+    if HASEPHYS
+        switch ext
+            case 'events'
+                fprintf(fid, 'Reading strobe times from [%s] .events file\n', EventFiles(1).name);
+                [evdata,evtime,evinfo] = read_ephys.load_open_ephys_data_faster([DataFolder,filesep,EventFiles(1).name]);
+            case 'kwe'
+                fprintf(fid, 'Reading strobe times from [%s] .kwe file\n', EventFiles(1).name);
+                [evdata,evtime,evinfo] = read_ephys.load_kwe(fullfile(DataFolder,EventFiles(1).name));
+                evtime = double(evtime) / ip.Results.EphysFreq; % convert to seconds
+        end
+        %**** convert events into strobes with times
+        [tstrobes,strobes] = read_ephys.convert_data_to_strobes(evdata,evtime,evinfo);
+        strobes = read_ephys.fix_missing_strobes(strobes);
+        fprintf(fid, 'Strobes are loaded\n');
+
+    end
+
+    if ~HASEPHYS
+        % check for "Digital In" files from an intan system
+        diginFile = dir(fullfile(DataFolder, '*DigIn.mat'));
+        if ~isempty(diginFile)
+            disp("Found INTAN strobe file")
+            dig = load(fullfile(DataFolder, diginFile(1).name));
+
+            % This is a hacky piece of code to recover the strobes from the
+            % intan system
+            % The state of the Digital INs is sampled at the full sampling rate
+            % of the system (30kHz) meaning we get many samples with the same
+            % bit on and we have to find the set and unset times after the
+            % fact.
+            strobe_id = find(strcmp('DIGITAL-IN-07', {dig.board_dig_in_channels(:).native_channel_name}));
+            tstrobes = find(diff(dig.board_dig_in_data(strobe_id,:))>0)+1; % find set times
+            nbitflips = numel(tstrobes);
+            strobes = zeros(nbitflips, 1);
+            for i = 1:nbitflips
+                ind = tstrobes(i);
+                strobe_ = dig.board_dig_in_data(:,ind)';
+                strobes(i) = bin2dec(num2str( fliplr(strobe_(1:6)) ));
+            end
+
+            tstrobes = tstrobes / ip.Results.EphysFreq; % convert to seconds
+            HASEPHYS = true;
+        end
+
+
+    end
 end
 
 %% Loading up the MarmoView Data Files

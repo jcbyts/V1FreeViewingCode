@@ -19,6 +19,7 @@ classdef calibGUI < handle
         validix
         targets
         trialTargets
+        raw_field
         cmap
         cmatHat = []
         xlim = [-12 12]
@@ -33,6 +34,7 @@ classdef calibGUI < handle
             
             ip = inputParser();
             ip.addParameter('datasetFile', [])
+            ip.addParameter('use_smo', false)
             ip.parse(varargin{:});
             
             
@@ -49,6 +51,10 @@ classdef calibGUI < handle
             if ~exist('uiextras.HBox') %#ok<EXIST>
                 error('sacGUI:init:uix', 'You must have the "uiextras" toolbox to use this GUI. Choose Home->Add-Ons->Get Add-ons and search for "GUI Layout Toolbox" by David Sampson. You may have to search for the author''s name to find the right one for some reason. If you cannot find it, go here to download: https://www.mathworks.com/matlabcentral/fileexchange/47982-gui-layout-toolbox\n')
             end
+            obj.raw_field = 'raw';
+            if ip.Results.use_smo
+                obj.raw_field = 'smo';
+            end
 
             obj.Exp = Exp;
             obj.build(fig);
@@ -64,11 +70,12 @@ classdef calibGUI < handle
             tstart = obj.Exp.ptb2Ephys(cellfun(@(x) x.STARTCLOCKTIME, obj.Exp.D(validTrials)));
             tstop = obj.Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, obj.Exp.D(validTrials)));
             
-            eyeTime = obj.Exp.vpx2ephys(obj.Exp.vpx.raw(:,1));
+            
+            eyeTime = obj.Exp.vpx2ephys(obj.Exp.vpx.(obj.raw_field)(:,1));
             obj.validix = getTimeIdx(eyeTime, tstart, tstop);
             
             
-            obj.xy = obj.Exp.vpx.raw(obj.validix,2:3);
+            obj.xy = obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3);
             
             obj.spd = abs(obj.Exp.vpx.smo(obj.validix,7));
             
@@ -285,7 +292,7 @@ classdef calibGUI < handle
             tstart = obj.Exp.ptb2Ephys(cellfun(@(x) x.STARTCLOCKTIME, obj.Exp.D(validTrials)));
             tstop = obj.Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, obj.Exp.D(validTrials)));
             
-            eyeTime = obj.Exp.vpx2ephys(obj.Exp.vpx.raw(:,1));
+            eyeTime = obj.Exp.vpx2ephys(obj.Exp.vpx.(obj.raw_field)(:,1));
             eyePos = obj.get_eyepos();
             
             mx = cellfun(@(x) mean(x(:,1)), obj.trialTargets);
@@ -335,13 +342,13 @@ classdef calibGUI < handle
             A = (R*S)';
             Ainv = pinv(A);
 
-            eyePos = (obj.Exp.vpx.raw(:,2:3) - obj.cmat(4:5))*Ainv;
+            eyePos = (obj.Exp.vpx.(obj.raw_field)(:,2:3) - obj.cmat(4:5))*Ainv;
             
             if nargin >2
                 eyePos = eyePos(ix,:);
             end
 
-            obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+            obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
             
         end
         
@@ -353,7 +360,7 @@ classdef calibGUI < handle
             tstop = obj.Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, obj.Exp.D(validTrials)));
             
             % runs a refinement on the calibration based on 
-            eyeTime = obj.Exp.vpx2ephys(obj.Exp.vpx.raw(:,1));
+            eyeTime = obj.Exp.vpx2ephys(obj.Exp.vpx.(obj.raw_field)(:,1));
             eyePos = obj.get_eyepos();
 %             th = obj.cmat(3);
 %             R = [cosd(th) -sind(th); sind(th) cosd(th)];
@@ -363,9 +370,9 @@ classdef calibGUI < handle
             
             
 
-%             eyePos = (obj.Exp.vpx.raw(:,2:3) - obj.cmat(4:5))*Ainv;
+%             eyePos = (obj.Exp.vpx.(obj.raw_field)(:,2:3) - obj.cmat(4:5))*Ainv;
             
-%             eyePos = obj.Exp.vpx.raw(:,2:3);
+%             eyePos = obj.Exp.vpx.(obj.raw_field)(:,2:3);
             
             dxdy = diff(eyePos); % velocity
             obj.spd = hypot(dxdy(:,1), dxdy(:,2)); % speed
@@ -630,8 +637,8 @@ classdef calibGUI < handle
             dy = mode(dy);
             
             % x and y position
-            vxx = obj.Exp.vpx.raw(:,2);
-            vyy = obj.Exp.vpx.raw(:,3);
+            vxx = obj.Exp.vpx.(obj.raw_field)(:,2);
+            vyy = obj.Exp.vpx.(obj.raw_field)(:,3);
             
             % convert to d.v.a.
             vxx = (vxx - cx)/(dx * obj.Exp.S.pixPerDeg);
@@ -662,7 +669,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
                     
@@ -674,7 +681,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
                 case 'uparrow'
@@ -685,7 +692,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
                     
@@ -697,7 +704,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
                     
@@ -709,7 +716,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
                     
@@ -721,7 +728,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
                     
@@ -733,7 +740,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
                     
@@ -745,7 +752,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
                     
@@ -757,7 +764,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
                     
@@ -769,7 +776,7 @@ classdef calibGUI < handle
                     A = (R*S)';
                     Ainv = pinv(A);
                     
-                    obj.xy = (obj.Exp.vpx.raw(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
+                    obj.xy = (obj.Exp.vpx.(obj.raw_field)(obj.validix,2:3) - obj.cmat(4:5))*Ainv;
                     
                     plot_calibration(obj);
             end
