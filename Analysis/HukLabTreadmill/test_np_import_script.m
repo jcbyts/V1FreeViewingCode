@@ -7,6 +7,8 @@ addpath Analysis/HukLabTreadmill/ % the code will always assume you're running f
 %% Try to synchronize using strobed values
 HUKDATASHARE = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
 dataPath = fullfile(HUKDATASHARE, 'gru', 'g20211217');
+
+%%
 figDir = '~/Google Drive/HuklabTreadmill/imported_sessions_qa/g20211217/';
 
 timestamps = load(fullfile(dataPath, 'timestamps.mat'));
@@ -161,8 +163,11 @@ fid = 1;
 
 disp('IMPORT EYE POSITION')
 %% Import eye position signals
-[Exp, fig] = io.import_eye_position(Exp, dataPath, 'fid', fid, 'zero_mean', true);
+dataPath = ''; %~/Google Drive/HuklabTreadmill/gru/g20210521/';
+fid = 1;
+[Exp, fig] = io.import_eye_position(Exp, dataPath, 'fid', fid, 'zero_mean', true, 'normalize', true);
 
+%%
 Exp0 = Exp; % backup here
 %%
 disp('CLEANUP CALIBRATION')
@@ -173,12 +178,19 @@ fig = io.checkCalibration(Exp);
 
 C = calibGUI(Exp0);
 %%
+
+for i = 1:numel(Exp.D)
+    
+   eyeX = Exp.D{i}.eyeData
+    Exp.D{i}.dx
+end
+%%
 % S.CalibMat = C.cmat;
 Exp = C.Exp;
 figure(1); clf
 plot(Exp0.vpx.smo(:,2)); hold on
 
-eyePos = C.get_eyepos();
+eyePos = C.refine_calibration(); % C.get_eyepos();
 
 % get smo eyetrace
 plot(eyePos(:,1))
@@ -307,11 +319,21 @@ fprintf(fid, 'Done importing session\n');
 
 
 %% load spikes
-load(fullfile(dataPath, 'st_s.mat'));
+Exp.osp = load(fullfile(dataPath, 'spkilo.mat'));
+Exp.osp.st = Exp.osp.st + .6;
+% move zero to the end
+id = max(Exp.osp.clu)+1;
 
-Exp.osp.st = st_s(:,1)+.6;
-Exp.osp.clu = st_s(:,2);
-Exp.osp.cids = unique(st_s(:,2));
+Exp.osp.clu(Exp.osp.clu==0) = id;
+Exp.osp.cids = Exp.osp.cids2;
+Exp.osp.cids(Exp.osp.cids==0) = id;
+
+% Exp.osp.st = st_s.spikeTimes(:,1)+.6;
+% Exp.osp.clu = st_s.spikeTimes(:,2);
+% Exp.osp.depths = st_s.depths;
+% Exp.osp.templates = st_s.templates;
+% Exp.osp.cids = unique(Exp.osp.clu);
+
 
 figure(1); clf
 plot.raster(Exp.osp.st, Exp.osp.clu, 1)
@@ -323,20 +345,21 @@ dotTrials = io.getValidTrials(Exp, 'Dots');
 if ~isempty(dotTrials)
     
     BIGROI = [-1 -.5 1 .5]*30;
-    
-    % eyePos = eyepos;
+%     BIGROI = [-5 -5 5 5];
+%     eyePos = C.refine_calibration();
     eyePos = Exp.vpx.smo(:,2:3);
-    % eyePos(:,1) = -eyePos(:,1);
-    % eyePos(:,2) = -eyePos(:,2);
+    eyePos(:,1) = -eyePos(:,1);
+    eyePos(:,2) = -eyePos(:,2);
     binSize = .5;
     Frate = 60;
     [Xstim, RobsSpace, opts] = io.preprocess_spatialmapping_data(Exp, ...
         'ROI', BIGROI*Exp.S.pixPerDeg, 'binSize', binSize*Exp.S.pixPerDeg, ...
-        'eyePos', eyePos, 'frate', Frate);
+        'eyePosExclusion', 2e3, ...
+        'eyePos', eyePos, 'frate', Frate, 'fastBinning', true);
     
     % use indices while fixating
     ecc = hypot(opts.eyePosAtFrame(:,1), opts.eyePosAtFrame(:,2))/Exp.S.pixPerDeg;
-    ix = opts.eyeLabel==1 & ecc < 5.2;
+    ix = opts.eyeLabel==1 & ecc < 15.2;
     
 end
 
@@ -362,6 +385,7 @@ end
 
 legend(h, stims)
 
+
 figure(2); clf; set(gcf, 'Color', 'w')
 subplot(3,1,1:2)
 h = [];
@@ -382,27 +406,27 @@ ylabel('Firing rate of bad units')
 
 
 fprintf('%d / %d fire enough spikes to analyze\n', numel(goodunits), size(RobsSpace,2))
+drawnow
 
-%%
-win = [-1 10];
-stas = forwardCorrelation(Xstim, mean(RobsSpace,2), win, find(ix));
-
+win = [-1 15];
+stas = forwardCorrelation(Xstim, mean(RobsSpace,2), win);
+stas = stas / std(stas(:)) - mean(stas(:));
 wm = [min(stas(:)) max(stas(:))];
 nlags = size(stas,1);
 figure(1); clf
 for ilag = 1:nlags
     subplot(2, ceil(nlags/2), ilag)
-    imagesc(reshape(stas(ilag, :), opts.dims), wm)
+    imagesc(opts.xax, opts.yax, reshape(stas(ilag, :), opts.dims), wm)
 end
 
 %% Analyze population
 R = RobsSpace(:,goodunits);
-stas = forwardCorrelation(Xstim, R, win, find(ix));
+stas = forwardCorrelation(Xstim, R-mean(R), win, find(ix));
 NC = size(R,2);
 
 %% plotting
-sx = 15;
-sy = ceil(NC/sx);
+sx = 5;
+sy = 5; %ceil(NC/sx);
 nperfig = sx*sy;
 nfigs = ceil(NC / nperfig);
 fprintf('%d figs\n', nfigs)

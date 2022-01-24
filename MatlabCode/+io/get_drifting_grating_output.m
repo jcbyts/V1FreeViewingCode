@@ -5,6 +5,7 @@ ip = inputParser();
 ip.addParameter('plot', true)
 ip.addParameter('wheelsmoothing', 15)
 ip.addParameter('remove_breaks', false)
+ip.addParameter('truncate', true)
 ip.parse(varargin{:})
 %% Grating tuning
 
@@ -234,6 +235,46 @@ if ip.Results.remove_breaks
             breakStop((iBreak + 1):end) = breakStop((iBreak + 1):end) - breakDur;
             breakStart((iBreak + 1):end) = breakStart((iBreak + 1):end) - breakDur;
         end
+    end
+    
+    plotGratingData(D)
+    drawnow
+end
+
+
+if ip.Results.truncate
+    % remove all events that happen before the first spike or after the
+    % last spike
+    
+    % first spike
+    firstOnset = min(D.spikeTimes);
+    lastOffset = max(D.spikeTimes); 
+    
+    ix = D.eyeTime > lastOffset | D.eyeTime < firstOnset;
+    fprintf("Removing %d eye pos samples that occured before the first spike or after the last\n", sum(ix));
+    D.eyeTime(ix) = [];
+    D.eyePos(ix,:) = [];
+    D.eyeLabels(ix) = [];
+    
+    ix = D.treadTime > lastOffset | D.treadTime < firstOnset;
+    fprintf("Removing %d eye pos samples that occured before the first spike or after the last\n", sum(ix));
+    D.treadTime(ix) = [];
+    D.treadSpeed(ix) = [];
+    
+    ix = D.frameTimes > lastOffset | D.frameTimes < firstOnset;
+    fprintf("Removing %d frames that occured outside before the first spike or after the last\n", sum(ix));
+    D.frameTimes(ix) = [];
+    D.framePhase(ix) = [];
+    D.frameContrast(ix) = [];
+    
+    
+    ix = D.GratingOnsets < firstOnset | D.GratingOffsets > lastOffset;
+    
+    gratingFields = {'GratingOnsets', 'GratingOffsets', 'GratingDirections', ...
+            'GratingFrequency', 'GratingSpeeds', 'GratingContrast'};
+        
+    for ifield = 1:numel(gratingFields)
+        D.(gratingFields{ifield})(ix) = [];
     end
     
     plotGratingData(D)

@@ -352,7 +352,7 @@ classdef calibGUI < handle
             
         end
         
-        function refine_calibration(obj)
+        function varargout = refine_calibration(obj)
             
             validTrials = io.getValidTrials(obj.Exp, 'FaceCal');
             
@@ -583,6 +583,10 @@ classdef calibGUI < handle
             opts = optimset('Display', 'none');
             obj.cmatHat = fminsearch(errfun, obj.cmat, opts);
             fprintf('Done\n')
+            
+            if nargout > 0
+                varargout{1} = eyePos2;
+            end
             
             
         end
