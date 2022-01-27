@@ -267,7 +267,7 @@ cmap[0,:] = cmap[3,:]
 Dmouse = load_sessions('allen', subj='functional_connectivity')
 #%%
 Dmarm1 = load_sessions('huk', subj='gru')
-Dmarm2 = load_sessions('huk', subj='brie')
+# Dmarm2 = load_sessions('huk', subj='brie')
 
 #%%
 # save Dmarm1, Dmarm2, and Dmouse
@@ -373,13 +373,13 @@ plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_saccades_overlap.pdf'))
 
 #%% Example RFs
 rfs1 = get_all_rfs(Dmarm1)
-rfs2 = get_all_rfs(Dmarm2)
+# rfs2 = get_all_rfs(Dmarm2)
 
 #%%
 
 
 %matplotlib inline
-rf = rfs2 + rfs1
+rf = rfs1
 inds = np.where([r['success'] for r in rf])[0]
 
 # restrict to clean examples
@@ -521,12 +521,12 @@ plt.savefig(os.path.join(fig_dir, 'huklab_loco_sfn_spike_rate_overlap_%s_vis_%d.
 
 #%%
 fig_dir = '.'
-cond = 'Max'
+cond = 'Base'
 trialthresh = 0
 vis_only=True
 
-# plt.figure(figsize=(8,4))
-plt.figure(figsize=(16,8))
+plt.figure(figsize=(8,4))
+# plt.figure(figsize=(16,8))
 xd = 50
 
 print("Plotting %s Cond" %cond)
