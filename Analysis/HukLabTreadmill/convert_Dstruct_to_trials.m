@@ -207,7 +207,7 @@ for itrial = 1:num_trials
     trix = D.treadTime >= ttime(1)-.1 & D.treadTime <= ttime(end)+.1;
     treadtime = D.treadTime(trix);
     treadSpeed = D.treadSpeed(trix);
-    if numel(treadtime) >= num_bins
+    if numel(treadtime) >= .5*num_bins
         tread_speed = interp1(treadtime, treadSpeed, ttime);
     else
         tread_speed = nan;

@@ -1,4 +1,4 @@
-function varargout = forwardCorrelation(Stim, Robs, win, inds, nbasis)
+function varargout = forwardCorrelation(Stim, Robs, win, inds, nbasis, validonly)
 % varargout = forwardCorrelation(Stim, Robs, win, inds)
 
 % % get good indices
@@ -8,6 +8,10 @@ function varargout = forwardCorrelation(Stim, Robs, win, inds, nbasis)
 % 
 
 NT = size(Stim, 1);
+if nargin < 5 || isempty(validonly)
+    validonly = true;
+end
+
 if nargin < 4 || isempty(inds)
     inds = (1:NT)'; 
 end
@@ -45,7 +49,9 @@ else
 end
 
 % only use indices where all lags are valid
-ix = abs(sum(conv2(double(ix), B, 'full'), 2) - sum(B(:)))<.1; % all timelags good
+if validonly
+    ix = abs(sum(conv2(double(ix), B, 'full'), 2) - sum(B(:)))<.1; % all timelags good
+end
 ix = find(ix);
 
 dims = size(Stim,2);
@@ -58,7 +64,7 @@ end
 disp('Running forward correlation...')
 n = zeros(dims, nlags);
 for ii = 1:dims
-%     fprintf('%d/%d\n', ii, dims)
+    fprintf('%d/%d\n', ii, dims)
         Xstim = conv2(Stim(:,ii), B, 'full');
         Xstim = Xstim(1:end-nlags+1,:);
         if win(1)~=0
@@ -91,4 +97,8 @@ disp('Done')
 varargout{1} = stas;
 if nargout > 1
     varargout{2} = stasSd;
+end
+
+if nargout > 2
+    varargout{3} = n;
 end

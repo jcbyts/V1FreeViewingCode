@@ -41,13 +41,13 @@ instantaneousDecoder = false; % retrain decoder at each timelag
 cumulativeDecoder = false;
 
 %%
-[StimDir, spksb, runningSpeed, Dstat] = bin_population(D, sessionId);
+[StimDir, spksb, runningSpeed, Dstat] = bin_population(D, sessionId, 'plot', false);
 
-sx = ceil(sqrt(Dstat.NCells));
-sy = round(sqrt(Dstat.NCells));
-set(gcf, 'PaperSize', [sy sx]*2, 'PaperPosition', [0 0 sy sx]*2)
-% plot.fixfigure(gcf, 10, [sy sx]*2, 'offsetAxes', false);
-saveas(gcf, fullfile(figDir, 'binned_spikes.pdf'))
+% sx = ceil(sqrt(Dstat.NCells));
+% sy = round(sqrt(Dstat.NCells));
+% set(gcf, 'PaperSize', [sy sx]*2, 'PaperPosition', [0 0 sy sx]*2)
+% % plot.fixfigure(gcf, 10, [sy sx]*2, 'offsetAxes', false);
+% saveas(gcf, fullfile(figDir, 'binned_spikes.pdf'))
 
 % throw out spurious running trials
 toofast = find(any(runningSpeed > 60,2));

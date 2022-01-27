@@ -153,12 +153,12 @@ end
 old_dir = pwd;
 
 cd(fdir)
-flist = dir(fullfile(fdir, '*.mat'));
 
 server_string = 'jake@bancanus'; %'jcbyts@sigurros';
 output_dir = '/home/jake/Data/Datasets/HuklabTreadmill/processed/';
 
 data_dir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
+
 command = 'scp ';
 command = [command '*.mat' ' '];
 command = [command server_string ':' output_dir];
@@ -170,19 +170,58 @@ fprintf('%s\n', fname)
 cd(old_dir)
 
 %% run regression analysis
+fdir = fullfile(getpref('FREEVIEWING', 'HUKLAB_DATASHARE'), 'gratings');
 fout = strrep(fdir, 'gratings', 'regression');
 
 flist = dir(fullfile(fdir, '*.mat'));
+{flist.name}'
+%%
 
-for ifile = 4:numel(flist)
+for ifile = 20:numel(flist)
     fprintf('Running analysis for [%s]\n', flist(ifile).name)
+    
+    % load Dstruct file
     D = load(fullfile(fdir, flist(ifile).name));
     
-    [Stim, opts, Rpred, Running] = do_regression_analysis(D);
+    % fix any wierdness from scipy
+    fields = fieldnames(D);
+    for f = 1:numel(fields)
+        fprintf('[%s]\n', fields{f})
+        if strcmp(fields{f}, 'unit_area')
+            sz = size(D.unit_area);
+            unit_area = cell(sz(1), 1);
+            for i = 1:sz(1)
+                unit_area{i} = strrep(D.unit_area(i,:), ' ', '');
+            end
+            D.unit_area = unit_area;
+            continue
+
+        end
+
+        if iscell(D.(fields{f}))
+            D.(fields{f}) = cell2mat(D.(fields{f}));
+        end
+    end
     
-    disp('Saving...')
-    save(fullfile(fout, flist(ifile).name), '-v7.3', 'Stim', 'opts', 'Rpred', 'Running')
-    disp('Done')
+    if isfield(D, 'unit_area')
+        if ~any(strcmp(D.unit_area, 'VISp'))
+            continue
+        end
+    end
+    
+    
+%     try
+        [Stim, opts, Rpred, Running] = do_regression_analysis(D);
+        
+        disp('Saving...')
+        save(fullfile(fout, flist(ifile).name), '-v7.3', 'Stim', 'opts', 'Rpred', 'Running')
+        disp('Done')
+%     end
 end
+
+%% fix D if it was created by scipy
+ifile = 24;
+ifile = 58;
+
 
 
