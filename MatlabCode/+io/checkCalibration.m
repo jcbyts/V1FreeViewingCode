@@ -1,8 +1,8 @@
-function fig = checkCalibration(Exp, varargin)
+function fig = checkCalibration(Exp, eyePos)
 
 % Check the existing gaze calibration
 %% organize the data
-fprintf('Correcting eye pos by reanalyzing FaceCal\n')
+% fprintf('Correcting eye pos by reanalyzing FaceCal\n')
 
 validTrials = io.getValidTrials(Exp, 'FaceCal');
 
@@ -12,7 +12,11 @@ tstop = Exp.ptb2Ephys(cellfun(@(x) x.ENDCLOCKTIME, Exp.D(validTrials)));
 eyeTime = Exp.vpx2ephys(Exp.vpx.smo(:,1));
 validIx = getTimeIdx(eyeTime, tstart, tstop);
 
-xy = Exp.vpx.smo(validIx,2:3);
+if ~exist('eyePos', 'var')
+    eyePos = Exp.vpx.smo(:,2:3);
+end
+
+xy = eyePos(validIx,:);
 spd = Exp.vpx.smo(validIx,7);
 
 trialTargets = cellfun(@(x) x.PR.faceconfig(:,1:2), Exp.D(validTrials), 'uni', 0);

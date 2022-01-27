@@ -21,7 +21,7 @@ stat = struct();
 binsize = ip.Results.binsize;
 win = ip.Results.win;
 nboot = ip.Results.nboot;
-
+D.spikeIds(D.spikeIds==0) = 1;
 spikeIds = unique(D.spikeIds);
 NC = numel(spikeIds);
 
@@ -58,7 +58,7 @@ numStim = numel(balign);
 treadTime = D.treadTime;
 treadSpeed = D.treadSpeed;
 iiTread = ~(isnan(D.treadTime) | isnan(D.treadSpeed));
-
+iiTread = iiTread & D.treadTime >=0;
 treadTime = treadTime(iiTread);
 treadSpeed = treadSpeed(iiTread);
 

@@ -15,6 +15,8 @@ ip = inputParser();
 ip.addParameter('TAGSTART', 63)
 ip.addParameter('TAGEND', 62)
 ip.addParameter('fid', 1)
+ip.addParameter('zero_mean', false)
+ip.addParameter('normalize', false)
 ip.parse(varargin{:});
 
 TAGSTART = ip.Results.TAGSTART;
@@ -53,6 +55,24 @@ if isempty(VpxFiles)
             Exp.vpx.raw(badsamples,:) = [];
             Exp.vpx.smo = Exp.vpx.raw;
             Exp.vpx2ephys = @(x) Exp.ptb2Ephys(x);
+            
+            % eliminate double samples (this shouldn't do anything)
+            [~,ia] =  unique(Exp.vpx.raw(:,1));
+            Exp.vpx.raw = Exp.vpx.raw(ia,:);
+            
+            % upsample eye traces to 1kHz
+            new_timestamps = Exp.vpx.raw(1,1):1e-3:Exp.vpx.raw(end,1);
+            new_EyeX = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,2), new_timestamps);
+            new_EyeY = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,3), new_timestamps);
+            new_Pupil = interp1(Exp.vpx.raw(:,1), Exp.vpx.raw(:,4), new_timestamps);
+            bad = interp1(Exp.vpx.raw(:,1), double(Exp.vpx.raw(:,2)>31e3), new_timestamps);
+            Exp.vpx.raw = [new_timestamps(:) new_EyeX(:) new_EyeY(:) new_Pupil(:)];
+            
+            Exp.vpx.raw(bad>0,2:end) = nan; % nan out bad sample times
+            Exp.vpx.raw(:,3) = -Exp.vpx.raw(:,3) + 1;
+            
+            %% convert eye position to degrees
+%             Exp = get_smo_eyetrace(Exp);
             
             Exp = get_smo_eyetrace(Exp);
             
@@ -93,6 +113,19 @@ for zk = FileSort(:,1)'
                 vpx.raw(:,1) = vpx.raw(:,1) + BigN;  % add time offset before concat
                 vpx.smo(:,1) = vpx.smo(:,1) + BigN;
                 vpx.tstrobes = vpx.tstrobes + BigN;
+            end
+
+            if ip.Results.zero_mean
+                lost_track = vpx.raw(:,2)==max(vpx.raw(:,2)) | vpx.raw(:,3)==max(vpx.raw(:,3));
+                
+                vpx.raw(~lost_track,2) = vpx.raw(~lost_track,2) - mean(vpx.raw(~lost_track,2));
+                vpx.raw(~lost_track,3) = vpx.raw(~lost_track,3) - mean(vpx.raw(~lost_track,3));
+
+                if ip.Results.normalize
+                    vpx.raw(~lost_track,2) = vpx.raw(~lost_track,2) / std(vpx.raw(~lost_track,2));
+                    vpx.raw(~lost_track,3) = vpx.raw(~lost_track,3) / std(vpx.raw(~lost_track,3));
+                end
+
             end
             %******* concatenate large file stream **********
             Exp.vpx.raw = [Exp.vpx.raw ; vpx.raw];

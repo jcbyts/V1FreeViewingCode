@@ -2,18 +2,18 @@
 user = 'jakelaptop';
 addFreeViewingPaths(user);
 addpath Analysis/manuscript_freeviewingmethods/
-
+addpath Analysis/HukLabTreadmill/
 
 %%
 close all
-sessId = 13;
+sessId = 46;
 [Exp, S] = io.dataFactoryTreadmill(sessId);
 Exp.osp.cgs = ones(size(Exp.osp.cids))*2;
 
 io.checkCalibration(Exp);
 %%
 % BIGROI = [-10 -8 10 8];
-BIGROI = [-4 -4 4 4];
+BIGROI = [-30 -15 30 15];
 
 % eyePos = eyepos;
 eyePos = Exp.vpx.smo(:,2:3);
@@ -22,19 +22,202 @@ eyePos = Exp.vpx.smo(:,2:3);
 
 stat = spat_rf_helper(Exp, 'ROI', BIGROI, ...
     'win', [0 12],...
-    'binSize', .3, 'plot', true, 'debug', false, 'spikesmooth', 1, 'eyePos', eyePos);
+    'binSize', .5, 'plot', true, 'debug', false, 'spikesmooth', 1, 'eyePos', eyePos);
+
+%% GET SPATIAL RFS
+
+dotTrials = io.getValidTrials(Exp, 'Dots');
+if ~isempty(dotTrials)
+    
+    BIGROI = [-1 -.5 1 .5]*30;
+    
+    % eyePos = eyepos;
+    eyePos = Exp.vpx.smo(:,2:3);
+    % eyePos(:,1) = -eyePos(:,1);
+    % eyePos(:,2) = -eyePos(:,2);
+    binSize = .5;
+    Frate = 60;
+    [Xstim, RobsSpace, opts] = io.preprocess_spatialmapping_data(Exp, ...
+        'ROI', BIGROI*Exp.S.pixPerDeg, 'binSize', binSize*Exp.S.pixPerDeg, ...
+        'eyePos', eyePos, 'frate', Frate);
+    
+    % use indices while fixating
+    ecc = hypot(opts.eyePosAtFrame(:,1), opts.eyePosAtFrame(:,2))/Exp.S.pixPerDeg;
+    ix = opts.eyeLabel==1 & ecc < 5.2;
+    
+end
+
+
+spike_rate = mean(RobsSpace)*Frate;
+
+
+goodunits = find(spike_rate > 3);
+
+fprintf('%d / %d fire enough spikes to analyze\n', numel(goodunits), size(RobsSpace,2))
+
+% Analyze population
+R = RobsSpace(:,goodunits);
+win=[-1 10];
+stas = forwardCorrelation(Xstim, R, win, find(ix));
+NC = size(R,2);
+
+%% Get spatial and temporal RFs
+RFspop = zeros([opts.dims NC]);
+RFtpop = zeros([size(stas,1), NC]);
+
+for cc = 1:NC
+
+    I = squeeze(stas(:,:,cc));
+    I = (I - mean(I(:)) )/ std(I(:));
+
+    [bestlag,j] = find(I==max(I(:)));
+    I = I(min(max(bestlag(1)+[-1 0 1], 1), nlags),:);
+    I = mean(I);
+    I = imgaussfilt(reshape(I, opts.dims), 1);
+    RFspop(:,:,cc) = I;
+    
+    id = find(I(:)==max(I(:)));
+    
+    RFtpop(:,cc) = stas(:,id,cc);
+        
+    
+end
+
+
+%% plotting
+sx = 15;
+sy = ceil(NC/sx);
+nperfig = sx*sy;
+nfigs = ceil(NC / nperfig);
+fprintf('%d figs\n', nfigs)
+nlags = size(stas,1);
+if nfigs == 1
+    figure(1); clf; set(gcf, 'Color', 'w')
+end
+
+RFspop = zeros([opts.dims NC]);
+
+for cc = 1:NC
+    if nfigs > 1
+        fig = ceil(cc/nperfig);
+        figure(fig); set(gcf, 'Color', 'w')
+    end
+
+    si = mod(cc, nperfig);  
+    if si==0
+        si = nperfig;
+    end
+    subplot(sy,sx, si)
+
+    I = squeeze(stas(:,:,cc));
+    I = (I - mean(I(:)) )/ std(I(:));
+
+    [bestlag,j] = find(I==max(I(:)));
+    I = I(min(max(bestlag(1)+[-1 0 1], 1), nlags),:);
+    I = mean(I);
+    I = imgaussfilt(reshape(I, opts.dims), 1);
+    RFspop(:,:,cc) = I;
+%     I = std(I);
+    xax = opts.xax/Exp.S.pixPerDeg;
+    yax = opts.yax/Exp.S.pixPerDeg;
+    imagesc(xax, yax, I, [-2, 2])
+    colormap(plot.coolwarm)
+    title(Exp.osp.cids(goodunits(cc)))
+end
+
 
 %%
 
-ROI = [-2 -2.5 2 2.5];
+I = reshape(RFspop, prod(opts.dims), NC);
+
+nFac = 6;
+rng(1234)
+[w, h] = nnmf(I, nFac);
+
+figure(1); clf
+xax = opts.xax/Exp.S.pixPerDeg;
+yax = opts.yax/Exp.S.pixPerDeg;
+
+for i = 1:nFac
+    subplot(ceil(nFac/2), 2, i)
+    imagesc(xax, yax, reshape(w(:,i), opts.dims))
+    title(i)
+end
+
+factors = [1 2 3];
+%%
+figure(2); clf
+plot3(h(factors(1),:), h(factors(2),:), h(factors(3),:), 'o')
+
+rf_units = find(any(h(factors,:)>0.05,1));
+N = numel(rf_units);
+fprintf('%d/%d units have RFs\n', N, NC)
+
+sx = round(sqrt(N));
+sy = ceil(sqrt(N));
+
+[gridx, gridy] = meshgrid(-25:5:25);
 
 figure(2); clf
-imagesc(stat.xax, stat.yax, sum(stat.spatrf,3)); axis xy
+
+
+%%
+
+figure(3); clf
+ax = plot.tight_subplot(sx, sy, 0.01, 0.01);
+for cc = 1:N
+    I = RFspop(:,:,rf_units(cc));
+    set(gcf, 'currentaxes', ax(cc))
+    imagesc(xax, yax, I, [-2 2]); hold on
+    plot(gridx, gridy, 'w'); 
+    plot(gridy, gridx, 'w')
+    xlim(xax([1 end]))
+    ylim(yax([1 end]))
+    
+end
+
+colormap(plot.coolwarm)
+%%
+
+[xx,yy] = meshgrid(xax, yax);
+pow = 20;
+
+
+
+factors = [1 3];
+figure(1); clf
+i = 3;
+I = reshape(w(:,i), opts.dims);
+I = I ./ max(I(:));
+I(I < 0.1) = 0;
+
+Iw = I.^pow/sum(I(:).^pow);
+x = xx(:)'*Iw(:);
+y = yy(:)'*Iw(:);
+
+subplot(1,2,1)
+imagesc(xax, yax, I)
 hold on
+plot(x, y, 'ok')
+
+% initial parameter guess
+par0 = [x y 1];
+    
+% gaussian function
+gfun = @(params, X) exp(-.5 * sum(((X-[params(1) params(2)])*pinv([params(3) params(4); params(4) params(3)]'*[params(3) params(4); params(4) params(3)])).*(X-[params(1) params(2)]),2));
+    
+    
+subplot(1,2,2)
+
+xy = get_rf_contour(xx, yy, I, 'thresh', .05, 'plot', true);
+
+ROI = [min(xy(:,1)) min(xy(:,2)) max(xy(:,1)) max(xy(:,2))];
+
 plot(ROI([1 3]), ROI([2 2]), 'r', 'Linewidth', 2)
 plot(ROI([1 3]), ROI([4 4]), 'r', 'Linewidth', 2)
 plot(ROI([1 1]), ROI([2 4]), 'r', 'Linewidth', 2)
 plot(ROI([3 3]), ROI([2 4]), 'r', 'Linewidth', 2)
+
 title('Average Spatial RF & ROI')
 xlabel('Azimuth (pixels)')
 ylabel('Elevation (pixels)')
@@ -47,7 +230,7 @@ close all
 % pixels run down so enforce this here
 S.rect = ROI;
 S.rect([2 4]) = sort(-S.rect([2 4]));
-fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'Gabor'}, 'overwrite', false);
+fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'Dots'}, 'overwrite', false);
 
 flist{1} = fname;
 
@@ -68,7 +251,7 @@ for i = 1:numel(flist)
 end
 %% test that it worked
 id = 1;
-stim = 'Gabor';
+stim = 'Dots';
 tset = 'Train';
 
 sz = h5readatt(fname, ['/' stim '/' tset '/Stim'], 'size');
@@ -134,6 +317,10 @@ end
 
 
 %%
+
+goodunits = find(mean(Robs)*frate > 1);
+NC = numel(goodunits);
+
 plotit = true;
 rfs = struct();
 rfs.srf = zeros(NX, NY, NC);
@@ -154,14 +341,16 @@ yax = yax(2:end);
 
 
 for cc = 1:NC
-    sta = stas(:,:,cc);
+    sta = stas(:,:,goodunits(cc));
     nlags = size(sta,1);
     
     sta = reshape(sta, [nlags, NX NY]);
     sta = (sta - mean(sta(:))) / std(sta(:));
     
-    
     sflat = reshape(sta, nlags, []);
+    if any(isnan(sflat(:)))
+        continue
+    end
     
     [bestlag, ~] = find(max(abs(sflat(:)))==abs(sflat));
     
@@ -205,11 +394,13 @@ cmap = hsv(NC);
 cmap = (cmap + .5*ones(size(cmap)))/2;
 for cc = 1:NC
     subplot(sx, sy, cc)
+    try
     imagesc(rfs.xax, rfs.yax, rfs.srf(:,:,cc)); hold on
     plot(rfs.contours{cc}(:,1), rfs.contours{cc}(:,2), 'Color', 'r', 'Linewidth', 1); hold on
     axis xy
     plot(xlim, [0 0], 'y')
     plot([0 0], ylim, 'y')
+    end
 end
 colormap gray
 % colormap(plot.viridis)

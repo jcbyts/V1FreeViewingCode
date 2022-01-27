@@ -14,12 +14,12 @@ addpath Analysis/HukLabTreadmill/ % the code will always assume you're running f
 
 % if you call it with no arguments, it will list all sessionIDs that have
 % been added to the datasets.xls file
-sessList = io.dataFactoryTreadmill({'StimulusSuite', 'PLDAPS', 'Chamber', 'V1'});
+sessList = io.dataFactoryTreadmill({'StimulusSuite', 'MarmoV5', 'Chamber', 'V1'});
 
 %% Step 1.1: Try importing a session
 
 
-for id = 1%:numel(sessList)
+for id = 30:numel(sessList)
     sessionId = sessList{id};
 %     try
             
@@ -94,7 +94,16 @@ for id = 1%:numel(sessList)
             stat.rffit(cc).yax = stat.yax;
         end
     else
-        stat.rffit = [];
+        % store empty RF information
+        cids = unique(D.spikeIds);
+        NC = numel(cids);
+%         stat.rffit = repmat(struct('id', [], 'srf', [], 'xax', [], 'yax', []), NC, 1);
+        for cc = 1:NC
+            stat.rffit(cc).id = cids(cc);
+            stat.rffit(cc).srf = nan;
+            stat.rffit(cc).xax = nan;
+            stat.rffit(cc).yax = nan;
+        end
     end
 
     D.units = stat.rffit;
