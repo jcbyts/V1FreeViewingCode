@@ -31,6 +31,15 @@ circdiff = @(x,y) angle(exp(1i*(x - y)/180*pi))/pi*180;
 
 grating_duration = mode(D.GratingOffsets-D.GratingOnsets);
 fprintf('Grating Duration %02.2f s\n', grating_duration)
+if isnan(grating_duration) || grating_duration < .1
+    Stim = [];
+    return
+end
+
+if isempty(D.frameTimes)
+    Stim = [];
+    return
+end
 
 num_trials = numel(D.GratingOnsets);
 trial_time = -pre_stim:bin_size:(grating_duration + post_stim);
@@ -66,6 +75,8 @@ if ip.Results.shuffle
 else
     trial_idx = 1:num_trials;
 end
+
+trial_idx = trial_idx(~isnan(D.GratingOffsets(trial_idx)));
 
 for itrial = 1:num_trials
 %     fprintf('Trial %d/%d\n', itrial, num_trials)

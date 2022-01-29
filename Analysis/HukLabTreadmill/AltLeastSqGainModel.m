@@ -19,7 +19,7 @@ xgain = X(train_inds,gain_idx);
 xstim = X(train_inds,stim_idx);
 xrest = X(train_inds,rest_idx);
 Ytrain = Y(train_inds);
-SSfull0 = sum( (Ytrain - mean(Ytrain)).^2);
+% SSfull0 = sum( (Ytrain - mean(Ytrain)).^2);
 g = xgain*g0(2) + ~xgain*g0(1);
 
 if ~exist('Lgain', 'var')
@@ -35,12 +35,12 @@ end
 yhatF = [xstim.*g xrest]*Bfull(2:end) + Bfull(1);
 SSfull = sum( (Ytrain - yhatF).^2);
 
-step = SSfull0 - SSfull;
+% step = SSfull0 - SSfull;
 SSfull0 = SSfull;
 steptol = 1e-3;
 iter = 1;
 
-while step > steptol && iter < 10
+while true
     
     % fit gains
     stimproj = xstim*Bfull(find(stim_idx)+1);
@@ -50,7 +50,7 @@ while step > steptol && iter < 10
     g0 = [Bgain(2) Bgain(3)];
     g = xgain*g0(2) + ~xgain*g0(1);
     
-    [Lfull, Bfull] = ridgeMML(Ytrain, [xstim.*g xrest], false, Lfull);
+    [Lfull, Bfull0] = ridgeMML(Ytrain, [xstim.*g xrest], false, Lfull);
     
     yhatF = [xstim.*g xrest]*Bfull(2:end) + Bfull(1);
     SSfull = sum( (Ytrain - yhatF).^2);
@@ -58,13 +58,22 @@ while step > steptol && iter < 10
     step = SSfull0 - SSfull;
     SSfull0 = SSfull;
     fprintf("Step %d, %02.5f\n", iter, step)
+    if step < steptol || iter > 5
+        break
+    end
     iter = iter + 1;
+    Bfull = Bfull0;
+    g1 = g0;
 end
 
-Gain = g0;
+if ~exist('g1', 'var')
+    Bfull = Bfull0;
+    g1 = g0;
+end
+
+Gain = g1;
 Betas = Bfull;
 Ridge = Lfull;
-
 
 xgain = X(:,gain_idx);
 xstim = X(:,stim_idx);

@@ -1,5 +1,9 @@
-function [Vm, cBeta, cR, subIdx, cRidge, cLabels, dataIdxs] =  crossValModel(fullR, Vc, cLabels, regIdx, regLabels, folds, dataIdxs)
+function [Vm, cBeta, cR, subIdx, cRidge, cLabels, dataIdxs] =  crossValModel(fullR, Vc, cLabels, regIdx, regLabels, folds, dataIdxs, datafilters)
 % function to compute cross-validated R^2
+
+if ~exist('datafilters', 'var')
+    datafilters = [];
+end
 
 cIdx = ismember(regIdx, find(ismember(regLabels,cLabels))); %get index for task regressors
 cLabels = regLabels(sort(find(ismember(regLabels,cLabels)))); %make sure motorLabels is in the right order
@@ -35,9 +39,9 @@ for iFolds = 1:folds(1)
     if folds(1) > 1        
         dataIdx = dataIdxs(iFolds,:);
         if iFolds == 1
-            [cRidge, cBeta{iFolds}] = ridgeMML(Vc(:,dataIdx)', cR(dataIdx,:), false); %get beta weights and ridge penalty for task only model
+            [cRidge, cBeta{iFolds}] = ridgeMML(Vc(:,dataIdx)', cR(dataIdx,:), false, nan, datafilters(dataIdx,:)); %get beta weights and ridge penalty for task only model
         else
-            [~, cBeta{iFolds}] = ridgeMML(Vc(:,dataIdx)', cR(dataIdx,:), false, cRidge); %get beta weights for task only model. ridge value should be the same as in the first run.
+            [~, cBeta{iFolds}] = ridgeMML(Vc(:,dataIdx)', cR(dataIdx,:), false, cRidge, datafilters(dataIdx,:)); %get beta weights for task only model. ridge value should be the same as in the first run.
         end
         
         Vm(:,~dataIdx) = (cR(~dataIdx,:) * cBeta{iFolds}(2:end,:))' + cBeta{iFolds}(1,:)'; %predict remaining data
@@ -46,7 +50,7 @@ for iFolds = 1:folds(1)
             fprintf(1, 'Current fold is %d out of %d\n', iFolds, folds);
         end
     else
-        [cRidge, cBeta{iFolds}] = ridgeMML(Vc', cR, true); %get beta weights for task-only model.
+        [cRidge, cBeta{iFolds}] = ridgeMML(Vc', cR, true, nan, datafilters); %get beta weights for task-only model.
         Vm = (cR * cBeta{iFolds})'; %predict remaining data
         disp('Ridgefold is <= 1, fit to complete dataset instead');
     end

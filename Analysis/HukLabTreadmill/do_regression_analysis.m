@@ -2,319 +2,129 @@ function [Stim, opts, Rpred, Running] = do_regression_analysis(D)
 % [Stim, opts, Rpred, Running] = do_regression_analysis(D)
 
 %% Get all relevant covariates
+Stim = [];
+opts = [];
+Rpred = [];
+Running = [];
 
 Stim = convert_Dstruct_to_trials(D, 'bin_size', 1/60, 'pre_stim', .2, 'post_stim', .2);
 
 %% bin spikes
-
-bin_times = reshape(Stim.trial_time(:) + Stim.grating_onsets', [], 1);
-tstart = bin_times(1)-.1;
-
-bin_times = bin_times - tstart;
-[bsorted, ind] = sort(bin_times);
-
-if ~isfield(D, 'units')
-    rfcids = [];
-else
-    rfcids = find(arrayfun(@(x) x.maxV > 10 & x.area > .5 , D.units));
+if isempty(Stim)
+    return
 end
 
+[Robs, cids] = bin_spikes_at_frames(Stim, D);
 
-spikeTimes = D.spikeTimes - tstart;
-spikeIds = D.spikeIds + 1;
-cids = unique(spikeIds);
-if isfield(D, 'unit_area')
-    cids = intersect(cids, find(strcmp(D.unit_area, 'VISp')));
-end
+Robs = filtfilt(ones(7,1)/7, 1, Robs);
 
-iix = ismember(D.spikeIds, cids);
-iix = spikeTimes > min(bin_times(:)) & iix;
-sp = struct('st', spikeTimes(iix), 'clu', spikeIds(iix), 'cids', unique(spikeIds));
-
-Robs = binNeuronSpikeTimesFast(sp, bsorted, Stim.bin_size*1.1);
-
-rate_cids = find((mean(Robs) / Stim.bin_size) > 1);
-
-cids = union(rate_cids, rfcids);
-NC = numel(cids);
-fprintf('%d units meet the firing rate or RF criterion \n', NC)
-
-Robs = Robs(:, cids);
-Robs = Robs(ind,:);
+NC = size(Robs,2);
+U = eye(NC);
 cc = 0;
 
-Robs = filtfilt(ones(2,1)/2, 1, Robs);
+%%
+Rt = reshape(Robs, numel(Stim.trial_time), [], NC);
+figure(1); clf;
+plot(squeeze(sum(sum(Rt,2),1)), sum(Robs), '.'); hold on; plot(xlim, xlim, 'k')
 
-U = eye(NC);
+Rt = squeeze(sum(Rt));
+size(Rt)
+% 
+% assert(sum(Robs)==sum(Rt))
+%% get data filters
+dfs = false(numel(Stim.trial_time), numel(Stim.grating_onsets), NC);
+
+for cc = 1:NC
+iix = getStableRange(imboxfilt(Rt(:,cc), 25));
+dfs(:,iix,cc) = true;
+%     dfs(iix,cc) = true;
+drawnow
+end
+
+dfs = reshape(dfs, [], NC);
+% figure(2); clf
+% plot(zscore(Rt(:,cc)))
+% end
+
 %% get unit eccentricity
 ecc = nan(1, NC);
 if isfield(D, 'units')
-    eccrf = arrayfun(@(x) hypot(x.center(1), x.center(2)), D.units(rfcids));
-    ecc(ismember(cids, rfcids)) = eccrf;
+    allcids = unique(D.spikeIds);
+    rfinds = (arrayfun(@(x) x.maxV > 10 & x.area > .5 , D.units));
+    rfcids = allcids(rfinds);
+    eccrf = arrayfun(@(x) hypot(x.center(1), x.center(2)), D.units(rfinds));
+    ecc(ismember(cids, rfcids)) = eccrf(ismember(rfcids, cids));
 end
 
-%% build the design matrix
+%% build the design matrix components
+% build design matrix
 opts = struct();
-
-opts.stim_dur = median(D.GratingOffsets-D.GratingOnsets) + 0.05; % length of stimulus kernel
-opts.spd_ctrs = [1 2];
-opts.sf_ctrs = [1 3];
-opts.use_onset_only = false;
-opts.use_derivative = true;
-opts.use_sf_tents = false;
-opts.include_onset = true;
-opts.include_full_stim_split = false;
-opts.dph = 45; % spacing for phase basis
+assert(Stim.bin_size==1/60, 'Parameters have only been set for 60Hz sampling')
 opts.collapse_speed = true;
 opts.collapse_phase = true;
-opts.rf_eccentricity = ecc;
-opts.pupil_thresh = 1;
-
-opts.phase_ctrs = 0:opts.dph:360-opts.dph;
-
-% running parameters
-opts.run_thresh = 3;
-opts.nrunbasis = 25;
-opts.run_offset = -5;
-opts.run_post = 40;
-
-% saccade parameters
-opts.nsacbasis = 20;
-opts.sac_offset = -10;
-opts.sac_post = 40;
-opts.sac_covariate = 'onset';
-
-opts.num_drift_tents = 15;
-
-opts.nphi = numel(opts.phase_ctrs);
-opts.nspd = numel(opts.spd_ctrs);
-
-if opts.collapse_speed
-    opts.nspd = 1; % collapse across speed
-end
-if opts.collapse_phase
-    opts.nphi = 1; % collapse across phase
-end
-
-circdiff = @(x,y) angle(exp(1i*(x - y)/180*pi))/pi*180;
-
-contrast = Stim.contrast(:);
-freq = Stim.freq(:);
-NT = numel(freq);
-
-stim_on = contrast > 0 & freq > 0;
-
-% onset only
-if opts.use_onset_only
-    stim_on = [false; diff(stim_on)>0];
-end
-
-direction = Stim.direction(:);
-speed = Stim.speed_grating(:) .* stim_on;
-speedeye = speed + Stim.speed_eye(:) .* stim_on;
-
-opts.directions = unique(direction(stim_on));
-
-opts.nd = numel(opts.directions);
-
-% turn direction into "one hot" matrix
-xdir = (direction == opts.directions(:)') .* stim_on;
-
-if opts.use_sf_tents
-    % spatial frequency (with basis)
-    sf = tent_basis(freq, opts.sf_ctrs) .* stim_on;
-    opts.nsf = numel(opts.sf_ctrs);
-else
-    % spatial frequency (no tents)
-    opts.sf_ctrs = unique(freq(stim_on));
-    opts.nsf = numel(opts.sf_ctrs);
-    sf = (freq == opts.sf_ctrs(:)') .* stim_on;
-end
-
-spd = tent_basis(speedeye, opts.spd_ctrs) .* stim_on;
-
-% figure(1); clf; plot(max(1- abs(circdiff((0:360)',phase_ctrs)/dph), 0))
-
-xphase = max( 1 - abs(circdiff(Stim.phase_eye(:) + Stim.phase_grating(:), opts.phase_ctrs)/opts.dph), 0);
-
-Xbig = zeros(NT, opts.nd, opts.nsf, opts.nphi, opts.nspd);
-for idir = 1:opts.nd
-    for isf = 1:opts.nsf
-        if opts.nphi > 1
-            for iphi = 1:opts.nphi
-                if opts.nspd > 1
-                    Xbig(:,idir, isf, iphi, :) = xdir(:,idir).*sf(:,isf).*xphase(:,iphi).*spd;
-                else
-                    Xbig(:,idir, isf, iphi, 1) = xdir(:,idir).*sf(:,isf).*xphase(:,iphi);
-                end
-            end
-        else
-            Xbig(:,idir, :, 1,1) = xdir(:,idir).*sf;
-        end 
-    end
-end
-
-Xbig = reshape(Xbig, NT, []);
-
-if opts.use_derivative
-    Xbig = max(filter([1; -1], 1, Xbig), 0);
-end
-
-figure(1); clf
-imagesc(Xbig(1:300,:))
-ylabel('Sample #')
-xlabel('Stim Covariate')
-
-% time embedding
+opts.include_onset = false;
+opts.stim_dur = median(D.GratingOffsets-D.GratingOnsets) + 0.2; % length of stimulus kernel
+opts.use_sf_tents = false;
 
 stim_dur = ceil((opts.stim_dur)/Stim.bin_size);
-opts.stim_ctrs = [0:10 15:5:stim_dur-2];
-Bt = tent_basis(0:stim_dur, opts.stim_ctrs);
-
-figure(1); clf, 
-subplot(1,2,1)
-plot((0:stim_dur)*Stim.bin_size, Bt)
-title('Stimulus Temporal Basis')
-xlabel('Time (bins)')
-
-subplot(1,2,2)
-imagesc(Bt)
-title('Stimulus Temporal Basis')
-xlabel('Basis Id')
-ylabel('Time (bins)')
-
-nlags = size(Bt,2);
-Xstim = temporalBases_dense(Xbig, Bt);
-
-% build running
-
-Xdrift = tent_basis(1:NT, linspace(1, NT, opts.num_drift_tents));
-
-
-opts.run_ctrs = linspace(opts.run_offset, opts.run_post, opts.nrunbasis);
-run_basis = tent_basis(opts.run_offset:opts.run_post, opts.run_ctrs);
-
-opts.sac_ctrs = linspace(opts.sac_offset, opts.sac_post, opts.nsacbasis);
-sac_basis = tent_basis(opts.sac_offset:opts.sac_post, opts.sac_ctrs);
-
-Xsac = zeros(NT, opts.nsacbasis);
-Xrun = zeros(NT, opts.nrunbasis);
-
-T = numel(Stim.trial_time);
-num_trials = numel(Stim.grating_onsets);
-
-for itrial = 1:num_trials
-    % saccades
-    if strcmp(opts.sac_covariate, 'onset')
-        x = conv2(Stim.saccade_onset(:,itrial), sac_basis, 'full');
-    else
-        x = conv2(Stim.saccade_offset(:,itrial), sac_basis, 'full');
-    end
-    x = circshift(x, opts.sac_offset, 1);
-    
-    Xsac((itrial-1)*T + (1:T),:) = x(1:T,:);
-    
-    % running
-    run_onset = max(filter([1; -1], 1, Stim.tread_speed(:,itrial)>opts.run_thresh), 0);
-    x = conv2(run_onset, run_basis, 'full');
-    x = circshift(x, opts.run_offset, 1);
-    
-    Xrun((itrial-1)*T + (1:T),:) = x(1:T,:);
-    
+opts.stim_ctrs = [2:5:10 15:15:stim_dur];
+if ~isfield(opts, 'stim_ctrs')
+    opts.stim_ctrs = [0:5:10 15:10:stim_dur-2];
 end
-
-
-good_inds = find(~isnan(Stim.eye_pos_proj(:)) & ~isnan(sum(Xrun,2)));
-
-sta = (Xsac(good_inds,:)'*Robs(good_inds,:))./sum(Xsac(good_inds,:))';
-rta = (Xrun(good_inds,:)'*Robs(good_inds,:))./sum(Xrun(good_inds,:))';
+Bt = tent_basis(0:stim_dur+15, opts.stim_ctrs);
 
 figure(1); clf
-subplot(1,2,1)
-plot(opts.sac_ctrs*Stim.bin_size, sta)
-title('saccades')
-subplot(1,2,2)
-plot(opts.run_ctrs*Stim.bin_size, rta)
-title('running')
+plot(Bt)
 
-isrunning = Stim.tread_speed(:)>opts.run_thresh;
-zpupil = Stim.eye_pupil(:) / nanstd(Stim.eye_pupil(:));
-zpupil = zpupil - nanmean(zpupil);
-
-figure(1); clf
-plot(zpupil)
-
-ispupil = zpupil > opts.pupil_thresh;
-hold on
-plot(ispupil)
-Xrun = [Xrun isrunning];
-
-Xonset = temporalBases_dense(stim_on, Bt);
-
-if opts.include_full_stim_split
-    XstimR = Xstim .* (isrunning & good_inds);
-    XstimS = Xstim .* (~isrunning & good_inds);
-    assert(sum(sum(XstimR(:,:),2)>0 & sum(XstimS(:,:),2))==0, 'Stimulus is labeled running and not running at the same time')
-end
-
-% %% double check running split
-% inds = 1:300;
-% 
-% %%
-% inds = inds + 300;
-% figure(1); clf
-% subplot(1,3,1)
-% imagesc(XstimR(inds,:))
-% subplot(1,3,2)
-% imagesc(XstimS(inds,:))
-% subplot(1,3,3)
-% plot(sum(XstimR(inds,:),2)); hold on
-% plot(sum(XstimS(inds,:),2));
-% 
-% plot(sum(XstimR(inds,:),2)>0 & sum(XstimS(inds,:),2), '.');
+%%
+[X, opts] = build_design_matrix(Stim, opts);
 
 
-%% concatenate design matrix
+% concatenate full design matrix
 
-if opts.include_full_stim_split
-    % Add stimulus covariates
-    regLabels = {'Stim R', 'Stim S', 'Stim'};
-    regIdx = ones(1, size(XstimR,2));
-    k = 2;
-    regIdx = [regIdx repmat(k, [1, size(XstimR,2)])];
-    k = k + 1;
-    regIdx = [regIdx repmat(k, [1, size(Xstim,2)])];
 
-    fullR = [XstimR, XstimS, Xstim]; %, Xonset, Xdrift, Xsac, Xrun];
-else
-    regLabels = {'Stim'};
-    k = 1;
-    regIdx = repmat(k, 1, size(Xstim,2)); %#ok<REPMAT>
-    fullR = Xstim;
-end
+label = 'Stim';
+regLabels = {label};
+k = 1;
+X_ = X{ismember(opts.Labels, label)};
+regIdx = repmat(k, 1, size(X_,2)); %#ok<REPMAT>
+fullR = X_;
 
 if opts.include_onset
-    regLabels = [regLabels {'Stim Onset'}];
+    label = 'Stim Onset';
+    regLabels = [regLabels {label}];
     k = k + 1;
-    regIdx = [regIdx repmat(k, [1, size(Xonset,2)])];
-    fullR = [fullR Xonset];
+    X_ = X{ismember(opts.Labels, label)};
+    regIdx = [regIdx repmat(k, [1, size(X_,2)])];
+    fullR = [fullR X_];
 end
 
 % add additional covariates
-regLabels = [regLabels {'Drift'}];
+label = 'Drift';
+regLabels = [regLabels {label}];
 k = k + 1;
-regIdx = [regIdx repmat(k, [1, size(Xdrift,2)])];
-fullR = [fullR Xdrift];
+X_ = X{ismember(opts.Labels, label)};
+regIdx = [regIdx repmat(k, [1, size(X_,2)])];
+fullR = [fullR X_];
 
-regLabels = [regLabels {'Saccade'}];
+label = 'Saccade';
+regLabels = [regLabels {label}];
 k = k + 1;
-regIdx = [regIdx repmat(k, [1, size(Xsac,2)])];
-fullR = [fullR Xsac];
+X_ = X{ismember(opts.Labels, label)};
+regIdx = [regIdx repmat(k, [1, size(X_,2)])];
+fullR = [fullR X_];
 
-regLabels = [regLabels {'Running'}];
+label = 'Running';
+regLabels = [regLabels {label}];
 k = k + 1;
-regIdx = [regIdx repmat(k, [1 size(Xrun,2)])];
-fullR = [fullR Xrun];
+X_ = X{ismember(opts.Labels, label)};
+regIdx = [regIdx repmat(k, [1, size(X_,2)])];
+fullR = [fullR X_];
+
+isrunning = Stim.tread_speed(:) > opts.run_thresh;
+zpupil = Stim.eye_pupil(:) / nanstd(Stim.eye_pupil(:)); %#ok<*NANSTD> 
+zpupil = zpupil - nanmean(zpupil); %#ok<*NANMEAN> 
+ispupil = zpupil > opts.pupil_thresh;
 
 regLabels = [regLabels {'Is Running'}];
 k = k + 1;
@@ -334,7 +144,12 @@ for i = 1:numel(regLabels)
     cov_idx = regIdx == find(strcmp(regLabels, label));
     fprintf('[%s] has %d parameters\n', label, sum(cov_idx))
 end
-
+% 
+% opts.design_remove_cols = find(sum(fullR)<2);
+% opts.design_remove_idx = regIdx(opts.design_remove_cols);
+% fullR(:,opts.design_remove_cols) = [];
+% regIdx(opts.design_remove_cols) = [];
+% fprintf('Removed %d columns with no regressors\n', numel(opts.design_remove_cols))
 
 % %% run QR and check for rank-defficiency. This will show whether a given regressor is highly collinear with other regressors in the design matrix.
 % % The resulting plot ranges from 0 to 1 for each regressor, with 1 being
@@ -357,6 +172,8 @@ end
    
 
 %% Build cv indices that are trial-based
+good_inds = find(~(isnan(Stim.eye_pos_proj_adjusted(:)) | isnan(Stim.tread_speed(:))));
+
 folds = 5;
 n = numel(Stim.trial_time);
 T = size(Robs,1);
@@ -381,7 +198,7 @@ dataIdxs = dataIdxs(:,good_inds);
 % try different models
 modelNames = {'nostim', 'stim', 'stimsac', 'stimrun', 'stimrunsac', 'drift'};
 
-excludeParams = { {'Stim'}, {'Running', 'Saccade'}, {'Running'}, {'Saccade'}, {}, {'Stim','Stim Onset','Running','Saccade'} };
+excludeParams = { {'Stim', 'Stim Onset'}, {'Running', 'Saccade'}, {'Running'}, {'Saccade'}, {}, {'Stim','Stim Onset','Running','Saccade'} };
 alwaysExclude = {'Stim R', 'Stim S', 'Is Running', 'Is Pupil'};
 
 Rpred = struct();
@@ -389,7 +206,8 @@ for iModel = 1:numel(modelNames)
     fprintf('Fitting Model [%s]\n', modelNames{iModel})
     exclude = [excludeParams{iModel} alwaysExclude];
     modelLabels = setdiff(regLabels, exclude); %#ok<*NASGU>
-    evalc("[Vfull, fullBeta, ~, fullIdx, fullRidge, fullLabels] = crossValModel(fullR(good_inds,:), Robs(good_inds,:)', modelLabels, regIdx, regLabels, folds, dataIdxs);");
+%     evalc("[Vfull, fullBeta, ~, fullIdx, fullRidge, fullLabels] = crossValModel(fullR(good_inds,:), Robs(good_inds,:)', modelLabels, regIdx, regLabels, folds, dataIdxs);");
+    [Vfull, fullBeta, ~, fullIdx, fullRidge, fullLabels] = crossValModel((fullR(good_inds,:)), Robs(good_inds,:)', modelLabels, regIdx, regLabels, folds, dataIdxs, dfs(good_inds,:));
     Rpred.(modelNames{iModel}).Rpred = Vfull;
     Rpred.(modelNames{iModel}).Offset = cell2mat(cellfun(@(x) x(1,:), fullBeta(:), 'uni', 0));
     for i = 1:numel(fullBeta)
@@ -412,7 +230,7 @@ fprintf('Done\n')
 restLabels = [{'Stim Onset'}    {'Drift'}    {'Saccade'}    {'Running'}];
 GainModelNames = {'RunningGain', 'PupilGain'}; %{'nostim', 'stim', 'stimsac', 'stimrun', 'stimrunsac'};
 GainTerm = {'Is Running', 'Is Pupil'};
-for iModel = 1
+for iModel = 1%:numel(GainTerm)
     
     labelIdx = ismember(regLabels, [{'Stim'} restLabels]);
     covIdx = regIdx(ismember(regIdx, find(labelIdx)));
@@ -437,13 +255,13 @@ for iModel = 1
         fprintf('%d/%d Unit\n', cc, NC)
         Lgain = nan;
         Lfull = nan;
-        
-        train_inds = find(dataIdxs(ifold,:))';
-        test_inds = find(~dataIdxs(ifold,:))';
 
         for ifold = 1:folds
-            evalc("[Betas, Gain, Ridge, Rhat, Lgain, Lfull] = AltLeastSqGainModel(fullR(good_inds,:), Robs(good_inds,cc), train_inds, regIdx, regLabels, {'Stim'}, GainTerm(iModel), restLabels, Lgain, Lfull);");
-            
+            train_inds = find(dataIdxs(ifold,:))';
+            test_inds = find(~dataIdxs(ifold,:))';
+
+%             evalc("[Betas, Gain, Ridge, Rhat, Lgain, Lfull] = AltLeastSqGainModel(fullR(good_inds,:), Robs(good_inds,cc), train_inds, regIdx, regLabels, {'Stim'}, GainTerm(iModel), restLabels, Lgain, Lfull);");
+            [Betas, Gain, Ridge, Rhat, Lgain, Lfull] = AltLeastSqGainModel(fullR(good_inds,:), Robs(good_inds,cc), train_inds, regIdx, regLabels, {'Stim'}, GainTerm(iModel), restLabels, Lgain, Lfull);
             Rpred.(GainModelNames{iModel}).Offset(ifold,cc) = Betas(1);
             Rpred.(GainModelNames{iModel}).Beta{ifold}(:,cc) = Betas(2:end);
             Rpred.(GainModelNames{iModel}).Gains(ifold,:,cc) = Gain;
@@ -455,7 +273,7 @@ for iModel = 1
     
     % evaluate model
     rbar = nanmean(Robs(good_inds,:));
-    Rhat = Rpred.(GainModelNames{iModel}).Rpred(:,1:numel(good_inds))';
+    Rhat = Rpred.(GainModelNames{iModel}).Rpred';
     Rpred.(GainModelNames{iModel}).Rsquared = rsquared(Robs(good_inds,:), Rhat, false, rbar); %compute explained variance
     Rpred.(GainModelNames{iModel}).CC = modelCorr(Robs(good_inds,:)',Rhat',U); %compute explained variance
     fprintf('Done\n')
@@ -510,8 +328,11 @@ end
 
 inc_thresh = .01;
 figure(1); clf
+sx = ceil(sqrt(npairs));
+sy = round(sqrt(npairs));
+
 for i = 1:npairs
-    subplot(2,npairs, i)
+    subplot(sx, sy, i)
     
     m1 = Rpred.(models{model_pairs(i,1)}).Rsquared;
     m1name = models{model_pairs(i,1)};
@@ -527,7 +348,7 @@ for i = 1:npairs
         m2name = mtmpname;
     end
     
-    plot(m1, m2, 'ow', 'MarkerSize', 6, 'MarkerFaceColor', repmat(.5, 1, 3)); hold on
+    plot(m1, m2, 'ow', 'MarkerSize', 4, 'MarkerFaceColor', repmat(.5, 1, 3)); hold on
     plot(xlim, xlim, 'k')
     plot([0 inc_thresh], [inc_thresh inc_thresh], 'k--')
     plot([inc_thresh inc_thresh], [0 inc_thresh], 'k--')
@@ -536,12 +357,40 @@ for i = 1:npairs
     xlim(max(xlim, 0))
     ylim(max(ylim, 0))
     
-    subplot(2,npairs,i+npairs)
-    iix = m2 > inc_thresh;
-    histogram(m2(iix) - m1(iix), ceil(sum(iix)/2), 'FaceColor', repmat(.5, 1, 3))
-    xlabel(sprintf('%s - %s', m2name, m1name))
-    xlim([-m*.5 m])
+%     subplot(2,npairs,i+npairs)
+%     iix = m2 > inc_thresh;
+%     histogram(m2(iix) - m1(iix), ceil(sum(iix)/2), 'FaceColor', repmat(.5, 1, 3))
+%     xlabel(sprintf('%s - %s', m2name, m1name))
+%     xlim([-m*.5 m])
 end
+
+%%
+model1 = 'drift';
+model2 = 'stim';
+
+cc = cc + 1;
+if cc > NC
+    cc = 1;
+end
+
+figure(2); clf
+subplot(2,1,1)
+plot(Robs(good_inds,cc), 'k'); hold on
+plot(Rpred.(model1).Rpred(cc,:))
+plot(Rpred.(model2).Rpred(cc,:))
+
+subplot(2,1,2)
+rfun = @(x) imboxfilt( (x(:) - Robs(good_inds,cc)).^2, 401);
+plot(rfun(Rpred.(model1).Rpred(cc,:))); hold on
+plot(rfun(Rpred.(model2).Rpred(cc,:)));
+
+iix = find(dfs(good_inds,cc));
+
+rsquared(Rpred.(model2).Rpred(cc,iix), Robs(good_inds(iix),cc))
+
+plot(iix, Robs(good_inds(iix), cc))
+plot(iix, Rpred.(model1).Rpred(cc,iix))
+plot(iix, Rpred.(model2).Rpred(cc,iix))
 
 %% empirical nonlinearity analysis
 nBins = 20;
@@ -684,23 +533,24 @@ Running.empiricalNonlinearity.empNLS = empNLS;
 % % 
 % % 
 % % 
-% % model1 = 'stimsac';
-% % model2 = 'full';
-% % 
-% % m1 = Rpred.(model1).Rsquared;
-% % % m2 = Rpred.(model2).Rsquared;
-% % 
+% %%
+% model1 = 'stimsac';
+% model2 = 'full';
+% 
+% m1 = Rpred.(model1).Rsquared;
+% % m2 = Rpred.(model2).Rsquared;
+% 
 % figure(2); clf
 % plot(imboxfilt(R,51)/bs); hold on
 % plot((driftrate(:))/bs)
-% % plot(Rpred.full.Rpred(cc,:)/bs)
-% % plot(Rpred.stimsac.Rpred(cc,:)/bs)
+% plot(Rpred.full.Rpred(cc,:)/bs)
+% plot(Rpred.stimsac.Rpred(cc,:)/bs)
 % plot(tread_speed(good_inds))
-% % title(rsquared(R/bs, Rpred.RunningGain.Rpred(cc,:)/bs))
+% title(rsquared(R/bs, Rpred.RunningGain.Rpred(cc,:)/bs))
 % 
 % 
-% % title([m1(cc) m2(cc)])
-% %%
+% title([m1(cc) m2(cc)])
+% %
 % tread_speed = Stim.tread_speed(:);
 % tread_speed = tread_speed(good_inds);
 % 
@@ -724,9 +574,9 @@ Running.empiricalNonlinearity.empNLS = empNLS;
 
 
 %% two model comparison
-% 
-% model1 = 'stimsac';
-% model2 = 'RunningGain';
+
+% model1 = 'nostim';
+% model2 = 'stimrunsac';
 % 
 % m1 = Rpred.(model1).Rsquared;
 % m2 = Rpred.(model2).Rsquared;
@@ -830,62 +680,66 @@ Running.empiricalNonlinearity.empNLS = empNLS;
 % legend(h, {'foveal', 'peripheral'})
 % xlabel('Change in firing rate from running')
 % title('cv r^2 > 0.05')
-% %% Get PSTH
-% model = 'stimsac';
-% model2 = 'full';
-% Rhat = Rpred.(model).Rpred';
-% Rhat2 = Rpred.(model2).Rpred';
-% 
-% nbins = numel(Stim.trial_time);
-% B = eye(nbins);
-% 
+%% Get PSTH
+model = 'stimsac';
+model2 = 'stimrunsac';
+Rhat = Rpred.(model).Rpred';
+Rhat2 = Rpred.(model2).Rpred';
+
+nbins = numel(Stim.trial_time);
+B = eye(nbins);
+
+dirs = max(filter([1; -1], 1, Stim.direction(:)==opts.directions(:)'), 0);
 % dirs = double([zeros(1,opts.nd); diff(Stim.direction(:)==opts.directions(:)')==1]);
-% tax = Stim.trial_time;
-% n = sum(tax<=0);
-% Xt = temporalBases_dense(circshift(dirs, -n), B);
-% 
-% 
-% XY = (Xt(good_inds,:)'*Robs(good_inds,:)) ./ sum(Xt(good_inds,:))';
-% XYhat = (Xt(good_inds,:)'*Rhat) ./ sum(Xt(good_inds,:))';
-% XYhat2 = (Xt(good_inds,:)'*Rhat2) ./ sum(Xt(good_inds,:))';
-% %%
-% tax = Stim.trial_time;
-% 
-% Xbar = reshape(XYhat, [nbins, opts.nd, NC]);
-% Xbar2 = reshape(XYhat2, [nbins, opts.nd, NC]);
-% Rbar = reshape(XY, [nbins, opts.nd, NC]);
-% 
-% 
-% cc = cc + 1;
-% if cc > NC
-%     cc = 1;
-% end
-% 
-% 
-% figure(1); clf
-% subplot(1,2,1)
-% imagesc(tax, opts.directions, Xbar(:,:,cc)')
-% subplot(1,2,2)
-% imagesc(tax, opts.directions, Rbar(:,:,cc)')
-% 
-% figure(2); clf
-% subplot(1,2,2)
-% plot(tax, Rbar(:,:,cc))
-% yd = ylim;
-% xlim(tax([1 end]))
-% 
-% 
-% rbar = nanmean(reshape(Rbar(:,:,cc), [], 1));
-% r2 = rsquared(Rbar(:,:,cc), Xbar(:,:,cc), true, rbar);
-% r2m2 = rsquared(Rbar(:,:,cc), Xbar2(:,:,cc), true, rbar);
-% 
-% title(sprintf('%02.2f, %02.2f', r2, r2m2))
-% 
-% subplot(1,2,1)
-% plot(tax, Xbar(:,:,cc))
-% ylim(yd)
-% xlim(tax([1 end]))
-% 
+tax = Stim.trial_time;
+
+n = sum(tax<=0);
+Xt = temporalBases_dense(circshift(dirs, -n), B);
+
+
+XY = (Xt(good_inds,:)'*Robs(good_inds,:)) ./ sum(Xt(good_inds,:))';
+XYhat = (Xt(good_inds,:)'*Rhat) ./ sum(Xt(good_inds,:))';
+XYhat2 = (Xt(good_inds,:)'*Rhat2) ./ sum(Xt(good_inds,:))';
+%%
+tax = Stim.trial_time;
+
+Xbar = reshape(XYhat, [nbins, opts.nd, NC]);
+Xbar2 = reshape(XYhat2, [nbins, opts.nd, NC]);
+Rbar = reshape(XY, [nbins, opts.nd, NC]);
+
+
+cc = cc + 1;
+if cc > NC
+    cc = 1;
+end
+
+%%
+figure(1); clf
+subplot(1,2,1)
+imagesc(tax, opts.directions, Xbar(:,:,cc)')
+subplot(1,2,2)
+imagesc(tax, opts.directions, Rbar(:,:,cc)')
+
+figure(2); clf
+subplot(1,2,2)
+plot(tax, Rbar(:,:,cc))
+yd = ylim;
+xlim(tax([1 end]))
+
+
+rbar = nanmean(reshape(Rbar(:,:,cc), [], 1));
+r2 = rsquared(Rbar(:,:,cc), Xbar(:,:,cc), true, rbar);
+r2m2 = rsquared(Rbar(:,:,cc), Xbar2(:,:,cc), true, rbar);
+
+title(sprintf('%02.2f, %02.2f', r2, r2m2))
+
+subplot(1,2,1)
+plot(tax, Xbar(:,:,cc))
+ylim(yd)
+xlim(tax([1 end]))
+
+title(sprintf('%02.2f, %02.2f', Rpred.(model).Rsquared(cc), Rpred.(model2).Rsquared(cc)))
+
 % %% PSTH model comparison
 %  
 % Xbar = reshape(XYhat, [nbins, opts.nd, NC]);

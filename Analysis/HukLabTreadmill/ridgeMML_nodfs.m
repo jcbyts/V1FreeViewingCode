@@ -1,4 +1,4 @@
-function [L, betas, convergenceFailures] = ridgeMML(Y, X, recenter, L, dfs)
+function [L, betas, convergenceFailures] = ridgeMML(Y, X, recenter, L)
 % [lambdas, betas, convergenceFailures] = ridgeMML(Y, X [, recenter] [, lambdas])
 %
 % This is an implementation of Ridge regression with the Ridge parameter
@@ -84,11 +84,6 @@ if size(Y, 1) ~= size(X, 1)
     error('Size mismatch');
 end
 
-%% get data filters
-if ~exist('dfs', 'var') || isempty(dfs)
-    dfs = true(size(Y));
-end
-
 %% Ensure Y is zero-mean
 % This is needed to estimate lambdas, but if recenter = 0, the mean will be
 % restored later for the beta estimation
@@ -96,11 +91,7 @@ end
 pY = size(Y, 2);
 
 if computeL || recenter
-    YMean = zeros(1, pY);
-    for i = 1:pY
-        YMean(i) = mean(Y(dfs(:,i),i));
-    end
-
+    YMean = mean(Y);
     Y = bsxfun(@minus, Y, YMean);
 end
 
@@ -124,12 +115,12 @@ if computeL
 
     %% SVD the predictors
 
-    [U, S, V] = svd(X, 0);
+    [U, S, V] = svd(full(X), 0);
 
 
     %% Find the valid singular values of X, compute d and alpha
 
-    n = sum(dfs);  % Observations (different for each unit)
+    n = size(X,1);  % Observations
     p = size(V, 2);  % Predictors
 
     d = diag(S);
@@ -143,17 +134,15 @@ if computeL
     % Eliminated the diag(1 ./ d2) term: it gets cancelled later and only adds
     % numerical instability (since later elements of d may be tiny).
     % alph = V' * X' * Y;
-
-    alph = S * U' * (Y.*dfs);
+    alph = S * U' * Y;
     alpha2 = alph .^ 2;
 
 
     %% Compute variance of y
     % In Equation 19, this is shown as y'y
-    YVar = zeros(1, pY);
-    for i = 1:pY
-        YVar(i) = sum(Y(dfs(:,i), i).^2);
-    end
+
+    YVar = sum(Y .^ 2, 1);
+
 
     %% Compute the lambdas
 
@@ -161,8 +150,7 @@ if computeL
 
     convergenceFailures = false(1, pY);
     for i = 1:pY
-        %       fprintf('cell %d/%d\n', i, pY)
-        [L(i), flag] = ridgeMMLOneY(q, d2, n(i), YVar(i), alpha2(:, i));
+        [L(i), flag] = ridgeMMLOneY(q, d2, n, YVar(i), alpha2(:, i));
         convergenceFailures(i) = (flag < 1);
     end
 
@@ -217,7 +205,7 @@ if nargout > 1
 
 
     % Compute X' * Y all at once, again for speed
-    XTY = X' * (Y.*dfs);
+    XTY = X' * Y;
 
     % Compute betas for renormed X
     for i = 1:pY
@@ -284,24 +272,24 @@ NLLFunc = mintNLLFunc(q, d2, n, YVar, alpha2);
 done = 0;
 NLL = Inf;
 for k = 0:stepSwitch * 4
-    smBufferI = mod(smBufferI, smooth) + 1;
-    prevNLL = NLL;
-
-    % Compute negative log likelihood of the data for this value of lambda
-    NLL = NLLFunc(k / 4);
-
-    % Add to smoothing buffer
-    smBuffer(smBufferI) = NLL;
-    testValsL(smBufferI) = k / 4;
-
-    % Check if we've passed the minimum
-    if NLL > prevNLL
-        % Compute limits for L
-        minL = (k - 2) / 4;
-        maxL = k / 4;
-        done = 1;
-        break;
-    end
+  smBufferI = mod(smBufferI, smooth) + 1;
+  prevNLL = NLL;
+  
+  % Compute negative log likelihood of the data for this value of lambda
+  NLL = NLLFunc(k / 4);
+  
+  % Add to smoothing buffer
+  smBuffer(smBufferI) = NLL;
+  testValsL(smBufferI) = k / 4;
+  
+  % Check if we've passed the minimum
+  if NLL > prevNLL
+    % Compute limits for L
+    minL = (k - 2) / 4;
+    maxL = k / 4;
+    done = 1;
+    break;
+  end
 end
 
 
@@ -312,38 +300,34 @@ end
 % Also increase step size from 1/4 to L/stepDenom, for speed and robustness
 % to local minima
 if ~done
-    L = k / 4;
+  L = k / 4;
+  NLL = mean(smBuffer);
+  while ~done
+    L = L + L / stepDenom;
+    smBufferI = mod(smBufferI, smooth) + 1;
+    prevNLL = NLL;
+    
+    % Compute negative log likelihood of the data for this value of lambda,
+    % overwrite oldest value in the smoothing buffer
+    smBuffer(smBufferI) = NLLFunc(L);
+    testValsL(smBufferI) = L;
     NLL = mean(smBuffer);
-    while ~done
-        L = L + L / stepDenom;
-        smBufferI = mod(smBufferI, smooth) + 1;
-        prevNLL = NLL;
-
-        % Compute negative log likelihood of the data for this value of lambda,
-        % overwrite oldest value in the smoothing buffer
-        smBuffer(smBufferI) = NLLFunc(L);
-        testValsL(smBufferI) = L;
-        NLL = mean(smBuffer);
-
-        % Check if we've passed the minimum
-        if (NLL > prevNLL)
-            % Adjust for smoothing kernel (walk back by half the kernel)
-            smBufferI = smBufferI - (smooth - 1) / 2;
-            smBufferI = smBufferI + smooth * (smBufferI < 1); % wrap around
-            maxL = testValsL(smBufferI);
-
-            % Walk back by two more steps to find min bound
-            smBufferI = smBufferI - 2;
-            smBufferI = smBufferI + smooth * (smBufferI < 1); % wrap around
-            minL = testValsL(smBufferI);
-
-            done = 1;
-        end
-
-        if isnan(NLL)
-            done = 1;
-        end
+    
+    % Check if we've passed the minimum
+    if (NLL > prevNLL)
+      % Adjust for smoothing kernel (walk back by half the kernel)
+      smBufferI = smBufferI - (smooth - 1) / 2;
+      smBufferI = smBufferI + smooth * (smBufferI < 1); % wrap around
+      maxL = testValsL(smBufferI);
+      
+      % Walk back by two more steps to find min bound
+      smBufferI = smBufferI - 2;
+      smBufferI = smBufferI + smooth * (smBufferI < 1); % wrap around
+      minL = testValsL(smBufferI);
+      
+      done = 1;
     end
+  end
 end
 
 
@@ -351,21 +335,18 @@ end
 % This is step 2 of the two-step algorithm at the bottom of page 6. Note
 % that Karabatsos made a mistake when describing the indexing relative to
 % k*, which is fixed here (we need to go from k*-2 to k*, not k*-1 to k*+1)
-if isnan(NLL)
-    L = inf;
-    flag = -1;
-else
-    [L, ~, flag] = fminbnd(NLLFunc, max(0, minL), maxL, ...
-        optimset('Display', 'none'));
-end
+
+[L, ~, flag] = fminbnd(NLLFunc, max(0, minL), maxL, ...
+  optimset('Display', 'off'));
+
 
 function NLLFunc = mintNLLFunc(q, d2, n, YVar, alpha2)
 % Mint an anonymous function with L as the only input parameter, with all
 % the other terms determined by the data.
 
-% Equation 19
+% Equation 19 
 % We've modified the math here to eliminate the d^2 term from both alpha
 % (Equation 1, in main function) and here (Equation 19), because they
 % cancel out and add numerical instability.
 NLLFunc = @(L) -(q * log(L) - sum(log(L + d2(1:q))) - ...
-    n * log(YVar - sum(alpha2(1:q) ./ (L + d2(1:q)))));
+  n * log(YVar - sum(alpha2(1:q) ./ (L + d2(1:q)))));
