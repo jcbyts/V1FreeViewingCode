@@ -38,6 +38,31 @@ defopts.num_drift_tents = 15;
 % merge requested options with the defaults
 opts = mergeStruct(defopts,opts);
 
+if isfield(opts, 'trialidx')
+    numtrials = numel(Stim.grating_onsets);
+    fields = fieldnames(Stim);
+    for f = 1:numel(fields)
+        sz = size(Stim.(fields{f}));
+        tdim = find(sz==numtrials);
+        if isempty(tdim)
+            continue
+        end
+
+        switch tdim
+
+            case 1
+                Stim.(fields{f}) = Stim.(fields{f})(opts.trialidx);
+            case 2
+                if numel(sz)==3
+                    Stim.(fields{f}) = Stim.(fields{f})(:,opts.trialidx,:);
+                else
+                    Stim.(fields{f}) = Stim.(fields{f})(:,opts.trialidx);
+                end
+        end
+    end
+end
+
+
 opts.nphi = numel(opts.phase_ctrs);
 opts.nspd = numel(opts.spd_ctrs);
 

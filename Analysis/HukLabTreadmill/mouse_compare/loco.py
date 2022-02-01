@@ -168,17 +168,21 @@ def process_allen_dataset(session):
     
     D = struct()
 
-    gazedata = session.get_screen_gaze_data()
-    
     D['files'] = struct({'path': None, 'name': None, 'session': 'mouse_' + str(session.metadata['ecephys_session_id'])})
-    D['eye_data'] = preprocess_gaze_data(gazedata)
+
+    try:
+        gazedata = session.get_screen_gaze_data()
+        D['eye_data'] = preprocess_gaze_data(gazedata)
+        D['saccades'] = detect_saccades(D['eye_data'], vel_thresh=30, r2_thresh=0.8)
+    except AttributeError:
+        pass
 
     run_time = session.running_speed["start_time"] + \
     (session.running_speed["end_time"] - session.running_speed["start_time"]) / 2
     run_spd = savgol_filter(session.running_speed['velocity'].values, 31, 3)
 
     D['run_data'] = struct({'run_time': run_time.to_numpy(), 'run_spd': run_spd})
-    D['saccades'] = detect_saccades(D['eye_data'], vel_thresh=30, r2_thresh=0.8)
+    
 
     stimsets = [s for s in session.stimulus_names if 'drifting_gratings' in s]
 

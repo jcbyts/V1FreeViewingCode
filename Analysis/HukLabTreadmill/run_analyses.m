@@ -2,7 +2,9 @@ function run_analyses(fdir, fout, flist, ifile)
 
 
 fprintf('Running analysis for [%s]\n', flist(ifile).name)
-    
+if exist(fullfile(fout, flist(ifile).name), 'file')
+    return
+end
 % load Dstruct file
 D = load(fullfile(fdir, flist(ifile).name));
 
@@ -34,10 +36,10 @@ end
 
 
 %     try
-[Stim, opts, Rpred, Running] = do_regression_analysis(D);
+[Stim, opts, Rpred_ind, Rpred] = do_regression_analysis_inspect_individual_cells_dfs(D);
 
 if ~isempty(Stim)
 disp('Saving...')
-save(fullfile(fout, flist(ifile).name), '-v7.3', 'Stim', 'opts', 'Rpred', 'Running')
+save(fullfile(fout, flist(ifile).name), '-v7.3', 'Stim', 'opts', 'Rpred', 'Rpred_ind')
 disp('Done')
 end

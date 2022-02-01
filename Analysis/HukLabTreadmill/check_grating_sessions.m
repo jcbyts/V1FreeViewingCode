@@ -6,10 +6,23 @@ if exist(fullfile(fdir, 'gratings'), 'dir')
     fdir = fullfile(fdir, 'gratings');
 end
 
+
+%% import super sessions brie, gru
+import_supersession('gru', fdir)
+import_supersession('brie', fdir)
+%% import allen dataset
+fdir = '~/Data/Datasets/HuklabTreadmill/Dstruct/';
+import_supersession('allen', fdir)
+%%
 % fdir = '~/Data/Datasets/HuklabTreadmill/Dstruct/';
 flist = dir(fullfile(fdir, '*.mat'));
 {flist.name}'
 ifile = 0;
+%%
+fdir = '~/Data/Datasets/HuklabTreadmill/';
+D = load_subject(subj, fdir);
+
+
 %% load data
 % ifile = ifile + 1;
 for ifile = 44% 23:numel(flist)
@@ -112,13 +125,28 @@ figure(2); clf
 plot(opts.run_ctrs, rta(:,cc))
 
 %%
+fdir = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+if exist(fullfile(fdir, 'gratings'), 'dir')
+    fdir = fullfile(fdir, 'gratings');
+end
+
+
+flist = dir(fullfile(fdir, '*.mat'));
 fout = '~/Data/Datasets/HuklabTreadmill/regression/';
 
-parfor i = 44%6:numel(flist)
+parfor i = 1:numel(flist)
     
     run_analyses(fdir, fout, flist, i);
 
 end
 
+
+fdir = '~/Data/Datasets/HuklabTreadmill/Dstruct/';
+flist = dir(fullfile(fdir, '*.mat'));
     
+parfor i = 1:numel(flist)
+    
+    run_analyses(fdir, fout, flist, i);
+
+end
 

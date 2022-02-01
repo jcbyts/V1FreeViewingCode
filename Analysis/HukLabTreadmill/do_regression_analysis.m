@@ -46,6 +46,15 @@ dfs = reshape(dfs, [], NC);
 % plot(zscore(Rt(:,cc)))
 % end
 
+%% 
+[~, ind] = sort(var(Rt)./sum(Rt), 'descend');
+figure(1); clf
+imagesc(filtfilt(ones(100,1)/100, 1, Robs(:,ind)))
+
+figure(2); clf
+plot(var(Rt)/numel(Stim.trial_time), var(Robs), '.'); hold on
+plot(xlim, xlim, 'k')
+
 %% get unit eccentricity
 ecc = nan(1, NC);
 if isfield(D, 'units')
@@ -67,7 +76,7 @@ opts.stim_dur = median(D.GratingOffsets-D.GratingOnsets) + 0.2; % length of stim
 opts.use_sf_tents = false;
 
 stim_dur = ceil((opts.stim_dur)/Stim.bin_size);
-opts.stim_ctrs = [2:5:10 15:15:stim_dur];
+opts.stim_ctrs = [1:2:10 15:15:stim_dur];
 if ~isfield(opts, 'stim_ctrs')
     opts.stim_ctrs = [0:5:10 15:10:stim_dur-2];
 end
@@ -202,7 +211,10 @@ excludeParams = { {'Stim', 'Stim Onset'}, {'Running', 'Saccade'}, {'Running'}, {
 alwaysExclude = {'Stim R', 'Stim S', 'Is Running', 'Is Pupil'};
 
 Rpred = struct();
-for iModel = 1:numel(modelNames)
+
+models2fit = {'stim', 'drift'};
+
+for iModel = find(ismember(modelNames, models2fit))
     fprintf('Fitting Model [%s]\n', modelNames{iModel})
     exclude = [excludeParams{iModel} alwaysExclude];
     modelLabels = setdiff(regLabels, exclude); %#ok<*NASGU>
@@ -224,6 +236,233 @@ for iModel = 1:numel(modelNames)
 end
 
 fprintf('Done\n')
+
+%%
+
+
+%%
+
+[~, ind] = sort(Rpred.drift.Rsquared, 'descend');
+figure(1); clf
+fields = models2fit;
+for i = 1:numel(fields)
+    plot(Rpred.(fields{i}).Rsquared(ind), '.'); hold on
+end
+plot(xlim, [0 0], 'k')
+
+ii = 1;
+%% test gain drift model
+
+restLabels = [{'Stim Onset'}    {'Drift'}];
+% get drift rate
+drift_model = 'drift';
+model = 'driftgain';
+ii = ii + 1;
+cc = ind(ii);
+% X = [fullR(good_inds,:) 
+
+
+Rpred.(model).Gains = nan(folds, 2, NC);
+Rpred.(model).Rpred = nan(NC, NT);
+Rpred.(model).stimgain = nan(NC, NT, folds);
+Rpred.(model).Beta = cell(folds,1);
+
+fprintf('%d/%d Unit\n', cc, NC)
+Lgain = nan;
+Lfull = nan;
+covLabels = [regLabels {'Drift Output'}];
+covIdx = [regIdx max(regIdx) + 1];
+
+for ifold = 1:folds
+    train_inds = find(dataIdxs(ifold,:))';
+    test_inds = find(~dataIdxs(ifold,:))';
+    
+    % get drift for this cell
+    driftrate = fullR(good_inds, ismember(regIdx, find(ismember(regLabels, 'Drift'))))*Rpred.stim.Beta{ifold}(ismember(Rpred.stim.covIdx, find(ismember(Rpred.stim.Labels, 'Drift'))),cc);
+    driftrate = driftrate + min(driftrate)+1;
+%     driftrate = Rpred.stim.Offset(ifold,cc) + driftrate;
+%     driftrate = Rpred.drift.Rpred(cc,:)';
+    X = [fullR(good_inds,:) driftrate];
+    
+    %             evalc("[Betas, Gain, Ridge, Rhat, Lgain, Lfull] = AltLeastSqGainModel(fullR(good_inds,:), Robs(good_inds,cc), train_inds, regIdx, regLabels, {'Stim'}, GainTerm(iModel), restLabels, Lgain, Lfull);");
+    [Betas, Gain, Ridge, Rhat, Lgain, Lfull] = AltLeastSqGainModel(X, Robs(good_inds,cc), train_inds, ...
+        covIdx, covLabels, {'Stim'}, 'Drift Output', restLabels, Lgain, Lfull);
+    Rpred.(model).stimgain(cc,:,ifold) = Gain(1) + driftrate*Gain(2);
+    Rpred.(model).Offset(ifold,cc) = Betas(1);
+    Rpred.(model).Beta{ifold}(:,cc) = Betas(2:end);
+    Rpred.(model).Gains(ifold,:,cc) = Gain;
+    Rpred.(model).Ridge(ifold,cc) = Ridge;
+    Rpred.(model).Rpred(cc,test_inds) = Rhat(test_inds);
+end
+
+r2 = rsquared(Robs(good_inds,cc), Rpred.(model).Rpred(cc,:)');
+fprintf('r2: %02.3f (stim), %02.3f (drift), %02.3f (drift gain)\n', Rpred.stim.Rsquared(cc), Rpred.drift.Rsquared(cc), r2)
+
+stim_on = Stim.contrast(:) > 0;
+
+
+
+figure(1); clf
+plot(Robs(good_inds,cc), 'k'); hold on
+plot(Rpred.(model).Rpred(cc,:))
+plot(squeeze(Rpred.(model).stimgain(cc,:,:)), 'r')
+g = mean(squeeze(Rpred.(model).stimgain(cc,:,:)),2);
+d = g > .5*prctile(g, 75);
+plot(d, 'Linewidth', 2)
+% plot()
+% plot(g)
+% 
+% figure(2); clf
+% plot(Rpred.(model).Gains(:,:,cc), 'Linewidth', 2)
+% plot(Rhat)
+
+
+%%
+cc = cc + 1;
+if cc > NC
+    cc = 1;
+end
+X = fullR(good_inds,:);
+Y = Robs(good_inds,cc);
+NT = numel(good_inds);
+nsteps = 5;
+
+figure(1); clf
+r2 = nan(nsteps,nsteps);
+rhbar = nan(nsteps,1);
+for i = 1:nsteps
+    iix = (i-1)*ceil(NT/nsteps) + (1:ceil(NT/nsteps));
+    iix(iix > NT) = [];
+%     ix = ~ismember(regIdx, find(ismember(regLabels, 'Drift')));
+    ix = true(1,size(X,2));
+    [~, betas, ~] = ridgeMML(Y(iix), X(iix,ix), false);
+
+    for j = 1:nsteps
+        
+        iix = (j-1)*ceil(NT/nsteps) + (1:ceil(NT/nsteps));
+        iix(iix > NT) = [];
+
+        Rhat = betas(1) + X(iix,ix)*betas(2:end);
+    
+        r2(i,j) = rsquared(Y(iix), Rhat);
+%         rhbar(i) = var(Rhat/Stim.bin_size);
+%         subplot(2,1,1)
+%         plot(iix, Rhat); hold on
+%         plot(iix, ones(numel(iix),1)*r2(i), 'k')
+    end
+end
+
+figure(1); clf
+imagesc(max(r2,0));
+title(cc)
+colormap parula
+colorbar
+%%
+
+rhbar = rhbar./max(rhbar);
+
+subplot(2,1,2)
+plot(r2); hold on
+plot(rhbar)
+plot(r2.*rhbar, 'k')
+plot(xlim, .2*[1 1], 'k--')
+
+
+
+%%
+
+figure(1); clf
+plot(Robs(good_inds,cc), 'k'); hold on
+plot(Rpred.(model).Rpred(cc,:))
+hold on
+plot(Rhat)
+
+
+Rtrue = Robs(good_inds,cc);
+% Rhat = Rpred.(model).Rpred(cc,:)';
+Rbar = ones(numel(good_inds,1))*mean(Rtrue);
+Rbar = filtfilt(ones(5000,1)/5000, 1, Rtrue);
+
+resid = (Rtrue- Rhat).^2;
+rtot = (Rtrue - Rbar).^2;
+
+bcar = ones(500,1)/500;
+resid = filtfilt(bcar, 1, resid);
+rtot = filtfilt(bcar, 1, rtot);
+
+figure(2); clf
+
+plot(rtot); hold on
+plot(resid)
+plot(1-resid./rtot)
+ylim([-1 1])
+% plot(stim_on(good_inds))
+% plot(zpupil(good_inds))
+
+%%
+%% Get PSTH
+model = 'driftgain';
+model2 = 'stim';
+Rhat = Rpred.(model).Rpred';
+Rhat2 = Rpred.(model2).Rpred';
+
+nbins = numel(Stim.trial_time);
+B = eye(nbins);
+
+dirs = max(filter([1; -1], 1, Stim.direction(:)==opts.directions(:)'), 0);
+% dirs = double([zeros(1,opts.nd); diff(Stim.direction(:)==opts.directions(:)')==1]);
+tax = Stim.trial_time;
+
+n = sum(tax<=0);
+Xt = temporalBases_dense(circshift(dirs, -n), B);
+
+
+XY = (Xt(good_inds,:)'*Robs(good_inds,:)) ./ sum(Xt(good_inds,:))';
+XYhat = (Xt(good_inds,:)'*Rhat) ./ sum(Xt(good_inds,:))';
+XYhat2 = (Xt(good_inds,:)'*Rhat2) ./ sum(Xt(good_inds,:))';
+
+tax = Stim.trial_time;
+
+Xbar = reshape(XYhat, [nbins, opts.nd, NC]);
+Xbar2 = reshape(XYhat2, [nbins, opts.nd, NC]);
+Rbar = reshape(XY, [nbins, opts.nd, NC]);
+
+figure(1); clf
+subplot(1,2,1)
+imagesc(tax, opts.directions, Xbar(:,:,cc)')
+subplot(1,2,2)
+imagesc(tax, opts.directions, Rbar(:,:,cc)')
+
+figure(2); clf
+subplot(1,2,2)
+plot(tax, Rbar(:,:,cc))
+yd = ylim;
+xlim(tax([1 end]))
+
+
+rbar = nanmean(reshape(Rbar(:,:,cc), [], 1));
+r2 = rsquared(Rbar(:,:,cc), Xbar(:,:,cc), true, rbar);
+r2m2 = rsquared(Rbar(:,:,cc), Xbar2(:,:,cc), true, rbar);
+
+title(sprintf('%02.2f, %02.2f', r2, r2m2))
+
+subplot(1,2,1)
+plot(tax, Xbar(:,:,cc))
+ylim(yd)
+xlim(tax([1 end]))
+
+title(sprintf('%02.2f, %02.2f', Rpred.(model).Rsquared(cc), Rpred.(model2).Rsquared(cc)))
+
+
+
+%%
+figure(1); clf, 
+imagesc(Robs(good_inds,ind)')
+colormap(1-gray)
+hold on
+tread_speed = Stim.tread_speed(:);
+t = imgaussfilt(tread_speed(good_inds)*100, 50);
+plot(t, 'r')
 
 
 %% Fit Gain models for running and pupil
@@ -681,8 +920,8 @@ Running.empiricalNonlinearity.empNLS = empNLS;
 % xlabel('Change in firing rate from running')
 % title('cv r^2 > 0.05')
 %% Get PSTH
-model = 'stimsac';
-model2 = 'stimrunsac';
+model = 'drift';
+model2 = 'stim';
 Rhat = Rpred.(model).Rpred';
 Rhat2 = Rpred.(model2).Rpred';
 
@@ -707,11 +946,11 @@ Xbar = reshape(XYhat, [nbins, opts.nd, NC]);
 Xbar2 = reshape(XYhat2, [nbins, opts.nd, NC]);
 Rbar = reshape(XY, [nbins, opts.nd, NC]);
 
-
-cc = cc + 1;
-if cc > NC
-    cc = 1;
-end
+% 
+% cc = cc + 1;
+% if cc > NC
+%     cc = 1;
+% end
 
 %%
 figure(1); clf

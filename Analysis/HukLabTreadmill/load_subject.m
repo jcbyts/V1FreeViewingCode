@@ -1,15 +1,17 @@
-function D = load_subject(subj)
+function D = load_subject(subj, fpath)
 % load super session file for subject
 % D = load_subject(subj)
 
 
-addpath Analysis/HukLabTreadmill/
-fpath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+if ~exist('fpath', 'var')
+    fpath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+end
+
 if nargin < 1
     subj = 'gru';
 end
 
-validSubjs = {'gru', 'brie'};
+validSubjs = {'gru', 'brie', 'allen'};
 assert(ismember(subj,validSubjs), sprintf("import_supersession: subj name %s is not valid", subj))
 
 

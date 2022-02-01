@@ -1,34 +1,19 @@
-function import_supersession(subj)
+function import_supersession(subj, fpath)
 % Create a Super Session file for a particular subject
 
 % --- get path
-fpath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+if ~exist('fpath', 'var')
+    fpath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+end
 
-addpath(fullfile(fpath, 'PLDAPStools')) % add PLDAPStools
+% addpath(fullfile(fpath, 'PLDAPStools')) % add PLDAPStools
 
 if nargin < 1
     subj = 'gru';
 end
 
-validSubjs = {'gru', 'brie'};
+validSubjs = {'gru', 'brie', 'allen'};
 assert(ismember(subj,validSubjs), sprintf("import_supersession: subj name %s is not valid", subj))
-
-% --- get concatenated spikes file
-spikesfname = fullfile(fpath, subj, [subj '_All_cat.mat']);
-fprintf('Loading spikes from [%s]\n', spikesfname)
-EphysData = load(spikesfname);
-
-% --- find ephys and behavioral date tags
-ephysSessions = EphysData.z.RecId';
-behaveSessions = io.dataFactoryTreadmill';
-
-% --- convert dates to number and matsch sessions
-behaveDates = cellfun(@(x) datenum(x(numel(subj)+2:end), 'yyyymmdd'), behaveSessions);
-ephysDates = cellfun(@(x) datenum(x(numel(subj)+2:numel(subj)+11), 'yyyy-mm-dd'), ephysSessions);
-
-[sessionMatch, behave2ephysNum] = ismember(ephysDates, behaveDates);
-
-goodEphysSessions = find(sessionMatch);
 
 %% --- loop over sessions, build big spike struct
 
@@ -41,56 +26,98 @@ Dbig = struct('GratingDirections', [], 'GratingFrequency', [], ...
     'sessNumSpikes', [], 'sessNumGratings', [], ...
     'sessNumTread', [], 'sessNumEye', [], 'spikeTimes', [], 'spikeIds', []);
 
+%%
+
 fprintf('Loading and aligning spikes with behavior\n')
 
+unique_sessions = {'gru_20211217', 'allen'};
+
+flist = dir(fullfile(fpath, [subj '*']));
 startTime = 0; % all experiments start at zero. this number will increment as we concatenate sessions
 newOffset = 0;
 timingFields = {'GratingOnsets', 'GratingOffsets', 'spikeTimes', 'treadTime', 'eyeTime', 'frameTimes'};
 nonTimingFields = {'GratingDirections', 'GratingFrequency', 'GratingSpeeds', 'eyeLabels', 'eyePos', 'treadSpeed', 'spikeIds', 'sessNumSpikes', 'sessNumGratings', 'sessNumTread', 'sessNumEye', 'framePhase', 'GratingContrast', 'frameContrast'};
 
-fprintf('Looping over %d sessions\n', numel(goodEphysSessions))
-for iSess = 1:numel(goodEphysSessions)
+fprintf('Looping over %d sessions\n', numel(flist))
+
+for iSess = 1:numel(flist)
+    D = load(fullfile(flist(iSess).folder, flist(iSess).name));
+
+
+    % fix any wierdness from scipy
+    fields = fieldnames(D);
+    for f = 1:numel(fields)
+        fprintf('[%s]\n', fields{f})
+        if strcmp(fields{f}, 'unit_area')
+            sz = size(D.unit_area);
+            unit_area = cell(sz(1), 1);
+            for i = 1:sz(1)
+                unit_area{i} = strrep(D.unit_area(i,:), ' ', '');
+            end
+            D.unit_area = unit_area;
+            continue
     
-    rId = goodEphysSessions(iSess);
-    bSess = behave2ephysNum(goodEphysSessions(iSess));
+        end
     
-    fprintf('Session %d/%d [ephys:%d , behav:%d]\n', iSess, numel(goodEphysSessions), rId, bSess)
-    D_ = io.dataFactoryTreadmill(bSess, 'abort_if_missing', true);
-    if isempty(D_)
-        fprintf('Not imported. Skipping. \n')
+        if iscell(D.(fields{f}))
+            isnull = strcmp(D.(fields{f}), 'null');
+            tmp = cellfun(@double, D.(fields{f}), 'uni', 0);
+            tmp = cellfun(@(x) x(1), tmp);
+            tmp(isnull) = nan;
+            D.(fields{f}) = tmp;
+        end
+    end
+
+    if isfield(D, 'unit_area')
+        cids = unique(D.spikeIds);
+        visp = strcmp(D.unit_area, 'VISp');
+        
+        iix = ismember(D.spikeIds, cids(visp));
+        D.spikeTimes = D.spikeTimes(iix);
+        D.spikeIds = D.spikeIds(iix);
+    end
+
+    if min(size(D.frameTimes)) > 1
+        D.frameTimes = D.frameTimes(:);
+        D.framePhase = D.framePhase(:);
+        D.frameContrast = D.frameContrast(:);
+        [D.frameTimes, ind] = sort(D.frameTimes);
+        D.framePhase = D.framePhase(ind);
+        D.frameContrast = D.frameContrast(ind);
+    end
+    
+    if all(isnan(D.eyePos(:)))
+        D.eyePos = nan(numel(D.frameTimes), 3);
+        D.eyeTime = D.frameTimes;
+        D.eyeLabels = ones(numel(D.frameTimes),1);
+    end
+
+    if any(cellfun(@(x) contains(flist(iSess).name, x), unique_sessions))
+        
+        unit_offset = max(unique(Dbig.spikeIds));
+        if isempty(unit_offset)
+            unit_offset = 0;
+        end
+        fprintf('offsetting spike ID by %d\n', unit_offset)
+        D.spikeIds = D.spikeIds + unit_offset;
+    end
+    
+    if isempty(D.frameContrast)
         continue
     end
     
-    unitlist = find(cellfun(@(x) ~isempty(x), EphysData.z.Times{rId}));
-    
-    st = [];
-    clu = [];
-
-    for iunit = 1:numel(unitlist)
-        kunit = unitlist(iunit);
-    
-        stmp = double(EphysData.z.Times{rId}{kunit}) / EphysData.z.Sampling;
-        st = [st; stmp];
-        clu = [clu; kunit*ones(numel(stmp),1)];
-    end
-    
-    
-    D_.spikeTimes = st;
-    D_.spikeIds = clu;
-    
-    if iSess == 4
-        keyboard
-    end
-    % convert to D struct format
-    D = io.get_drifting_grating_output(D_);
     D.sessNumSpikes = iSess*ones(size(D.spikeTimes));
     D.sessNumGratings = iSess*ones(size(D.GratingOnsets));
     D.sessNumTread = iSess*ones(size(D.treadTime));
     D.sessNumEye = iSess*ones(size(D.eyeTime));
+
     
     sessStart = 0;
     for iField = 1:numel(timingFields)
-        sessStart = min(sessStart, min(D.(timingFields{iField})));
+        tmp = min(sessStart, min(reshape(D.(timingFields{iField}), [], 1)));
+        if isempty(tmp)
+            continue
+        end
     end
     
     % loop over timing fields and offset time
@@ -100,7 +127,8 @@ for iSess = 1:numel(goodEphysSessions)
     end
     
     for iField = 1:numel(nonTimingFields)
-        Dbig.(nonTimingFields{iField}) = [Dbig.(nonTimingFields{iField}); D.(nonTimingFields{iField})];
+        tmp = D.(nonTimingFields{iField});
+        Dbig.(nonTimingFields{iField}) = [Dbig.(nonTimingFields{iField}); tmp];
     end
     
     startTime = newOffset + 2; % 2 seconds between sessions
@@ -119,7 +147,7 @@ treadSpeed = Dbig.treadSpeed;
 treadSpeed(iix) = nan;
 iix = diff(treadSpeed).^2 > 50;
 treadSpeed(iix) = nan;
-treadSpeed = repnan(treadSpeed, 'pchip'); % interpolate between artifacts
+% treadSpeed = repnan(treadSpeed, 'pchip'); % interpolate between artifacts
 Dbig.treadSpeed = treadSpeed;
 
 

@@ -1,19 +1,142 @@
 
 %%
-freg = fullfile(getpref('FREEVIEWING', 'HUKLAB_DATASHARE'), 'regression');
-fgrat = fullfile(getpref('FREEVIEWING', 'HUKLAB_DATASHARE'), 'gratings');
+freg = '/home/jake/Data/Datasets/HuklabTreadmill/regression/';
 
 flist = dir(fullfile(freg, '*.mat'));
+ifile = 0;
 
-%%
+subjs = {'allen', 'gru', 'brie'};
+Reg = struct();
+Dsum = struct();
 
-ifile = 31;
-D = load(fullfile(fgrat, flist(ifile).name))
+models2test = {'drift', 'stimsac', 'stimrunsac', 'RunningGain', 'PupilGain'};
+
+
+for isubj = 1:numel(subjs)
+    subj = subjs{isubj};
+    sublist = find(arrayfun(@(x) contains(x.name, subj), flist))';
+    
+    Reg.(subj) = struct();
+    Dsum.(subj) = struct('ntrials', []);
+
+    for imodel = 1:numel(models2test)
+        Reg.(subj).(models2test{imodel}).rsquared = [];
+    end
+
+    for ifile = sublist(:)'
+        fprintf('Loading [%s]\n', flist(ifile).name)
+        load(fullfile(freg, flist(ifile).name))
+        Dsum.(subj).ntrials = [Dsum.(subj).ntrials; numel(Stim.grating_onsets)];
+ 
+        for imodel = 1:numel(models2test)
+            Reg.(subj).(models2test{imodel}).rsquared = [Reg.(subj).(models2test{imodel}).rsquared; Rpred_ind.(models2test{imodel}).Rsquared(:)];
+        end
+    end
+end
 %%
+figure(1); clf;
+for isubj = 1:numel(subjs)
+    subj = subjs{isubj};
+    histogram(Dsum.(subj).ntrials, 25); hold on
+end
+legend(subjs)
+%% cells worth analyzing with the stimulus
+for isubj = 1:numel(subjs)
+    subj = subjs{isubj};
+    iix = Reg.(subj).stimsac.rsquared > Reg.(subj).drift.rsquared;
+    iix = iix & Reg.(subj).stimsac.rsquared > 0;
+    fprintf('%s has %d / %d good units\n', subj, sum(iix), numel(iix))
+end
+
+%% plot subject dependent responses
+mbase = 'stimsac';
+mtest = 'PupilGain';
+
+figure; clf
+clear h
+for isubj = 1:numel(subjs)
+    subj = subjs{isubj};
+    
+    iix = Reg.(subj).stimsac.rsquared > Reg.(subj).drift.rsquared;
+%     iix = iix & Reg.(subj).stimsac.rsquared > 0;
+
+    r2base = Reg.(subj).(mbase).rsquared(iix);
+    r2test = Reg.(subj).(mtest).rsquared(iix);
+    r2base = max(r2base, -.1);
+    r2test = max(r2test, -.1);
+
+    h(isubj) = plot(r2base, r2test, '.'); hold on
+
+end
+
+
+
+plot(xlim, xlim, 'k')
+xlabel(mbase)
+ylabel(mtest)
+
+legend(h, subjs)
+
+
+
+
+%% look at individual session
 ifile = ifile + 1;
 
+if ifile > numel(flist)
+    ifile = 1;
+end
+
+fprintf('Loading [%s]\n', flist(ifile).name)
 load(fullfile(freg, flist(ifile).name))
 
+exname = strrep(strrep(flist(ifile).name, '_', ' '), '.mat', '');
+
+mbase = 'stimsac';
+mtest = 'stimrunsac';
+
+r2base = Rpred_ind.(mbase).Rsquared;
+r2test = Rpred_ind.(mtest).Rsquared;
+
+figure(1); clf
+plot(r2base, r2test, '.'); hold on
+plot(xlim, xlim, 'k')
+xlabel(mbase)
+ylabel(mtest)
+title(exname)
+
+iix = max(r2test, r2base) > 0.05;
+% clf
+% plot(r2test(iix) ./ r2base(iix), '.'); hold on
+% plot(xlim, [1 1], 'k')
+
+rrat = r2test ./ r2base;
+sigix = find(rrat > 1.05 & iix);
+cc = 0;
+
+figure(2);
+plot(sum(Rpred_ind.data.indices.*Rpred_ind.data.Robs), r2test, '.'); hold on
+%%
+clf
+cc = cc + 1;
+if cc > numel(sigix)
+    cc = 1;
+end
+R = Rpred_ind.data.Robs(:,sigix(cc));
+tread_speed = Stim.tread_speed(:);
+
+good_inds = find(Rpred_ind.data.indices(:,sigix(cc)));
+tread_speed = tread_speed(good_inds);
+% plot(R(good_inds), 'k'); hold on
+plot(imgaussfilt(R(good_inds), 11), 'k'); hold on
+plot(tread_speed./max(tread_speed)*max(R), 'c')
+hold on
+
+
+% plot()
+
+
+%%
 
 figure(1); clf
 
@@ -62,7 +185,7 @@ for i = 1:npairs
     xlim([-m*.5 m])
 end
 
-% two model comparison
+%% two model comparison
 
 model1 = 'stimsac';
 model2 = 'stimrunsac';

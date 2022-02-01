@@ -431,7 +431,7 @@ for iUnit = 1:nMod
         thctr = thctr + nt;
         
         R = sum(spk(:,tix),2);
-        if isempty(R)
+        if numel(R) < 2
             continue
         end
         TCS(th,1) = mean(R);

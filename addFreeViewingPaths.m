@@ -22,6 +22,10 @@ switch user
 
         % set the path to the huklab datashare
 %         setpref('FREEVIEWING', 'HUKLAB_DATASHARE', PATH TO THE GOOGLE DRIVE)
+    case 'bancanus'
+
+        % processed data:
+        setpref('FREEVIEWING', 'HUKLAB_DATASHARE', '~/Data/Datasets/HuklabTreadmill/processed/')
         
 
     case 'jakesigur'
