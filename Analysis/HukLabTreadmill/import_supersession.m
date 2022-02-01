@@ -4,6 +4,7 @@ function import_supersession(subj, fpath)
 % --- get path
 if ~exist('fpath', 'var')
     fpath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+    fpath = fullfile(fpath, 'gratings');
 end
 
 % addpath(fullfile(fpath, 'PLDAPStools')) % add PLDAPStools
@@ -12,7 +13,7 @@ if nargin < 1
     subj = 'gru';
 end
 
-validSubjs = {'gru', 'brie', 'allen'};
+validSubjs = {'gru', 'brie'};
 assert(ismember(subj,validSubjs), sprintf("import_supersession: subj name %s is not valid", subj))
 
 %% --- loop over sessions, build big spike struct
@@ -26,6 +27,7 @@ Dbig = struct('GratingDirections', [], 'GratingFrequency', [], ...
     'sessNumSpikes', [], 'sessNumGratings', [], ...
     'sessNumTread', [], 'sessNumEye', [], 'spikeTimes', [], 'spikeIds', []);
 
+Dbig.units = {};
 %%
 
 fprintf('Loading and aligning spikes with behavior\n')
@@ -100,6 +102,11 @@ for iSess = 1:numel(flist)
         end
         fprintf('offsetting spike ID by %d\n', unit_offset)
         D.spikeIds = D.spikeIds + unit_offset;
+        if isfield(D, 'units')
+            for ii = 1:numel(D.units)
+                D.units(ii).id = D.units(ii).id + unit_offset;
+            end
+        end
     end
     
     if isempty(D.frameContrast)
@@ -135,7 +142,22 @@ for iSess = 1:numel(flist)
     if isinf(startTime)
         keyboard
     end
-        
+
+    assert(numel(unique(D.spikeIds))==numel(D.units), 'import_supersession: mismatch in number of units on session')
+    for cc = 1:numel(D.units)
+        if isfield(D.units(cc), 'area') && ~isnan(D.units(cc).area)
+            if numel(Dbig.units) < D.units(cc).id
+                Dbig.units{D.units(cc).id} = {D.units(cc)};
+            else
+                if isempty(Dbig.units{D.units(cc).id})
+                    Dbig.units{D.units(cc).id} = {D.units(cc)};
+                else
+                    Dbig.units{D.units(cc).id} = [Dbig.units{D.units(cc).id} {D.units(cc)}];
+                end
+            end
+        end
+    end
+
     fprintf('StartTime: %02.2f\n', startTime)
 end
 
