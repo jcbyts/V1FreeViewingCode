@@ -21,6 +21,7 @@ for isubj = 1:numel(subjs)
 
     for imodel = 1:numel(models2test)
         Reg.(subj).(models2test{imodel}).rsquared = [];
+        Reg.(subj).(models2test{imodel}).cc = [];
     end
 
     for ifile = sublist(:)'
@@ -30,6 +31,7 @@ for isubj = 1:numel(subjs)
  
         for imodel = 1:numel(models2test)
             Reg.(subj).(models2test{imodel}).rsquared = [Reg.(subj).(models2test{imodel}).rsquared; Rpred_ind.(models2test{imodel}).Rsquared(:)];
+            Reg.(subj).(models2test{imodel}).cc = [Reg.(subj).(models2test{imodel}).cc; Rpred_ind.(models2test{imodel}).CC(:)];
         end
     end
 end
@@ -37,9 +39,12 @@ end
 figure(1); clf;
 for isubj = 1:numel(subjs)
     subj = subjs{isubj};
-    histogram(Dsum.(subj).ntrials, 25); hold on
+    histogram(Dsum.(subj).ntrials, 'binEdges', linspace(0, 1300, 20)); hold on
 end
 legend(subjs)
+xlabel('Number of trials')
+ylabel('Number of sessions')
+set(gcf, 'Color', 'w')
 %% cells worth analyzing with the stimulus
 for isubj = 1:numel(subjs)
     subj = subjs{isubj};
@@ -48,11 +53,27 @@ for isubj = 1:numel(subjs)
     fprintf('%s has %d / %d good units\n', subj, sum(iix), numel(iix))
 end
 
+
+% subjs = {'allen', 'gru', 'brie'};
+subjs = {'allen'};
+
+figure(2); clf
+
+set(gcf, 'Color', 'w')
+for isubj = 1:numel(subjs)
+    subj = subjs{isubj};
+    histogram(Reg.(subj).stimsac.rsquared, 'binEdges', linspace(-1, 1, 200)); hold on
+end
+legend(subjs)
+xlabel('cv r^2')
+
 %% plot subject dependent responses
-mbase = 'stimsac';
-mtest = 'PupilGain';
+mbase = 'PupilGain';
+mtest = 'RunningGain';
+% subjs = {'brie'};
 
 figure; clf
+
 clear h
 for isubj = 1:numel(subjs)
     subj = subjs{isubj};
@@ -74,10 +95,10 @@ end
 plot(xlim, xlim, 'k')
 xlabel(mbase)
 ylabel(mtest)
-
+% title(subj)
 legend(h, subjs)
 
-
+plot.fixfigure(gcf, 12, [5 5])
 
 
 %% look at individual session

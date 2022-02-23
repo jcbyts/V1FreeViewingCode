@@ -13,7 +13,7 @@ ip.addParameter('win', [-.25 1.1])
 ip.addParameter('runningthresh', 1)
 ip.parse(varargin{:});
 
-% bin spikes in window aligned ton onset
+%% bin spikes in window aligned ton onset
 binsize = ip.Results.binsize;
 win = ip.Results.win;
 
@@ -48,9 +48,9 @@ treadBins = ceil(treadTime/binsize);
 
 treadSpd = nan(size(spbn,1), 1); % make same size as spike bins
 
-% interpolate nan's
+% % interpolate nan's
 treadSpd(treadBins(~isnan(treadSpeed))) = treadSpeed(~isnan(treadSpeed));
-treadSpd = abs(repnan(treadSpd, 'pchip')); % absolute value (not forward vs. backwards)
+% treadSpd = abs(repnan(treadSpd, 'pchip')); % absolute value (not forward vs. backwards)
 
 % only use valid gratings
 GratingDirections = D.GratingDirections(validix);

@@ -19,10 +19,13 @@ ip.addParameter('Decode', 'Orientation')
 ip.addParameter('slidingWin', 80e-3)
 ip.addParameter('runThreshold', 3)
 ip.addParameter('plot', true)
-ip.addParameter('figDir', fullfile('Figures', 'HuklabTreadmill'))
+ip.addParameter('figDir', fullfile('Figures', 'HuklabTreadmill', 'decoding'))
 ip.parse(varargin{:})
 
 figDir = ip.Results.figDir;
+if ~exist(figDir, 'dir')
+    mkdir(figDir)
+end
 %% useful functions
 circdiff = @(x,y) angle(exp(1i*(x - y)/180*pi))/pi*180;
 circmean = @(x) angle(sum(exp(1i*x/180*pi)))/pi*180;
@@ -50,7 +53,7 @@ cumulativeDecoder = false;
 % saveas(gcf, fullfile(figDir, 'binned_spikes.pdf'))
 
 % throw out spurious running trials
-toofast = find(any(runningSpeed > 60,2));
+toofast = find(any(runningSpeed > 60,2) | isnan(StimDir));
 
 StimDir(toofast,:) = [];
 spksb(toofast,:,:) = [];
@@ -93,7 +96,7 @@ spks = spksb;
 rproj = rr;
 ntrials = size(rr,1);
 
-nBasis = min(numel(unique(st(~isnan(st)))), 40);
+nBasis = min(numel(unique(st(~isnan(st))))+1, 40);
 
 decoderStimTot = nan(ntrials, 1);
 xd = 0:limval;

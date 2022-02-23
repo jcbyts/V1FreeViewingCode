@@ -17,10 +17,12 @@ end
 sptimes=sptimes(:);
 
 be = win(1):binSize:win(2);
-bcenters = be(1:end-1)+binSize/2;
 
 ev=ev(:);
 binfun = @(t) (t == 0) + ceil(t/binSize);
+
+bcenters = be(1:end-1)+binSize/2;
+nlags = numel(bcenters);
 
 validEvents = ~isnan(ev);
 nTrials=numel(ev);
@@ -29,7 +31,10 @@ nEvents = sum(validEvents);
 
 sbn = [];
 str = [];
-% assert(nEvents<2e3, 'too many events for this to run fast!')
+if nEvents>2e3
+    warning('binSpTime: too many events for this to run fast!')
+end
+
 for kEvent=1:nTrials
     if ~validEvents(kEvent)
         continue
@@ -41,5 +46,8 @@ for kEvent=1:nTrials
     end
 end
 
-spcnt = full(sparse(str, sbn, 1, nTrials, binfun(be(end)-be(1))));
+spcnt = full(sparse(str, sbn, 1, nTrials, nlags));
 spcnt(~validEvents,:)=nan;
+if nlags < size(spcnt,2)
+    spcnt = spcnt(:,1:end-1);
+end

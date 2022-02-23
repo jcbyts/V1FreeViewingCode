@@ -17,7 +17,9 @@ try
     sp = struct('spikeTimes', st, 'spikeIds', ones(size(st)));
     Robs = bin_spikes_at_frames(Stim, sp, 0, trialidx);
 
-
+    if (mean(Robs) / Stim.bin_size) < 1
+        return
+    end
 
     NC = size(Robs,2);
     U = eye(NC);

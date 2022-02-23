@@ -23,17 +23,18 @@ import loco
 data_directory = '/mnt/Data/Datasets/allen/ecephys_cache_dir/'
 sessions, cache = loco.get_allen_sessions(data_directory = data_directory)
 
-sessions = sessions[sessions.session_type == 'brain_observatory_1.1']
+sess_type = 'brain_observatory_1.1'
+sessions = sessions[sessions.session_type == sess_type]
 # sessions = sessions[sessions.session_type == 'functional_connectivity']
 session_ids = sessions.index.values
 #%%
 from scipy.io import savemat
-fdir = '/home/jake/Data/Datasets/HuklabTreadmill/Dstruct/'
+fdir = os.path.join('/home/jake/Data/Datasets/HuklabTreadmill/', sess_type)
 if not os.path.exists(fdir):
         os.makedirs(fdir)
 
 #%%
-Frate = 60 # frame rate (60Hz?)
+Frate = 60 # frame rate (60Hz?), ASUS PA248Q LCD, I can't find the parameter, but this is what their pubs say
 
 for isess in range(len(session_ids)):
     
@@ -116,6 +117,26 @@ for isess in range(len(session_ids)):
     except:
         pass
 
+
+# th = np.linspace(0, 2*np.pi, 100)
+
+# plt.figure()
+# for cc in np.where(rf_p < 0.05)[0]:
+
+#     plt.plot(rf_r[cc]*np.cos(th)+rf_x[cc], rf_r[cc]*np.sin(th)+rf_y[cc] )
+
+# plt.show()
+
+
+# #%%
+# from allensdk.brain_observatory.ecephys.stimulus_analysis.receptive_field_mapping import ReceptiveFieldMapping
+
+# rfmap = ReceptiveFieldMapping(session)
+# unitid = D.units.index.values
+# NC = len(unitid)
+# for cc in range(NC):
+#     azimuth_deg, elevation_deg, width_deg, height_deg, area_deg, p_value, on_screen = rfmap._get_rf_stats(unitid[cc])
+
     mdict = {'GratingContrast': GratingContrast,
                 'GratingDirections': GratingDirections,
                 'GratingFrequency': GratingFrequency,
@@ -132,6 +153,10 @@ for isess in range(len(session_ids)):
                 'spikeTimes': spikeTimes,
                 'spikeIds': spikeIds,
                 'unit_area': unit_area,
+                'rf_x' : D['units']['azimuth_rf'].values,
+                'rf_y': D['units']['elevation_rf'].values,
+                'rf_p': D['units']['p_value_rf'].values,
+                'rf_r': np.sqrt(D['units']['area_rf'].values/np.pi),
                 'treadTime': D['run_data']['run_time'],
                 'treadSpeed': D['run_data']['run_spd'],
     }

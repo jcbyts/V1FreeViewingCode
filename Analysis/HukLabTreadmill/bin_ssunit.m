@@ -1,10 +1,20 @@
 function [stim, robs, behavior, opts] = bin_ssunit(D, unitId, varargin)
 % BIN SUPER SESSION UNIT SPIKE TRAINS ALIGNED TO STIMULUS ONSET
 % [stim, robs, behavior, opts] = bin_ssunit(D, unitID, varargin)
+% INPUTS:
+%   D:      supersession
+%   unitID: the id of the unit to analyze
+% OUTPUTS:
+%   stim:      {StimDir, StimSpeed, StimFreq};
+%   robs:      Binned spikes;
+%   behavior:  {runSpeed, GratPhase, PupilArea};
+%   opts:      the parameters of the analysis
+%
 % Optional Arguments:
 % plot
-% win
-% binsize
+% win [seconds before (pass in negative), seconds after]
+% binsize (in seconds)
+
 ip = inputParser();
 ip.addParameter('plot', true);
 ip.addParameter('win', [-.1 .1])
@@ -27,18 +37,16 @@ ix = ismember(D.sessNumGratings, sessNums);
 StimOnset  = D.GratingOnsets(ix);
 StimOffset = D.GratingOffsets(ix);
 StimDir    = D.GratingDirections(ix);
+StimSpeed = D.GratingSpeeds(ix);
+StimFreq = D.GratingFrequency(ix);
 
-treadTime = D.treadTime(~isnan(D.treadTime));
-treadSpeed = D.treadSpeed(~isnan(D.treadTime));
+treadSessIx = ismember(D.sessNumTread, sessNums) & ~isnan(D.treadTime);
+treadTime = D.treadTime(treadSessIx);
+treadSpeed = D.treadSpeed(treadSessIx);
 
-treadSessIx = treadTime > (StimOnset(1) - 5) & treadTime < (StimOffset(end) + 5);
-treadTime = treadTime(treadSessIx);
-treadSpeed = treadSpeed(treadSessIx);
-
-
-frameTime = D.frameTimes(~isnan(D.frameTimes));
-framePhase = D.framePhase(~isnan(D.frameTimes));
-% framePhase = cosd(D.framePhase(~isnan(D.frameTimes))).*D.frameContrast(~isnan(D.frameTimes));
+frameIx = D.frameTimes >= (min(StimOnset) - 1) & D.frameTimes < (max(StimOffset) + 1);
+frameTime = D.frameTimes(frameIx);
+framePhase = D.framePhase(frameIx);
 
 % resample time with new binsize
 newTreadTime = treadTime(1):binsize:treadTime(end);
@@ -47,10 +55,13 @@ newTreadSpeed = interp1(treadTime, treadSpeed, newTreadTime);
 newFrameTime = newTreadTime;
 newFramePhase = interp1(frameTime, framePhase, newFrameTime);
 
-pupil = interp1(D.eyeTime, D.eyePos(:,3), newFrameTime);
-% figure(1); clf
-% plot(treadTime, treadSpeed); hold on
-% plot(newTreadTime, newTreadSpeed);
+pupil = nan(size(newFrameTime));
+eyeIx = ismember(D.sessNumEye, sessNums) & ~isnan(D.eyePos(:,3));
+eyeTime = D.eyeTime(eyeIx);
+eyePupil = D.eyePos(eyeIx,3);
+if ~isempty(eyePupil)
+    pupil = interp1(eyeTime,eyePupil,newFrameTime);
+end
 
 treadTime = newTreadTime;
 treadSpeed = newTreadSpeed;
@@ -63,9 +74,15 @@ framePhase = newFramePhase;
 % check stim duration and only include gratings that were fully shown
 stimDuration = idOff - idOn;
 durBins = mode(stimDuration);
-validStim = find(stimDuration==durBins);
 
+validStim = find( abs(stimDuration-durBins)<2 & ~isnan(StimDir));
+idOff = idOff(validStim);
+idOn = idOn(validStim);
 StimDur = mode(StimOffset(validStim) - StimOnset(validStim));
+StimDir = StimDir(validStim);
+StimSpeed = StimSpeed(validStim);
+StimFreq = StimFreq(validStim);
+
 win = [ip.Results.win(1) StimDur+ip.Results.win(2)];
 bins = win(1):binsize:win(2);
 
@@ -80,14 +97,17 @@ opts.NTrials = NT;
 opts.NLags = nbins;
 
 % get running speed aligned to stim onset
-runSpeed = zeros(NT, nbins);
-GratPhase = zeros(NT, nbins);
-PupilArea = zeros(NT, nbins);
+runSpeed = nan(NT, nbins);
+GratPhase = nan(NT, nbins);
+PupilArea = nan(NT, nbins);
+nt = numel(treadSpeed);
+
 for i = 1:NT
     iix = blags + idOn(i);
-    runSpeed(i,iix>0) = treadSpeed(iix(iix>0));
-    GratPhase(i,iix>0) = framePhase(iix(iix>0));
-    PupilArea(i,iix>0) = pupil(iix(iix>0));
+    valid = iix > 0 & iix < nt;
+    runSpeed(i,valid) = treadSpeed(iix(valid));
+    GratPhase(i,valid) = framePhase(iix(valid));
+    PupilArea(i,valid) = pupil(iix(valid));
 end
 
 SpikeTimes = D.spikeTimes(unitIx);
@@ -97,19 +117,13 @@ UnitList = unique(SpikeIds);
 NC = numel(UnitList); % number of neurons
 assert(NC == 1 | isnan(unitId), "You requested one unit and we have more than that")
 
-%%
-
 opts.unitId = unitId;
 opts.stimDuration = StimDur;
 
 plotDuringImport = ip.Results.plot;
 
-spksb = zeros(NT, nbins);
-
 % count spike times aligned to STIM onset
-fprintf('Counting spikes aligned to stim onset \n')
-
-    
+% fprintf('Counting spikes aligned to stim onset \n')    
 % count spikes
 [scnt, bins] = decoding.binSpTimes(SpikeTimes, StimOnset(validStim), win, binsize);
 
@@ -117,8 +131,7 @@ fprintf('Counting spikes aligned to stim onset \n')
 if plotDuringImport
     figure(10); clf
     % visualize tuning
-        
-    [~, ind] = sort(StimDir(validStim));
+    [~, ind] = sort(StimDir);
         
     smcnt = imgaussfilt(scnt(ind,:), [5 3], 'FilterSize', [11 3]); % smooth along trials
     
@@ -140,7 +153,8 @@ if plotDuringImport
 end
 
 % output
-stim = StimDir(validStim);
+stim = {StimDir, StimSpeed, StimFreq};
 robs = scnt;
 behavior = {runSpeed, GratPhase, PupilArea};
 opts.lags = bins;
+opts.binsize = binsize;

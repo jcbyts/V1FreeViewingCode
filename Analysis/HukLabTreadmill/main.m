@@ -1,193 +1,11 @@
-%% Step 0: set your paths
-% The FREEVIEWING codebase uses matlab preferences to manage paths (so
-% different users can have different paths)
-
-addFreeViewingPaths('jakelaptop') % switch to your user
-addpath Analysis/HukLabTreadmill/ % the code will always assume you're running from the FreeViewing base directory
-
-%% Step 1: Make sure a session is imported
-% You have to add the session to the datasets.xls file that is in the 
-% google drive MANUALLY. If you open that file, you'll see the format for 
-% everything
-
-% dataFactoryTreadmill is the main workhorse for loading / importing data
-
-% if you call it with no arguments, it will list all sessionIDs that have
-% been added to the datasets.xls file
-sesslist = io.dataFactoryTreadmill();
-
-%% Step 1.1: Try importing a session
-
-sessionId = 27;
-Exp = io.dataFactoryTreadmill(sessionId);
-
-%% get spatial map
-
-dotTrials = io.getValidTrials(Exp, 'Dots');
-if ~isempty(dotTrials)
-    
-    
-    BIGROI = [-1 -1 1 1]*5;
-    
-    % eyePos = eyepos;
-    eyePos = Exp.vpx.smo(:,2:3);
-    % eyePos(:,1) = -eyePos(:,1);
-    % eyePos(:,2) = -eyePos(:,2);
-    
-    stat = spat_rf_helper(Exp, 'ROI', BIGROI, ...
-        'win', [0 12],...
-        'binSize', .3, 'plot', true, 'debug', false, 'spikesmooth', 0);
-    
-    dataPath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
-    exname = strrep(Exp.FileTag, '.mat', '');
-    figDir = fullfile(dataPath, 'imported_sessions_qa', exname);
-    
-    NC = numel(stat.cgs);
-    sx = ceil(sqrt(NC));
-    sy = round(sqrt(NC));
-    figure(11); clf
-    ax = plot.tight_subplot(sx, sy, 0.02);
-    for cc = 1:NC
-        set(gcf, 'currentaxes', ax(cc))
-        imagesc(stat.xax, stat.yax, stat.spatrf(:,:,cc));
-        hold on
-        plot(xlim, [0 0], 'r')
-        plot([0 0], ylim, 'r')
-        axis xy
-        title(sprintf('Unit: %d', Exp.osp.cids(cc)))
-    end
-      
-    
-    plot.suplabel('Coarse RFs', 't');
-    plot.fixfigure(gcf, 10, [sy sx]*2, 'offsetAxes', false)
-    saveas(gcf, fullfile(figDir, 'Dot_RFs.pdf'))
-        
-    
-end
-
-%%
-
-Exp.spikeTimes = Exp.osp.st;
-Exp.spikeIds = Exp.osp.clu;
-
-% convert to D struct format
-D = io.get_drifting_grating_output(Exp);
-D.framePhaseOrig = D.framePhase;
-% Note: PLDAPS sessions and MarmoV5 will load into different formats
-
-%%
-figure(1); clf
-plot(D.frameTimes, D.frameContrast.*cosd(D.framePhaseOrig))
-
-NT = numel(D.frameTimes);
-NE = numel(D.eyeTime);
-bcar = ceil(NE / NT); 
-bcar = bcar - mod(bcar, 2) + 1; % must be odd
-direction = zeros(NT,1);
-freq = zeros(NT,1);
-evec = zeros(NT, 2);
-
-eyex = sgolayfilt(D.eyePos(:,1), 3, 3*bcar);
-eyey = sgolayfilt(D.eyePos(:,1), 3, 3*bcar);
-evec(:,1) = interp1(D.eyeTime, eyex, D.frameTimes);
-evec(:,2) = interp1(D.eyeTime, eyey, D.frameTimes);
-
-NS = numel(D.GratingDirections);
-for ii = 1:NS
-    iix = D.frameTimes >= D.GratingOnsets(ii) & D.frameTimes <= D.GratingOffsets(ii);
-    direction(iix) = D.GratingDirections(ii);
-    freq(iix) = D.GratingFrequency(ii);
-end
-
-svec = [cosd(direction) sind(direction)];
-eproj = sum(evec.*svec,2);
-clf
-eyePhase = (eproj./freq)*360;
-
-
-plot(eyePhase); hold on
-plot(wrapTo360(D.framePhaseOrig))
-plot(wrapTo360(D.framePhaseOrig - eyePhase), 'k')
-D.framePhase = wrapTo360(D.framePhaseOrig - eyePhase);
-i = 1;
-%%
-% clf
-% plot(D.frameContrast.*cosd(D.framePhase - eyePhase)); hold on
-% plot(D.frameContrast.*sind(D.framePhase - eyePhase));
-i = i + 500;
-xlim([0 200]+i)
-
-%%
-iix = 150e3+(1:25e3);
-figure(1); clf
-plot(D.treadTime, D.treadSpeed/5)
-hold on
-pupil = interp1(D.eyeTime, (D.eyePos(:,3)-nanmean(D.eyePos(:,3)))/nanstd(D.eyePos(:,3)), D.treadTime);
-plot(D.treadTime, pupil)
-
-ix = ~(isnan(pupil) | isnan(D.treadSpeed));
-
-[rho, pval] = corr(D.treadSpeed,pupil, 'type', 'Spearman', 'rows', 'complete');
-
-figure(2); clf
-plot(D.treadSpeed, pupil, '.')
-%%
-% pad nans
-pupil = D.eyePos(:,3);
-nanix = isnan(pupil);
-pad = filtfilt(ones(50,1)/50, 1, double(nanix));
-pupil(pad>0) = nan;
-plot(D.eyeTime(iix), D.eyePos(iix,3)); hold on
-plot(D.eyeTime(iix), pupil(iix))
-% plot(D.eyeTime(iix), [0; 0; diff(diff(D.eyePos(iix,3)))]);
-cc = 1;
-%%
-
-% figure(1); clf
-
-
-unitIds = unique(D.spikeIds);
-cc = cc + 1;
-if cc > numel(unitIds)
-    cc = 1;
-end
-
-unitId = unitIds(cc);
-[stimDir, robs, runSpd, opts] = bin_ssunit(D, unitId, 'win', [-.2 .2]);
-
-lag = find(opts.lags>0, 1) + (1:20);
-id = 4;
-if id==4
-    [~, ind] = sort(stimDir);
-    id = id - 1;
-    I = runSpd{id}(ind,:);
-elseif id==2
-    [~, ind] = sort(nanmean(cosd(runSpd{id}(:,lag)),2));
-    I = cosd(runSpd{id}(ind,:));
-else
-    [~, ind] = sort(nanmean(runSpd{id}(:,lag),2));
-    I = runSpd{id}(ind,:);
-end
-figure(10); clf
-subplot(1,2,1)
-imagesc(I)
-subplot(1,2,2)
-imagesc(robs(ind,:))
-title(cc)
-%% Step 1.2: Create a super session datafile for each subject
-% Create a supersession file for the subject you want to analyze
-
-subject = 'brie';
-import_supersession(subject);
-
-% TODO: this does not track RF locations yet
-
 
 %% Basic summary of session running
 thresh = 3;
 nboot = 100;
-subjects = {'gru', 'brie'};
-for i = 1:2
+subjects = {'gru', 'brie', 'allen'};
+nsubjs = numel(subjects);
+
+for i = 1:nsubjs
     subject = subjects{i};
     fprintf('Subject [%s], run threshold %02.2f cm/s\n', subject, thresh)
     D = load_subject(subject);
@@ -220,7 +38,7 @@ D = load_subject(subject);
 % This just demonstrates how to index into individual sessions and get
 % relevant data
 
-sessionId = 1; % pick a session id
+sessionId = 2; % pick a session id
 
 % index into grating times from that session
 gratIx = D.sessNumGratings==sessionId;
@@ -321,135 +139,243 @@ for t = 1:500
     pause(0.1)
 end
 
+%% load session
+subject = 'gru';
+D = load_subject(subject);
 
-%% Unit by Unit simple analysis
-thresh = 3;
+%%
+Stat = struct();
 
-unitList = unique(D.spikeIds);
-NC = numel(unitList);
+subjects = {'gru', 'brie', 'allen'};
+nsubjs = numel(subjects);
+for isubj = 1:nsubjs
+    subject = subjects{isubj};
+    D = load_subject(subject);
 
-corrRho = zeros(NC,1);
-corrPval = zeros(NC,1);
-
-frBaseR = zeros(NC,3);
-frBaseS = zeros(NC,3);
-
-frStimR = zeros(NC,3);
-frStimS = zeros(NC,3);
-
-for cc = 1:NC
-    unitId = unitList(cc);
-    [stimDir, robs, B, opts] = bin_ssunit(D, unitId, 'win', [-.2 .2]);
-    
-    runSpd = B{1};
-    goodIx = getStableRange(sum(robs,2), 'plot', false);
-    
-    stimDir = stimDir(goodIx);
-    robs = robs(goodIx,:);
-    runSpd = runSpd(goodIx,:);
-    
-    iix = opts.lags < 0;
-    frbase = sum(robs(:,iix),2) / (max(opts.lags(iix)) - min(opts.lags(iix)));
-    
-    spd = mean(runSpd,2);
-    
-    [corrRho(cc), corrPval(cc)] = corr(spd, frbase, 'type', 'Spearman');
-    
-    runTrials = find(spd > thresh);
-    statTrials = find(abs(spd) < 1);
-    mixTrials = [runTrials; statTrials];
-    
-    nrun = numel(runTrials);
-    nstat = numel(statTrials);
-    
-    n = min(nrun, nstat);
-    
-    frBaseR(cc,:) = prctile(mean(frbase(runTrials(randi(nrun, [n nboot])))), [2.5 50 97.5]);
-    frBaseS(cc,:) = prctile(mean(frbase(statTrials(randi(nstat, [n nboot])))), [2.5 50 97.5]);
-    
-    iix = opts.lags > 0.04 & opts.lags < opts.lags(end)-.15;
-    frstim = sum(robs(:,iix),2) / (max(opts.lags(iix)) - min(opts.lags(iix)));
-    
-    frStimR(cc,:) = prctile(mean(frstim(runTrials(randi(nrun, [n nboot])))), [2.5 50 97.5]);
-    frStimS(cc,:) = prctile(mean(frstim(statTrials(randi(nstat, [n nboot])))), [2.5 50 97.5]);
-    
+    Stat.(subject) = do_spike_count_analyses(D);
 end
 
-%% plot some outcomes
+%%
+figdir = 'Figures/HuklabTreadmill/manuscript/';
+nboot = 100;
 
-incBaseIx = find(frBaseR(:,2) > frBaseS(:,3));
-decBaseIx = find(frBaseR(:,2) < frBaseS(:,1));
 
-incStimIx = find(frStimR(:,2) > frStimS(:,3));
-decStimIx = find(frStimR(:,2) < frStimS(:,1));
 
-figure(1); clf
-set(gcf, 'Color', 'w')
-ms = 4;
-cmap = lines;
-subplot(1,2,1)
-plot(frBaseS(:,[2 2])', frBaseR(:,[1 3])', 'Color', .5*[1 1 1]); hold on
-plot(frBaseS(:,[1 3])', frBaseR(:,[2 2])', 'Color', .5*[1 1 1])
-plot(frBaseS(:,2), frBaseR(:,2), 'o', 'Color', cmap(1,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(1,:))
-plot(frBaseS(incBaseIx,2), frBaseR(incBaseIx,2), 'o', 'Color', cmap(2,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(2,:))
-plot(frBaseS(decBaseIx,2), frBaseR(decBaseIx,2), 'o', 'Color', cmap(3,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(3,:))
+% [207, 179, 144; 195, 97, 66]
+% cmap = lines;
 
-xlabel('Stationary')
-ylabel('Running')
-title('Baseline Firing Rate')
+% colors = {[(cmap(1,:) + [1 1 1]/2)/2; cmap(1,:)]*255, ...
+%     [(cmap(5,:) + [1 1 1]/2)/2; cmap(5,:)]*255, ...
+%     [(cmap(2,:) + [1 1 1]/2)/2; cmap(2,:)]*255};
 
-set(gca, 'Xscale', 'log', 'Yscale', 'log')
-plot(xlim, xlim, 'k')
+subjects = {'gru', 'brie', 'allen'};
+nsubjs = numel(subjects);
 
-subplot(1,2,2)
-plot(frStimS(:,[2 2])', frStimR(:,[1 3])', 'Color', .5*[1 1 1]); hold on
-plot(frStimS(:,[1 3])', frStimR(:,[2 2])', 'Color', .5*[1 1 1])
-plot(frStimS(:,2), frStimR(:,2), 'o', 'Color', cmap(1,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(1,:))
-plot(frStimS(incStimIx,2), frStimR(incStimIx,2), 'o', 'Color', cmap(2,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(2,:))
-plot(frStimS(decStimIx,2), frStimR(decStimIx,2), 'o', 'Color', cmap(3,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(3,:))
+for isubj = 1:nsubjs
+    subject = subjects{isubj};
+    cmap = getcolormap(subject, false);
 
-xlabel('Stationary Firing Rate')
-ylabel('Running Firing Rate')
-title('Stim-driven firing rate')
+    fprintf('***************************\n\n')
+    fprintf('***************************\n\n')
+    fprintf('%s\n', subject)
 
-set(gca, 'Xscale', 'log', 'Yscale', 'log')
-plot(xlim, xlim, 'k')
+    frBaseS = Stat.(subject).frBaseS;
+    frBaseR = Stat.(subject).frBaseR;
+    frStimR = Stat.(subject).frStimR;
+    frStimS = Stat.(subject).frStimS;
 
-nIncBase = numel(incBaseIx);
-nDecBase = numel(decBaseIx);
 
-nIncStim = numel(incStimIx);
-nDecStim = numel(decStimIx);
+    good = ~isnan(Stat.(subject).meanrate); %~(frStimS(:,2) < 1 | frStimR(:,2) < 1);
+    frBaseR = frBaseR(good,:);
+    frBaseS = frBaseS(good,:);
+    frStimR = frStimR(good,:);
+    frStimS = frStimS(good,:);
+    NC = size(frBaseR,1);
 
-modUnits = unique([incBaseIx; decBaseIx; incStimIx; decStimIx]);
-nModUnits = numel(modUnits);
+    incBaseIx = find(frBaseR(:,2) > frBaseS(:,3));
+    decBaseIx = find(frBaseR(:,2) < frBaseS(:,1));
+    notSigBaseIx = setdiff( (1:NC)', [incBaseIx; decBaseIx]);
 
-fprintf('%d/%d (%02.2f%%) increased baseline firing rate\n', nIncBase, NC, 100*nIncBase/NC)
-fprintf('%d/%d (%02.2f%%) decreased baseline firing rate\n', nDecBase, NC, 100*nDecBase/NC)
+    incStimIx = find(frStimR(:,2) > frStimS(:,3));
+    decStimIx = find(frStimR(:,2) < frStimS(:,1));
+    notSigStimIx = setdiff( (1:NC)', [incStimIx; decStimIx]);
 
-fprintf('%d/%d (%02.2f%%) increased stim firing rate\n', nIncStim, NC, 100*nIncStim/NC)
-fprintf('%d/%d (%02.2f%%) decreased stim firing rate\n', nDecStim, NC, 100*nDecStim/NC)
+    figure(isubj); clf
+    set(gcf, 'Color', 'w')
+    ms = 2;
+    
+    subplot(1,2,1)
+    plot(frBaseS(:,[2 2])', frBaseR(:,[1 3])', 'Color', .5*[1 1 1]); hold on
+    plot(frBaseS(:,[1 3])', frBaseR(:,[2 2])', 'Color', .5*[1 1 1])
 
-fprintf('%d/%d (%02.2f%%) total modulated units\n', nModUnits, NC, 100*nModUnits/NC)
+    plot(frBaseS(incBaseIx,2), frBaseR(incBaseIx,2), 'o', 'Color', cmap(6,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(6,:))
+    plot(frBaseS(decBaseIx,2), frBaseR(decBaseIx,2), 'o', 'Color', cmap(6,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(6,:))
+    plot(frBaseS(notSigBaseIx,2), frBaseR(notSigBaseIx,2), 'o', 'Color', cmap(2,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(2,:))
+    xlabel('Stationary')
+    ylabel('Running')
+    title('Baseline Firing Rate')
 
-[pvalStim, ~, sStim] = signrank(frStimS(:,2), frStimR(:,2));
-[pvalBase, ~, sBase] = signrank(frBaseS(:,2), frBaseR(:,2));
+%     set(gca, 'Xscale', 'log', 'Yscale', 'log')
+    plot([.1 100], [.1 100], 'k')
+    xlim([0 100])
+    ylim([0 100])
 
-fprintf('Wilcoxon signed rank test:\n')
-fprintf('Baseline rates: p = %02.10f\n', pvalBase)
-fprintf('Stim-driven rates: p = %02.10f\n', pvalStim)
+    subplot(1,2,2)
+    plot(frStimS(:,[2 2])', frStimR(:,[1 3])', 'Color', .5*[1 1 1]); hold on
+    plot(frStimS(:,[1 3])', frStimR(:,[2 2])', 'Color', .5*[1 1 1])
 
-good = ~(frBaseR(:,2)==0 | frBaseS(:,2)==0);
+    plot(frStimS(incStimIx,2), frStimR(incStimIx,2), 'o', 'Color', cmap(6,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(6,:))
+    plot(frStimS(decStimIx,2), frStimR(decStimIx,2), 'o', 'Color', cmap(6,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(6,:))
+    plot(frStimS(notSigStimIx,2), frStimR(notSigStimIx,2), 'o', 'Color', cmap(2,:), 'MarkerSize', ms, 'MarkerFaceColor', cmap(2,:))
 
-m = geomean(frBaseR(good,2)./frBaseS(good,2));
-ci = bootci(nboot, @geomean, frBaseR(good,2)./frBaseS(good,2));
+    xlabel('Stationary Firing Rate')
+    ylabel('Running Firing Rate')
+    title('Stim-driven firing rate')
 
-fprintf("geometric mean baseline firing rate ratio (Running:Stationary) is %02.3f [%02.3f, %02.3f] (n=%d)\n", m, ci(1), ci(2), sum(good)) 
+%     set(gca, 'Xscale', 'log', 'Yscale', 'log')
+    plot([.1 100], [.1 100], 'k')
+    xlim([0 100])
+    ylim([0 100])
 
-m = geomean(frStimR(:,2)./frStimS(:,2));
-ci = bootci(nboot, @geomean, frStimR(:,2)./frStimS(:,2));
+    nIncBase = numel(incBaseIx);
+    nDecBase = numel(decBaseIx);
 
-fprintf("geometric mean stim-driven firing rate ratio (Running:Stationary) is %02.3f [%02.3f, %02.3f] (n=%d)\n", m, ci(1), ci(2), NC)
+    nIncStim = numel(incStimIx);
+    nDecStim = numel(decStimIx);
+
+    modUnits = unique([incBaseIx; decBaseIx; incStimIx; decStimIx]);
+    nModUnits = numel(modUnits);
+
+    fprintf('%d/%d (%02.2f%%) increased baseline firing rate\n', nIncBase, NC, 100*nIncBase/NC)
+    fprintf('%d/%d (%02.2f%%) decreased baseline firing rate\n', nDecBase, NC, 100*nDecBase/NC)
+
+    fprintf('%d/%d (%02.2f%%) increased stim firing rate\n', nIncStim, NC, 100*nIncStim/NC)
+    fprintf('%d/%d (%02.2f%%) decreased stim firing rate\n', nDecStim, NC, 100*nDecStim/NC)
+
+    fprintf('%d/%d (%02.2f%%) total modulated units\n', nModUnits, NC, 100*nModUnits/NC)
+
+    [pvalStim, ~, sStim] = signrank(frStimS(:,2), frStimR(:,2));
+    [pvalBase, ~, sBase] = signrank(frBaseS(:,2), frBaseR(:,2));
+
+    fprintf('Wilcoxon signed rank test:\n')
+    fprintf('Baseline rates: p = %02.10f\n', pvalBase)
+    fprintf('Stim-driven rates: p = %02.10f\n', pvalStim)
+
+    good = ~(frBaseR(:,2)==0 | frBaseS(:,2)==0);
+
+    m = geomean(frBaseR(good,2)./frBaseS(good,2));
+    ci = bootci(nboot, @geomean, frBaseR(good,2)./frBaseS(good,2));
+
+    fprintf("geometric mean baseline firing rate ratio (Running:Stationary) is %02.3f [%02.3f, %02.3f] (n=%d)\n", m, ci(1), ci(2), sum(good))
+
+    good = find(~(frStimS(:,2)==0 | frStimS(:,2)==0));
+    good = good(~isinf(log(frStimR(good,2)./frStimS(good,2))));
+    m = geomean(frStimR(good,2)./frStimS(good,2));
+    ci = bootci(nboot, @geomean, frStimR(good,2)./frStimS(good,2));
+
+    fprintf("geometric mean stim-driven firing rate ratio (Running:Stationary) is %02.3f [%02.3f, %02.3f] (n=%d)\n", m, ci(1), ci(2), NC)
+    plot.formatFig(gcf, [4 2], 'nature')
+    saveas(gcf, fullfile(figdir, sprintf('rate_compare_%s.pdf', subject)))
+end
+
+%%
+
+subjects = {'gru', 'brie', 'allen'};
+nsubjs = numel(subjects);
+field = 'rateweight';
+for isubj = 1:nsubjs
+    subject = subjects{isubj};
+    cmap = getcolormap(subject, false);
+    fprintf('***************************\n\n')
+    fprintf('***************************\n\n')
+    fprintf('%s\n', subject)
+
+    NC = numel(Stat.(subject).meanrate);
+    good = find(~isnan(Stat.(subject).meanrate));
+    dsi = nan(NC,1);
+    osi = nan(NC,2);
+    maxrate = nan(NC,1);
+
+    for cc = good(:)'
+        mu = squeeze(Stat.(subject).(['d' field])(cc,:,2));
+        maxrate(cc) = max(mu);
+
+        baseline = min(Stat.(subject).baselinerate(cc), 1);
+%         baseline = 0; %min(min(mu(:)), baseline);
+        dsi(cc) = direction_selectivity_index(Stat.(subject).directions, mu(:)-baseline, 2);
+        mu = squeeze(Stat.(subject).(['o' field])(cc,:,2));
+%         baseline = min(mu(:));
+        osi(cc,1) = orientation_selectivity_index(Stat.(subject).orientations, mu(:)-baseline, 2);
+        mu = squeeze(Stat.(subject).(['o' field])(cc,:,1));
+        osi(cc,2) = orientation_selectivity_index(Stat.(subject).orientations, mu(:)-baseline, 2);
+    end
+
+    osi(osi(:,1) < 0 | osi(:,1) > 1,:) = nan;
+
+    figure(isubj); clf
+
+%     histogram(dsi, 'binEdges', linspace(0,1,100))
+%     hold on
+%     histogram(osi, 'binEdges', linspace(0,1,100), 'FaceColor', cmap(6,:), 'EdgeColor', 'none', 'FaceAlpha', .5)
+%     hold on
+    iix = Stat.(subject).pvis(:,3)<0.05;
+    histogram(osi(iix), 'binEdges', linspace(0,1,100), 'FaceColor', cmap(6,:), 'EdgeColor', 'none', 'FaceAlpha', 1)
+    xlabel('OSI')
+    set(gca, 'XTick', 0:.25:1)
+    plot.formatFig(gcf, [1.2 1], 'nature')
+    saveas(gcf, fullfile(figdir, sprintf('osi_dist_%s.pdf', subject)))
+
+
+    mean(Stat.(subject).pvis(good,3)<0.05)
+
+    osi(maxrate < 5 | maxrate > 50,:) = nan;
+
+    figure(isubj + 10); clf
+    excludefromplotting = ~((osi(:,2)./osi(:,1)) > .8 & (osi(:,2)./osi(:,1)) < 1.5);
+    osi(excludefromplotting,:) = nan;
+    metric = osi(:,2);
+
+    [~, inds] = nanmin((metric(:) - [.1 .5 .9]).^2);
+    
+
+    for i = 1:3
+        cc = inds(i);
+        subplot(1,3,i)
+        mu = squeeze(Stat.(subject).(['d' field])(cc,:,:));
+        plot(Stat.(subject).directions, mu, 'Color', cmap(6,:))
+        hold on
+        plot(Stat.(subject).directions, mu(:,2), '.', 'Color', cmap(6,:))
+
+        plot(xlim, Stat.(subject).baselinerate(cc)*[1 1], '--', 'Color', cmap(1,:))
+        title(sprintf('OSI: %02.2f', metric(cc)))
+        
+        plot.offsetAxes(gca, false, 10)
+        ylim([0 max(ylim)])
+        set(gca, 'XTick', 0:45:330)
+        xlim(Stat.(subject).directions([1 end]))
+        xlabel('Orienation (deg.)')
+        if i==1
+            ylabel('Firing Rate (sp s^{-1})')
+        end
+    end
+    plot.formatFig(gcf, [3 1], 'nature')
+    saveas(gcf, fullfile(figdir, sprintf('example_tuning_%s.pdf', subject)))
+
+end
+
+%%
+subjects = {'gru', 'brie', 'allen'};
+nsubjs = numel(subjects);
+field = 'rateweight';
+for isubj = 1:nsubjs
+    subject = subjects{isubj};
+    cmap = getcolormap(subject, false);
+    fprintf('***************************\n\n')
+    fprintf('***************************\n\n')
+    fprintf('%s\n', subject)
+
+
+end
 %%
 mean(corrPval < 0.05)
 

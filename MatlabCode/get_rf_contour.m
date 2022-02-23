@@ -1,5 +1,6 @@
 function [con, ar, ctr] = get_rf_contour(xi,yi,rf,varargin)
 % get_rf_contour(xi,yi,rf,varargin)
+% [con, ar, ctr] = get_rf_contour(xi,yi,rf,varargin)
 
 ip = inputParser();
 ip.addParameter('thresh', .5)
