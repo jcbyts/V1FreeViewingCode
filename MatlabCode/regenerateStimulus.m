@@ -160,8 +160,10 @@ blocks = 1;
 frameCounter = 1;
 
 for iTrial = 1:nTrials
+    
     fprintf('%d/%d trials\n', iTrial, nTrials)
     thisTrial = validTrials(iTrial);
+    useFixation = false; % defaults to false
 
     % extract the frame refresh times from marmoview FrameControl
     frameRefreshes = Exp.D{thisTrial}.eyeData(6:end,6);
@@ -281,6 +283,57 @@ for iTrial = 1:nTrials
             probeX = nan(nFrames,1);
             probeY = nan(nFrames,1);
             probeId = nan(nFrames,1);
+
+        case 'FixFlash_ProceduralNoise'
+            
+            if isempty(Exp.D{thisTrial}.PR.NoiseHistory)
+                continue
+            end
+
+            noiseFrames = Exp.D{thisTrial}.PR.NoiseHistory(:,1);
+            validNoiseFrames = find(~isnan(Exp.D{thisTrial}.PR.NoiseHistory(:,2)));
+
+            nFrames = min(numel(noiseFrames), nFrames);
+
+            % this is our noise object
+            if ~isfield(Exp.D{thisTrial}.PR, 'hNoise')
+                continue
+            end
+
+            hNoise = copy(Exp.D{thisTrial}.PR.hNoise);
+            if ismethod(hNoise, 'reset')
+                hNoise.reset();
+            else
+                hNoise.rng.reset(); % reset the random seed to the start of the trial
+                hNoise.frameUpdate = 0; % reset the frame counter
+            end
+
+            if isprop(hNoise, 'screenRect')
+                hNoise.screenRect = Exp.S.screenRect;
+            end
+
+            if ip.Results.usePTBdraw
+                hNoise.winPtr = A.window;
+                hNoise.updateTextures()
+            end
+
+            useNoiseObject = true;
+            useFixation = true;
+
+            % get the probe location on each frame
+            hFix = copy(Exp.D{thisTrial}.PR.hFix);
+            hFace = copy(Exp.D{thisTrial}.PR.hFace);
+            fixHistory = Exp.D{thisTrial}.PR.fixHistory;
+            if ip.Results.usePTBdraw
+                hFix.winPtr = A.window;
+                hFace.winPtr = A.window;
+                hFace.loadimages('./SupportData/MarmosetFaceLibrary.mat');
+            end
+            
+            % no probe
+            probeX = nan(nFrames,1);
+            probeY = nan(nFrames,1);
+            probeId = nan(nFrames,1);
             
         otherwise
             
@@ -370,7 +423,18 @@ for iTrial = 1:nTrials
                 continue
             end
             
-            seedGood = false;
+            if useFixation
+                seedGood = ~ismember(iFrame, validNoiseFrames);
+                if seedGood
+                    drawNoise = false;
+                else
+                    drawNoise = true;
+                end
+            else
+                seedGood = false;
+                drawNoise = true;
+            end
+
             ctr = 0; % loop counter
             while ~seedGood % try frames until the seeds match
                 hNoise.afterFrame(); % regenerate noise stimulus
@@ -401,7 +465,18 @@ for iTrial = 1:nTrials
             
             if ip.Results.usePTBdraw
 %                 hNoise.winPtr = A.window;
-                hNoise.beforeFrame()
+                if drawNoise
+                    hNoise.beforeFrame()
+                end
+
+                if useFixation
+                    if fixHistory(iFrame,2) < 0
+                        hFace.beforeFrame();
+                    elseif fixHistory(iFrame,2) > 0
+                        hFix.beforeFrame(fixHistory(iFrame,2))
+                    end
+                end
+                
             else
                 % get image directly from noise object
                 I = hNoise.getImage(tmprect, spatialBinSize);
@@ -454,7 +529,7 @@ for iTrial = 1:nTrials
         end
         
         % --- handle probe objects
-        if useNoiseObject && ip.Results.includeProbe % probes can exist on noise objects. for now. Might add them for BackImage soon
+        if useNoiseObject && ip.Results.includeProbe && ~useFixation% probes can exist on noise objects. for now. Might add them for BackImage soon
             
             probeInWin = (probeX(iFrame) > (tmprect(1)-Probe{1}.radius)) & (probeX(iFrame) < (tmprect(3) + Probe{1}.radius));
             probeInWin = probeInWin & ((probeY(iFrame) > (tmprect(2)-Probe{1}.radius)) & (probeY(iFrame) < (tmprect(4) + Probe{1}.radius)));
