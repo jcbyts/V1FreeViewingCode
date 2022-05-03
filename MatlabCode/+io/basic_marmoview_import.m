@@ -32,10 +32,10 @@ else
 
 
     EventFiles = dir([DataFolder,filesep,'*.events']);
+    ext = 'events';
+    HASEPHYS = true;
 
-    if ~isempty(EventFiles)
-        ext = 'events';
-        HASEPHYS = true;
+    if isempty(EventFiles)
         EventFiles = dir(fullfile(DataFolder,'*.kwe'));
         if ~isempty(EventFiles)
             ext = 'kwe';
