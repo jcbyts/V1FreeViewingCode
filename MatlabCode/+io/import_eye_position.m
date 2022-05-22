@@ -93,7 +93,7 @@ FileSort = sortrows(DoFileSort,2); % sort them by date
 BigN = 0;
 
 figure(10); clf
-
+filenum = [];
 for zk = FileSort(:,1)'
     fname = VpxFiles(zk).name;
     vpx_filename = [DataFolder,filesep,VpxFiles(zk).name];
@@ -129,6 +129,7 @@ for zk = FileSort(:,1)'
             end
             %******* concatenate large file stream **********
             Exp.vpx.raw = [Exp.vpx.raw ; vpx.raw];
+            filenum = [filenum; zk*ones(size(vpx.raw, 1), 1)];
             figure(10); 
             plot(vpx.raw(:,1), vpx.raw(:,2)); hold on
             Exp.vpx.smo = [Exp.vpx.smo ; vpx.smo];
@@ -147,7 +148,6 @@ for zk = FileSort(:,1)'
         fprintf(fid, 'WARNING: failed to read [%s]\n',fname);
     end
 end
-
 
 %% Synching up the strobes from VPX to MarmoView
 % Same thing, might use matlab eye data for now
@@ -185,6 +185,69 @@ for k = 1:nTrials
     end
 end
 fprintf(fid, '\nFinished synching up vpx strobes\n\n');
+
+%% fix any issues with edf clock resetting
+% for some reason, the eyelink can sometimes reset the clock at the start
+% of each file. I don't know why this happens, but if it does, we need to
+% sync clocks for each file separately and then combine
+vpxstarts = cellfun(@(x) x.START_VPX, Exp.D);
+breaks = find(diff(vpxstarts)<0);
+
+if any(breaks)
+    newt = Exp.vpx.raw(:,1); % initialize new timestamps to modify
+    tbreaks = find(diff(newt) < 0);
+    tstart = [1; tbreaks+1];
+    tstop = [tbreaks; numel(newt)];
+
+    startinds = [1; breaks+1];
+    stopinds = [breaks; numel(vpxstarts)];
+
+    
+    nbreaks = numel(startinds);
+    
+    for iibr = 1:nbreaks
+        
+        vpxstart = cellfun(@(x) x.START_VPX, Exp.D(startinds(iibr):stopinds(iibr)));
+        vpxstop = cellfun(@(x) x.END_VPX, Exp.D(startinds(iibr):stopinds(iibr)));
+        ptbstart = cellfun(@(x) x.STARTCLOCKTIME, Exp.D(startinds(iibr):stopinds(iibr)));
+        ptbstop = cellfun(@(x) x.ENDCLOCKTIME, Exp.D(startinds(iibr):stopinds(iibr)));
+        
+        [vpxt, ind] = sort([vpxstart; vpxstop]);
+        ptbt = [ptbstart; ptbstop];
+        ptbt = ptbt(ind);
+
+        
+        [~, ifun] = synchtime.align_clocks(ptbt, vpxt);
+% 
+%         figure(iibr); clf
+%         subplot(1,2,1)
+%         plot(ptbt, vpxt, 'o'); hold on
+%         plot(ptbt, fun(ptbt))
+%         xlabel('PTB Clock')
+%         ylabel('Eye Clock')
+% 
+% %         fun = synchtime.align_clocks(vpxt, ptbt);
+%         subplot(1,2,2)
+%         plot(vpxt, ptbt, 'o'); hold on
+%         plot(vpxt, ifun(vpxt))
+%         xlabel('Eye Clock')
+%         ylabel('PTB Clock')
+
+%         iix = Exp.vpx.raw(:,1) >= min(vpxt) & Exp.vpx.raw(:,1) <= max(vpxt);
+        iix = tstart(iibr):tstop(iibr);
+        newt(iix) = ifun(newt(iix));
+
+%         figure()
+%         plot(Exp.vpx.raw(:,1), '.'); hold on
+%         plot(iix, Exp.vpx.raw(iix,1), '.')
+        
+
+    end
+    
+    % correct timestamps and conversion function permanently
+    Exp.vpx.raw(:,1) = Exp.ptb2Ephys(newt);
+    Exp.vpx2ephys = @(x) x;
+end
 
 if ~isfield(Exp, 'vpx2ephys')
     vpx2ephys = synchtime.sync_vpx_to_ephys_clock(Exp);
