@@ -204,6 +204,7 @@ if any(breaks)
 
     
     nbreaks = numel(startinds);
+    assert(nbreaks == numel(tstart), 'import_eye_position: different number of breaks in the file between strobe times and raw clock')
     
     for iibr = 1:nbreaks
         
@@ -245,8 +246,9 @@ if any(breaks)
     end
     
     % correct timestamps and conversion function permanently
-    Exp.vpx.raw(:,1) = Exp.ptb2Ephys(newt);
-    Exp.vpx2ephys = @(x) x;
+    Exp.vpx.raw(:,1) = Exp.ptb2Ephys(newt); % pre-convert eye clock to Ephys time
+    Exp.vpx.smo(:,1) = Exp.vpx.raw(:,1); % copy time to smo eye traces
+    Exp.vpx2ephys = @(x) x; % then use the identity for vpx2ephys
 end
 
 if ~isfield(Exp, 'vpx2ephys')
