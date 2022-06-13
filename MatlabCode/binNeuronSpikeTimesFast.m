@@ -12,47 +12,19 @@ function [Y, binfun] = binNeuronSpikeTimesFast(sp, eventTimes, binSize, keep_spa
 % Example Call:
 %   Y = binNeuronSpikeTimesFast(Exp.osp, eventTimes, binsize)
 
-% NT = numel(eventTimes);
-% NC = max(sp.cids);
-
-% bs = min(diff(eventTimes)) - eps;
-% if bs < binSize
-%     warning('maximum bin size is the minimum distance between events')
-%     binSize = bs;
-% end
-
-% eventTimes = [eventTimes(:)'; eventTimes(:)' + binSize];
-% eventTimes = eventTimes(:);
-% % eventTimes = [eventTimes(:); eventTimes(end) + binSize];
-% Y = zeros(NT, NC);
-% for cc = sp.cids(:)'
-%     cnt = histcounts(sp.st(sp.clu==cc), eventTimes);
-% %     cnt(diff(eventTimes) > .1) = 0;
-%     Y(:,cc) = cnt(1:2:end);
-% end
-
 if nargin < 4
     keep_sparse = false;
 end
 
 % conversion from time to bins
-binfun = @(x) (x==0) + ceil(x / binSize);
+binfun = [];
 
-% bin spike times
-bst = binfun(sp.st);
+[~, ~, ind1] = histcounts(sp.st, eventTimes);
+[~, ~, ind2] = histcounts(sp.st, eventTimes+binSize);
 
-% bin frame times
-bft = binfun(eventTimes);
-
-% create binned spike times
-Y = sparse(bst, double(sp.clu), ones(numel(bst), 1), max(max(bst),max(bft)),double(max(sp.clu)));
-
-% index in with binned frame times
-Y = Y(bft,:);
+ix = ind2+1 == ind1;
+Y = sparse(ind1(ix), sp.clu(ix), ones(sum(ix), 1), numel(eventTimes), max(sp.clu));
 
 if ~keep_sparse
     Y = full(Y);
 end
-
-% return
-
