@@ -19,7 +19,7 @@ sessList = io.dataFactoryTreadmill({'StimulusSuite', 'MarmoV5', 'Chamber', 'V1'}
 %% Step 1.1: Try importing a session
 
 
-for id = 30:numel(sessList)
+for id = numel(sessList)
     sessionId = sessList{id};
 %     try
             
@@ -44,16 +44,18 @@ for id = 30:numel(sessList)
         dotTrials = io.getValidTrials(Exp, 'Dots');
         if ~isempty(dotTrials)
 
-            BIGROI = [-1 -1 1 1]*5;
+%             BIGROI = [-1 -1 1 1]*5;
+            BIGROI = [-30 -10 30 10];
 
             % eyePos = eyepos;
             eyePos = Exp.vpx.smo(:,2:3);
-            % eyePos(:,1) = -eyePos(:,1);
-            % eyePos(:,2) = -eyePos(:,2);
+            eyePos(:,1) = -eyePos(:,1);
+            eyePos(:,2) = -eyePos(:,2);
 
             stat = spat_rf_helper(Exp, 'ROI', BIGROI, ...
                 'win', [0 12],...
-                'binSize', .3, 'plot', true, 'debug', false, 'spikesmooth', 0);
+                'eyePos', eyePos, ...
+                'binSize', .5, 'plot', true, 'debug', false, 'spikesmooth', 0);
 
             dataPath = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
             exname = strrep(Exp.FileTag, '.mat', '');

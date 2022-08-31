@@ -19,7 +19,7 @@ sessList = io.dataFactoryTreadmill({'StimulusSuite', 'MarmoV5', 'Chamber', 'V1'}
 %% Step 1.1: Try importing a session
 
 
-for id = 1:34
+for id = 37
     sessionId = sessList{id};
     try
         
@@ -48,10 +48,13 @@ for id = 1:34
                 BIGROI = [-30 -10 30 10];
                 
                 eyePos = Exp.vpx.smo(:,2:3);
+                eyePos(:,1) = -eyePos(:,1);
+                eyePos(:,2) = -eyePos(:,2);
                 
                 binSize = .5;
                 RFs = spat_rf_helper(Exp, 'ROI', BIGROI, ...
                     'win', [-5 12],...
+                    'eyePos', eyePos, ...
                     'binSize', binSize, 'plot', false, 'debug', false, 'spikesmooth', 0);
                 
                 
@@ -155,7 +158,7 @@ old_dir = pwd;
 cd(fdir)
 
 server_string = 'jake@bancanus'; %'jcbyts@sigurros';
-output_dir = '/home/jake/Data/Datasets/HuklabTreadmill/processed/';
+output_dir = '/home/jake/Data/Datasets/HuklabTreadmill/gratings/';
 
 data_dir = getpref('FREEVIEWING', 'PROCESSED_DATA_DIR');
 

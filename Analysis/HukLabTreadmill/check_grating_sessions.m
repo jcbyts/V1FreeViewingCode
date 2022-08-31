@@ -9,6 +9,8 @@ end
 
 %% import super sessions brie, gru
 import_supersession('gru', fdir)
+
+%%
 import_supersession('brie', fdir)
 %% import allen dataset
 fdir = '~/Data/Datasets/HuklabTreadmill/Dstruct/';
@@ -22,6 +24,26 @@ ifile = 0;
 fdir = '~/Data/Datasets/HuklabTreadmill/';
 D = load_subject(subj, fdir);
 
+%% transfer to server
+fdir = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
+fdir = fullfile(fdir, 'gratings');
+
+old_dir = pwd;
+
+cd(fdir)
+
+server_string = 'jake@bancanus'; %'jcbyts@sigurros';
+output_dir = '/home/jake/Data/Datasets/HuklabTreadmill/gratings/';
+
+command = 'scp ';
+command = [command '*_all.mat' ' '];
+command = [command server_string ':' output_dir];
+
+system(command)
+
+fprintf('%s\n', fname)
+
+cd(old_dir)
 
 %% load data
 % ifile = ifile + 1;

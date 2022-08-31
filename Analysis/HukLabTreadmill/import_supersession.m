@@ -28,11 +28,12 @@ Dbig = struct('GratingDirections', [], 'GratingFrequency', [], ...
     'sessNumTread', [], 'sessNumEye', [], 'spikeTimes', [], 'spikeIds', []);
 
 Dbig.units = {};
+
 %%
 
 fprintf('Loading and aligning spikes with behavior\n')
 
-unique_sessions = {'gru_20211217', 'allen'}; % sessions for which the unit numbers should not be combined
+unique_sessions = {'gru_20211217', 'gru_20220412', 'allen'}; % sessions for which the unit numbers should not be combined
 
 flist = dir(fullfile(fpath, [subj '*']));
 startTime = 0; % all experiments start at zero. this number will increment as we concatenate sessions
@@ -41,6 +42,8 @@ timingFields = {'GratingOnsets', 'GratingOffsets', 'spikeTimes', 'treadTime', 'e
 nonTimingFields = {'GratingDirections', 'GratingFrequency', 'GratingSpeeds', 'eyeLabels', 'eyePos', 'treadSpeed', 'spikeIds', 'sessNumSpikes', 'sessNumGratings', 'sessNumTread', 'sessNumEye', 'framePhase', 'GratingContrast', 'frameContrast'};
 
 fprintf('Looping over %d sessions\n', numel(flist))
+
+Dbig.flist = flist;
 
 for iSess = 1:numel(flist)
     fprintf('%d/%d session [%s]\n', iSess, numel(flist), flist(iSess).name)
@@ -101,6 +104,18 @@ for iSess = 1:numel(flist)
     end
 
     if any(cellfun(@(x) contains(flist(iSess).name, x), unique_sessions))
+        % this all works as long as the unique sessions come at the end of
+        % the datelist
+
+        % rename units from 1 to NC
+        scids = unique(D.spikeIds); % session ids
+        tNC = numel(scids);
+        newid = zeros(max(scids), 1);
+        for cc = 1:tNC
+            newid(scids(cc)) = cc;
+        end
+        
+        D.spikeIds = newid(D.spikeIds);
         
         unit_offset = max(unique(Dbig.spikeIds));
         if isempty(unit_offset)
@@ -110,7 +125,8 @@ for iSess = 1:numel(flist)
         D.spikeIds = D.spikeIds + unit_offset;
         if isfield(D, 'units')
             for ii = 1:numel(D.units)
-                D.units(ii).id = D.units(ii).id + unit_offset;
+%                 D.units(ii).id = D.units(ii).id + unit_offset;
+                D.units(ii).id = newid(scids(ii)) + unit_offset;
             end
         end
     end
@@ -121,7 +137,6 @@ for iSess = 1:numel(flist)
     D.sessNumGratings = iSess*ones(size(D.GratingOnsets));
     D.sessNumTread = iSess*ones(size(D.treadTime));
     D.sessNumEye = iSess*ones(size(D.eyeTime));
-
     
     sessStart = 0;
     for iField = 1:numel(timingFields)
@@ -340,9 +355,13 @@ if ~strcmp(subj, 'allen') % allen institute data has no super sessions
             end
 
             % update the original struct
+            oclu = Dbig.spikeIds(unitix);
             Dbig.spikeIds(unitix) = nclu;
-
-
+            ocid = unique(oclu);
+            ncids = unique(nclu);
+            for ncid = ncids(:)'
+                Dbig.units{ncid} = Dbig.units{ocid};
+            end
 
         end
         drawnow

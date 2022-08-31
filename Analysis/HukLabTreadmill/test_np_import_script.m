@@ -6,7 +6,8 @@ addpath Analysis/HukLabTreadmill/ % the code will always assume you're running f
 
 %% Try to synchronize using strobed values
 HUKDATASHARE = getpref('FREEVIEWING', 'HUKLAB_DATASHARE');
-dataPath = fullfile(HUKDATASHARE, 'gru', 'g20211217');
+% dataPath = fullfile(HUKDATASHARE, 'gru', 'g20211217');
+dataPath = fullfile(HUKDATASHARE, 'gru', 'g20220412');
 
 %%
 figDir = '~/Google Drive/HuklabTreadmill/imported_sessions_qa/g20211217/';
@@ -23,13 +24,18 @@ ix = find(diff(timestamps.ts.fullWords)~=0)+1;
 tstruct = struct('tstrobes', timestamps.ts.timestamps_s(ix), ...
     'strobes', timestamps.ts.fullWords(ix));
 
-ts = timestamps.ts.timestamps_s;
+% ts = timestamps.ts.timestamps_s;
+ts = double(timestamps.ts.timestamps)/30e3;
 val = double(timestamps.ts.eventVirCh-1);
 
 ephys_info.eventId = double(sign(timestamps.ts.eventVirChStates)==1);
 [t,v] = read_ephys.convert_data_to_strobes(val, ts, ephys_info);
 
-figure(1); clf; set(gcf, 'Color', 'w')
+tstruct = struct('tstrobes', t, ...
+    'strobes', v);
+
+figure(1); clf;
+set(gcf, 'Color', 'w')
 plot(t, v, 'o')
 hold on
 plot(timestamps.ts.timestamps_s, timestamps.ts.fullWords, 'o')
@@ -39,8 +45,13 @@ ylabel('Strobe Value')
 %% Load data without sync
 
 Exp = io.basic_marmoview_import(dataPath, 'Timestamps', tstruct);
+ptbst = cellfun(@(x) x.STARTCLOCKTIME, Exp.D); % ptb trial starts
+[~, ind] = sort(ptbst);
+assert(all(diff(ind)==1), 'The timing of trials are not in order. something is wrong')
 
 %% Check number of timestmaps
+
+
 ptbsw = cell2mat(cellfun(@(x) x.STARTCLOCK(:), Exp.D, 'uni', 0));
 ptbew = cell2mat(cellfun(@(x) x.ENDCLOCK(:), Exp.D, 'uni', 0));
 
@@ -61,12 +72,13 @@ plot(diff(ptbt), 'o')
 hold on
 
 
+%%
 t = ts(find(diff(ts) > 2e-3) + 1);
 figure(2); clf
 T = max([t-t(1);ptbt-ptbt(1)]);
 
 % bin timestamps to find best timelag
-bin_size = 1e-3;
+bin_size = 1e-1;
 bins = 0:bin_size:T;
 ecnt = histcounts(t-t(1), bins);
 pcnt = histcounts(ptbt-ptbt(1), bins);
@@ -157,19 +169,23 @@ fid = 1;
 % for iFile = 1:numel(edfFiles)
 %     edfname = fullfile(edfFiles(iFile).folder, edfFiles(iFile).name);
 %     Dtmp = load(edfname);
-%     Dtmp.edf = Dtmp.e;
-%     save(edfname, '-v7.3', '-struct', 'Dtmp');
+%     if isfield(Dtmp, 'e')
+%         Dtmp.edf = Dtmp.e;
+%         save(edfname, '-v7.3', '-struct', 'Dtmp');
+%     end
 % end
 
 disp('IMPORT EYE POSITION')
 %% Import eye position signals
-dataPath = ''; %~/Google Drive/HuklabTreadmill/gru/g20210521/';
+% dataPath = ''; %~/Google Drive/HuklabTreadmill/gru/g20210521/';
+
 fid = 1;
 [Exp, fig] = io.import_eye_position(Exp, dataPath, 'fid', fid, 'zero_mean', true, 'normalize', true);
 
 %%
 Exp0 = Exp; % backup here
 %%
+
 disp('CLEANUP CALIBRATION')
 fig = io.checkCalibration(Exp);
 
@@ -436,6 +452,7 @@ if nfigs == 1
 end
 
 for cc = 1:NC
+    try
     if nfigs > 1
         fig = ceil(cc/nperfig);
         figure(fig); set(gcf, 'Color', 'w')
@@ -459,6 +476,7 @@ for cc = 1:NC
     imagesc(xax, yax, imgaussfilt(reshape(I, opts.dims), 1), [-2, 2])
     colormap(plot.coolwarm)
     title(Exp.osp.cids(goodunits(cc)))
+    end
 end
     
 

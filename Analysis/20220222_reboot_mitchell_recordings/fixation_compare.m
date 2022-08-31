@@ -12,25 +12,15 @@ S = struct();
 % S.processedFileName = 'allen_20220216';
 % S.rawFilePath = 'Allen_160222_V1_flip64/';
 
-% S.rawFilePath = 'Allen_2022-06-10_13-05-49_V1_64b';
-% S.processedFileName = 'allen_20220610';
-
-% S.rawFilePath = 'Allen_2022-06-01_13-31-38_V1_64b';
-% S.processedFileName = 'allen_20220601';
-
-S.rawFilePath = 'Allen_2022-08-05_13-24-54_V1_64b';
-S.processedFileName = 'allen_20220805';
+S.rawFilePath = 'Allen_2022-06-10_13-05-49_V1_64b';
+S.processedFileName = 'allen_20220610';
 
 S.spikeSorting = 'kilo';
 
-fname = fullfile(getpref('FREEVIEWING', 'PROCESSED_DATA_DIR'), S.rawFilePath, [S.processedFileName '.mat']);
+Exp = io.importFreeViewing(S);
 
-if exist(fname, 'file')
-    Exp = load(fname);
-else
-    Exp = io.importFreeViewing(S);
-    save(fname, '-v7.3', '-struct', 'Exp')
-end
+fname = fullfile(getpref('FREEVIEWING', 'PROCESSED_DATA_DIR'), S.rawFilePath, [S.processedFileName '.mat']);
+save(fname, '-v7.3', '-struct', 'Exp')
 
 %%
 
@@ -115,11 +105,10 @@ stasFull = forwardCorrelation(Xstim, RobsSpace(:,goodunits), win);
 %% do forward correlation
 
 
-for cc = 1:size(stasFull,3)
+for cc = 20:40%size(stasFull,3)
 
 % stas = forwardCorrelation(Xstim, RobsSpace(:,cc), win);
-% close all
-figure(1)
+figure(cc)
 stas = stasFull(:,:,cc);
 stas = stas / std(stas(:)) - mean(stas(:));
 wm = [min(stas(:)) max(stas(:))];
@@ -133,7 +122,6 @@ for ilag = 1:nlags
 end
 end
 drawnow
-
 end
 
 %%
@@ -183,16 +171,35 @@ S.rect([2 4]) = sort(-S.rect([2 4]));
 % fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'Dots', 'Gabor', 'BackImage', 'Grating', 'FixRsvpStim'}, 'overwrite', false);
 
 %%
-fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'FixFlashGabor', 'Gabor', 'BackImage'}, 'GazeContingent', true, 'includeProbe', true);
+fnameBase = make_stimulus_file_for_py(Exp, S, 'stimlist', {'FixFlashGabor', 'Gabor', 'BackImage'}, 'GazeContingent', true, 'includeProbe', true);
 
 %% no gaze correction, no fixation point
-fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'FixFlashGabor'}, 'GazeContingent', false, 'includeProbe', false);
+fnameNoGazeNoFix = make_stimulus_file_for_py(Exp, S, 'stimlist', {'FixFlashGabor'}, 'GazeContingent', false, 'includeProbe', false);
 
 %% gaze correction, no fixation point
-fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'FixFlashGabor'}, 'GazeContingent', true, 'includeProbe', false);
+fnameYesGazeNoFix = make_stimulus_file_for_py(Exp, S, 'stimlist', {'FixFlashGabor'}, 'GazeContingent', true, 'includeProbe', false);
 %%
-fname = make_stimulus_file_for_py(Exp, S, 'stimlist', {'FixFlashGabor'}, 'GazeContingent', false, 'includeProbe', true);
+% fnameNoGazeYesFix = make_stimulus_file_for_py(Exp, S, 'stimlist', {'FixFlashGabor'}, 'GazeContingent', false, 'includeProbe', true);
+
+%% add additional fixation datasets to base file
+fTarget = fnameBase;
+
+fOrigins = {fnameYesGazeNoFix, fnameNoGazeNoFix};
+gAppend = {'YesGazeNoFix', 'NoGazeNoFix'};
+
+GroupName = 'FixFlashGabor';
+
+for i = 2
+    copyh5group(fOrigins{i}, fTarget, GroupName, gAppend{i})
+end
+
+
+
+%%
+
 %% Copy to server
+fname = fnameBase;
+
 server_string = 'jake@bancanus'; %'jcbyts@sigurros';
 output_dir = '/home/jake/Data/Datasets/MitchellV1FreeViewing/stim_movies/'; %/home/jcbyts/Data/MitchellV1FreeViewing/stim_movies/';
 
@@ -207,6 +214,7 @@ fprintf('%s\n', fname)
 
 
 %% test that it worked
+fname = fnameNoGazeNoFix;
 id = 1;
 stim = 'FixFlashGabor';
 tset = 'Train';
@@ -229,8 +237,6 @@ imagesc(I(1:2:end,1:2:end));% axis xy
 colorbar
 colormap gray
 drawnow
-
-
 
 %% get STAs to check that you have the right rect
 spike_sorting = 'kilo';
@@ -340,7 +346,7 @@ cc = cc + 1;
 if cc > NC
     cc = 1;
 end
-% cc = 39;
+cc = 110; %39; %, 45, 66, 85, 110;
 
 sta = stas(:,:,cc);
 sta = (sta - mean(sta(:))) ./ std(sta(:));

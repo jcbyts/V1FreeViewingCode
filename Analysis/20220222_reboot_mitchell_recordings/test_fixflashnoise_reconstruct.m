@@ -38,6 +38,11 @@ Exp = saccadeflag.run_saccade_detection_cloherty(Exp, ...
 Exp.vpx.Labels(isnan(Exp.vpx.raw(:,2))) = 4;
 
 %%
-validTrials = 4;
+validTrials = io.getValidTrials(Exp, 'FixFlashGabor');
+validTrials = validTrials(4);
+
+Exp.D{validTrials}.PR.hNoise
+
+%%
 rect = [-100 -100 100 100];
 [Stim, frameInfo] = regenerateStimulus(Exp, validTrials, rect, 'usePTBdraw', true);

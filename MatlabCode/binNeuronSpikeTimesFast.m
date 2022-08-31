@@ -22,8 +22,10 @@ binfun = [];
 [~, ~, ind1] = histcounts(sp.st, eventTimes);
 [~, ~, ind2] = histcounts(sp.st, eventTimes+binSize);
 
-ix = ind2+1 == ind1;
-Y = sparse(ind1(ix), sp.clu(ix), ones(sum(ix), 1), numel(eventTimes), max(sp.clu));
+ix = ind1 ~= 0 & ind2 ~= 0;
+ix = ix & (ind2+1 == ind1);
+ix = ix & sp.clu > 0;
+Y = sparse(ind1(ix), double(sp.clu(ix)), ones(sum(ix), 1), numel(eventTimes), max(sp.clu));
 
 if ~keep_sparse
     Y = full(Y);

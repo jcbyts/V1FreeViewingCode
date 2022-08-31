@@ -75,8 +75,8 @@ end
 if (1)
     dx = (0.9/KN);
     dxs = (0.9/(KN+1));
-    mino = min(min(mcounts));
-    maxo = max(max(mcounts));
+    mino = RFPlotMino; %min(min(mcounts));
+    maxo = RFPlotMaxo; %max(max(mcounts));
     for it = 1:(KN-1)
        fx = 0.075 + ((it-1)*dx);
        subplot('position',[fx 0.55 dxs dxs]);
@@ -102,13 +102,51 @@ if (1)
     axis off;
     h = colorbar;
     
-    %***********
-    subplot('position',[0.075 0.15 0.20 0.20]);
+    %******* FOR LATER, plot motion field
+    subplot('position',[0.075 0.03 0.175 0.175]);
     imagesc(Zx,Zy,meanrf,[mino maxo]); hold on;
     plot([-11,11],[0,0],'k-');
     plot([0,0],[-11,11],'k-');
     axis off;
-    title('Mean RF');
+    title('Motion RF');
+    
+    %***********
+    subplot('position',[0.075 0.24 0.175 0.175]);
+    imagesc(Zx,Zy,meanrf,[mino maxo]); hold on;
+    plot([-11,11],[0,0],'k-');
+    plot([0,0],[-11,11],'k-');
+    axis off;
+    title('Spatial RF');
+    %******
+    mino = mean(mean(meanrf)); 
+    maxo = max(max(meanrf)); 
+    %*** plot a contour line here
+    v = mino + 0.5*(maxo-mino);  % half-height of RF
+    if (0)
+         smeanrf = imgaussfilt(meanrf,1.0);
+         c = contourc(smeanrf,[v v]);
+    else
+         c = contourc(meanrf,[v v]);
+    end
+    cx = c(1,2:end);
+    cy = c(2,2:end);
+    %******* only accept smooth contours
+    for ik = 2:length(cx)
+           dist = norm(cx(ik)-cx(ik-1),cy(ik)-cy(ik-1));
+           if (dist > 4)
+               cx((ik-1):ik) = NaN;
+               cy((ik-1):ik) = NaN;
+           end
+    end
+    %******
+    cx = ((cx-1)/(Nx-1))*range(Zx) + min(Zx);
+    cy = ((cy-1)/(Ny-1))*range(Zy) + min(Zy);
+    hh = plot(cx,cy,'k-'); hold on;
+    if (sum(sum(sigcounts)) < 5)
+       set(hh,'Color',[1,1,1]);       
+    else
+       set(hh,'Color',[0,0,0]);   
+    end
     %************   
    
     %****** plot RFs by sparseness
@@ -128,9 +166,23 @@ if (1)
           title(sprintf('Sparse=%d',spark(sp)));
         end
     end
+        
+    %********** plot motion speed selectivity over sig points
+    subplot('position',[0.7 0.28 0.25 0.12]);
+    xx = 1:NP;
+    plot(xx,pou,'k.-'); hold on;
+    plot(xx,pou+(2*postd),'k-'); hold on;
+    plot(xx,pou-(2*postd),'k-'); hold on;
+    plot([xx(1),xx(end)],[sacbase,sacbase],'k-');
+    %**********
+    axis tight;
+    xlabel('Log2 Speed(degs/sec)');
+    ylabel('Firing (hz)');
+    title('Speed selectivity');
+    %***************
     
     %********** plot motion selectivity over sig points
-    subplot('position',[0.7 0.075 0.25 0.3]);
+    subplot('position',[0.7 0.075 0.25 0.14]);
     xx = (0:(ND+6))*(360/ND);
     yy = [1:ND,1:(size(xx,2)-ND)];
     plot(xx,mou(yy),'k-'); hold on;

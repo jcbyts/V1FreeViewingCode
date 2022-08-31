@@ -1,5 +1,5 @@
-function rfinfo = PlotForageMotionSpatialSacKernel(StimX,SacX,StimY,GRID,FileTag)
-% function rfinfo = PlotForageSpatialKernel(Exp)
+function rfinfo = ComputeForageMotionSpatialSacKernel2(StimX,StimPX,SacX,StimY,GRID,FileTag)
+% function rfinfo = ComputeForageSpatialKernel(Exp)
 %   input: takes StimX and StimY (stim history and spike counts)
 %     StimX: [Nframes,3 + NT] - fields, matlab time, ephys time, stim, (if stim)
 %     SacX:  [Nframes,3] - amplitude, int direction, angle of sac onset
@@ -33,18 +33,21 @@ TT = size(XX,2);
 Nx = floor(GRID.box(3)/GRID.div);
 Ny = floor(GRID.box(4)/GRID.div);
 NT = (Nx * Ny);
-BONFP = (0.01/NT);
+BONFP = (0.05/NT);
 %******
 BaseX = GRID.box(1) - (GRID.box(3)/2);
 BaseY = GRID.box(2) - (GRID.box(4)/2);
 Div = GRID.div;
-Zx = BaseX + (1:Nx)*Div;
-Zy = BaseY + (1:Ny)*Div;
+Zx = BaseX -(Div/2) + (1:Nx)*Div;
+Zy = BaseY - (Div/2) + (1:Ny)*Div;
 ND = 16; %directions of motion
 SACN = 16;  % directions of saccade
 %*** check for varying sparesness in stimulus
 spark = unique(StimX(:,3))';
 NS = length(spark);
+%********
+spud = unique(StimPX(:,4:end));  % all integers but not zero
+NP = length(spud)-1;
 %********
 
 %***** plot saccade modulation functions
@@ -119,6 +122,17 @@ for k = 1:ND
     zmsem{k} = zeros(NT,TT);
 end
 %******* compute RFs and significant locations
+zpcounts = cell(1,NP);
+zpcounts2 = cell(1,NP);
+ppcounts = cell(1,NP);
+zpsem = cell(1,NP);
+for k = 1:NP
+    zpcounts{k} = zeros(NT,TT);
+    zpcounts2{k} = zeros(NT,TT);
+    ppcounts{k} = zeros(NT,1);
+    zpsem{k} = zeros(NT,TT);
+end
+%******* compute RFs and significant locations
 if (NS > 1)
   pmcounts = cell(1,NS);
   pmcounts2 = cell(1,NS);
@@ -138,6 +152,7 @@ counts = zeros(NT,1);
 msem = zeros(NT,TT);
 for k = 1:SN
     svec = StimX(k,4:end);
+    pvec = StimPX(k,4:end);
     z = find( svec ~= 0);   
     if ~isempty(z)
         if ( (k+DTA) > 0) && ((k+DTB)<=SN)
@@ -160,6 +175,13 @@ for k = 1:SN
                  zmcounts2{di}(it,:) = zmcounts2{di}(it,:) + spcnts .^ 2;
                  zcounts{di}(it) = zcounts{di}(it) + 1;
                end
+               %********
+               di = pvec(it);  %motion speed, 1 to NP
+               if (di <= NP)
+                 zpcounts{di}(it,:) = zpcounts{di}(it,:) + spcnts;
+                 zpcounts2{di}(it,:) = zpcounts2{di}(it,:) + spcnts .^ 2;
+                 ppcounts{di}(it) = ppcounts{di}(it) + 1;
+               end
                %**********
              end
         end
@@ -175,8 +197,8 @@ for it = 1:NT
        mcounts(it,:) = mcounts(it,:) / SampRate;
        msem(it,:) = msem(it,:) / SampRate;
     else
-       mcounts = NaN(size(mcounts));
-       msem = NaN(size(mcounts));
+       mcounts(it,:) = NaN(size(mcounts(it,:)));
+       msem(it,:) = NaN(size(mcounts(it,:)));
     end
 end
 %******** now by motion dir
@@ -193,6 +215,20 @@ for di = 1:ND
     end
  end
 end
+%******** now by motion speed
+for di = 1:NP
+ for it = 1:NT
+    if ppcounts{di}(it) > 0
+       zpcounts{di}(it,:) = zpcounts{di}(it,:) / ppcounts{di}(it);  % mean
+       zpsem{di}(it,:) = sqrt(  ((zpcounts2{di}(it,:)/ppcounts{di}(it)) - zpcounts{di}(it,:).^2) / ppcounts{di}(it));  % 1 sem 
+       zpcounts{di}(it,:) = zpcounts{di}(it,:) / SampRate;
+       zpsem{di}(it,:) = zpsem{di}(it,:) / SampRate;
+    else
+       zpcounts{di}(it,:) = NaN(size(zpcounts{di}(it,:)));
+       zpsem{di}(it,:) = NaN(size(zpcounts{di}(it,:)));
+    end
+ end
+end
 %****** and now by spareseness
 if (NS > 1)
  for sp = 1:NS
@@ -203,37 +239,57 @@ if (NS > 1)
        pmcounts{sp}(it,:) = pmcounts{sp}(it,:) / SampRate;
        pmsem{sp}(it,:) = pmsem{sp}(it,:) / SampRate;
     else
-       pmcounts{sp} = NaN(size(pmcounts{sp}));
-       pmsem{sp} = NaN(size(pmcounts{sp}));
+       pmcounts{sp}(it,:) = NaN(size(pmcounts{sp}(it,:)));
+       pmsem{sp}(it,:) = NaN(size(pmcounts{sp}(it,:)));
     end
   end
  end
 end
 
 %****** compute significant time/space points for averaging
-bonfsig = -norminv(BONFP);
-sigcounts = zeros(size(mcounts));
-%*** flag points that exceed bonfsig
-zbase = find( tXX < 30);  % use values before visual latency
-uvals = [];
-suvals = [];
-for k = 1:length(zbase)
-    zit = zbase(k);
-    uvals = [uvals mean(mcounts(:,zit))];
-    suvals = [suvals std(mcounts(:,zit))];
-end
-uu = mean(uvals);
-su = mean(suvals);
-%***** now flag points outside those intervals
-for k = 1:size(mcounts,2)
+Gsig = 0.5;  % smooth in 3d kernel space to flag sig points
+%*** rescale bonferoni correction *******
+uu = zeros(Nx,Ny,TT);
+uu(floor(Nx/2),floor(Ny/2),floor(TT/2)) = 1;
+iuu = imgaussfilt3(uu,Gsig);
+iuu = iuu/max(max(max(iuu)));  % put peak at 1.0
+NPP = sum(sum(sum(iuu)));
+bonfsig = -norminv(BONFP * NPP);
+%********
+
+  sigcounts = zeros(size(mcounts));
+  %*** flag points that exceed bonfsig
+  zbase = find( tXX < 30);  % use values before visual latency
+  %********
+  uu = nanmean( mcounts(:,zbase)' )';
+  su = nanstd( mcounts(:,zbase)' )';
+  NoiseFloor = su;  % use later to filter badly sampled locations
+  %*** compute t-values and smooth them
+  tvals = zeros(size(mcounts));
+  for k = 1:size(mcounts,2)
+      tvals(:,k) = ((mcounts(:,k)-uu) ./ su );
+  end
+  %**** now smooth the tvals ******
+  ntvals = zeros(Nx,Ny,TT); %tvals;
+  for k = 1:size(mcounts,2)
+      ntvals(:,:,k) = reshape( squeeze( tvals(:,k)),Nx,Ny);
+  end
+  sntvals = imgaussfilt3(ntvals,Gsig);
+  %*******
+  ntvals = tvals;
+  for k = 1:size(mcounts,2)
+      ntvals(:,k) = reshape( squeeze(sntvals(:,:,k)),(Nx*Ny),1);
+  end
+  %***** now flag points outside those intervals
+  for k = 1:size(mcounts,2)
     if (tXX(k) >= 30)  % enforce visual latency
        zit = k;
-       zp = find( mcounts(:,zit) > (uu+(bonfsig*su)) );
+       zp = find( ntvals(:,zit) > bonfsig);
        sigcounts(zp,k) = 1;  % mark sig locations
-       zp = find( mcounts(:,zit) < (uu-(bonfsig*su)) );
+       zp = find( ntvals(:,zit) < -bonfsig);
        sigcounts(zp,k) = -1;  % mark sig locations
     end
-end
+  end
 
 %******** compute selectivity by motion, using positive sig points
 %******** as the input samples for mean and std of firing
@@ -244,6 +300,31 @@ for k = 1:ND
    mou(1,k) = nanmean( zmcounts{k}( siglist ) );
    mostd(1,k) = nanstd( zmcounts{k}( siglist ))/ sqrt(length(siglist));
 end
+%***** need to think here, but could look at each sig location and
+%***** estimate a motion vector for it, then plot those as arrows or color
+
+%******** compute selectivity by motion speed, using positive sig points
+%******** as the input samples for mean and std of firing
+pou = [];
+postd = [];
+siglist = find( sigcounts >= 1);  % list of sig points
+for k = 1:NP
+   pou(1,k) = nanmean( zpcounts{k}( siglist ) );
+   postd(1,k) = nanstd( zpcounts{k}( siglist ))/ sqrt(length(siglist));
+end
+
+%******* Smooth motion kernels *********
+if (1)
+  SGsig = 1.0;
+  imou = [mou mou mou];
+  imostd = [mostd mostd mostd];
+  simou = imgaussfilt(imou,SGsig);
+  simostd = imgaussfilt(imostd,SGsig);
+  mou = simou((ND+1):(2*ND));
+  mostd = simostd((ND+1):(2*ND));
+end
+%*********
+
 
 %******* compute cumulative RF from all sig timepoints
 zt = 1:(2-DTA+KN-1);  % set shown as RF plot (only test those)
@@ -255,27 +336,101 @@ if (length(z) > 2)
     thresh = mean(numcounts(z));
 end
 sigt = find( numcounts > thresh );  % take peak, or any if less than 2 sig
+
+%**** throw out spatial locations with less that ThrowSig standard deviations
+%**** of noise floor (not enough samples at some spatial location)
+ThrowSig = 2;
+ZNoise = ones(Nx,Ny);
+if (ThrowSig)
+    nf = flipud( reshape(NoiseFloor',Nx,Ny)' );   
+    unf = nanmean(nanmean(nf));
+    sunf = nanstd(nanstd(nf));
+    zz = find( nf > (unf + 3*sunf));
+    ZNoise(zz) = 0;
+end
+
+%********* Build a smoothing kernel that considers the NoiseFloor
+%******* due to different sampling 
+ZSmooth = zeros(NT,NT);  % smoothing with non-uniform sizes
+unf = nanmedian(NoiseFloor);
+SmoothSig = 0.5 * (NoiseFloor / unf);  % smooth in ratio so median is 0.5
+for ii = 1:NT
+    xi = 1 + mod((ii-1), Nx);
+    yi = 1 + floor( (ii-1) / Nx);
+    sigo = SmoothSig(ii);
+    if (sigo == 0) || isnan(sigo)
+        sigo = nanmax(SmoothSig);  % used largest to interpolate point
+    end
+    for jj = 1:NT
+       xj = 1 + mod((jj-1), Nx);
+       yj = 1 + floor( (jj-1) / Nx);
+       dist = ((xi-xj)^2 + (yi-yj)^2)/(sigo^2);
+       if (dist < 10)
+            ZSmooth(ii,jj) = exp( -0.5*dist );
+       else
+            ZSmooth(ii,jj) = 0;
+       end
+    end
+    ZSmooth(ii,:) = ZSmooth(ii,:) / sum(ZSmooth(ii,:));
+end
+
 %**** compute average cumalitive RF from sig time-points
 if (length(sigt) > 1) 
-   meanrf = flipud( reshape(mean( mcounts(:,sigt)')',Nx,Ny)' );
+   meanrf = flipud( reshape(nanmean( mcounts(:,sigt)')',Nx,Ny)' );
 else
    %***** pick a default time bin if none are sig ***********
    sigt = find( (tXX >= 50) & (tXX < 100));
-   meanrf = flipud( reshape(mean(mcounts(:,sigt)')',Nx,Ny)' ); 
+   meanrf = flipud( reshape(nanmean(mcounts(:,sigt)')',Nx,Ny)' ); 
 end
+
+%****** replace any NaN points (low sampling) with mean
+moo = reshape( flipud(meanrf)', 1, NT);   % inverse transform back
+umoo = nanmean(nanmean(moo));
+zz = find( isnan(moo) );
+moo(zz) = umoo;
+%****** apply smoothing operation
+zmm = ZSmooth * moo';
+meanrf = flipud( reshape(zmm,Nx,Ny)' );
+
+mino = nanmin(nanmin(meanrf));
+maxo = nanmax(nanmax(meanrf));
 %*** compute means as a func of sparseness ******
 if (NS > 1)
   sparserf = cell(1,NS);
   for k = 1:NS
      if (length(sigt) > 1)
-        sparserf{k} = flipud( reshape(mean( pmcounts{k}(:,sigt)')',Nx,Ny)' );
+        sparserf{k} = flipud( reshape(nanmean( pmcounts{k}(:,sigt)')',Nx,Ny)' );
+        zz = find(ZNoise == 0);
+        uu = nanmean(nanmean(sparserf{k}));
+        sparserf{k}(zz) = uu; 
      else
-        sparserf{k} = flipud( reshape((pmcounts{k}(:,sigt)')',Nx,Ny)' ); 
+        sparserf{k} = flipud( reshape((pmcounts{k}(:,sigt)')',Nx,Ny)' );
+        zz = find(ZNoise == 0);
+        uu = nanmean(nanmean(sparserf{k}));
+        sparserf{k}(zz) = uu; 
      end
+     %****** do same as above, for sparseRF to smooth
+     moo = reshape( flipud(sparserf{k})', 1, NT);   % inverse transform back
+     umoo = nanmean(nanmean(moo));
+     zz = find( isnan(moo) );
+     moo(zz) = umoo;
+     %****** apply smoothing operation
+     zmm = ZSmooth * moo';
+     sparserf{k} = flipud( reshape(zmm,Nx,Ny)' );
+     %********
+     mno = nanmin(nanmin(meanrf));
+     mxo = nanmax(nanmax(meanrf));
+     mino = min(mino,mno);
+     maxo = max(maxo,mxo);
   end
 end
 
 %****** store necessary information in rfinfo struct to plot
+rfinfo.RFPlotMino = mino;
+rfinfo.RFPlotMaxo = maxo;
+rfinfo.ZSmooth = ZSmooth;
+rfinfo.SmoothSig = SmoothSig;
+rfinfo.NoiseFloor = NoiseFloor;
 rfinfo.KN = KN;
 rfinfo.Nx = Nx;
 rfinfo.Ny = Ny;
@@ -289,6 +444,8 @@ rfinfo.BONFP = BONFP;
 rfinfo.sigcounts = sigcounts;
 rfinfo.mou = mou;
 rfinfo.mostd = mostd;
+rfinfo.pou = pou;
+rfinfo.postd = postd;
 rfinfo.Zx = Zx;
 rfinfo.Zy = Zy;
 rfinfo.sigt = sigt;
@@ -298,6 +455,7 @@ if (NS > 1)
     rfinfo.spark = spark;
     rfinfo.sparserf = sparserf;
 end
+rfinfo.NP = NP;
 
 %********* Plotting routines below ***************
 if (0)
