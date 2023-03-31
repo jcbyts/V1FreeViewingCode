@@ -2,7 +2,7 @@
 import sys
 sys.path.insert(0, '/home/jake/Data/Repos/')
 
-import V1FreeViewingCode.Analysis.notebooks.gratings as gt
+# import V1FreeViewingCode.Analysis.notebooks.gratings as gt
 
 # from scipy.ndimage import gaussian_filter
 from copy import deepcopy
@@ -24,10 +24,12 @@ datadir = '/home/jake/Data/Datasets/MitchellV1FreeViewing/MT_RF/'
 # fname = 'Ellie_190120_0_0_30_30_1.mat'
 fname = 'Ellie_190120_0_0_30_30_2.mat'
 
-matdat = gt.loadmat(datadir+fname)
+import h5py
+matdat = h5py.File(datadir + fname)
 
-Robs = deepcopy(matdat['MoStimY']).T
-X = deepcopy(matdat['MoStimX']).T
+
+Robs = deepcopy(matdat['MoStimY'][:,:]).T
+X = deepcopy(matdat['MoStimX'][:,:]).T
 frameTime = X[:,0]
 
 # stim is NT x (NX*NY). Any non-zero value is the drift direction (as an integer) of a dot (at that spatial location)
@@ -94,11 +96,12 @@ print("Done")
 #%%
 from scipy.stats import median_absolute_deviation
 
-sx = np.ceil(np.sqrt(NC)).astype(int)
-sy = np.round(np.sqrt(NC)).astype(int)
+NC = Robs.shape[1] # plot all neurons
+sx = int(np.ceil(np.sqrt(NC)))
+sy = int(np.round(np.sqrt(NC)))
 plt.figure(figsize=(10,10))
 
-NC = Robs.shape[1] # plot all neurons
+
 mthresh = np.zeros(NC)
 for cc in range(NC):
     plt.subplot(sx,sy,cc+1)
@@ -127,8 +130,8 @@ for cc in range(NC):
 #%% Select subset of units
 cids = [13, 16, 18, 20, 21, 22, 25, 27, 28, 29, 32, 33, 36, 47,61,64,65,66,68,78,79,80]
 NC = len(cids)
-sx = np.ceil(np.sqrt(NC)).astype(int)
-sy = np.round(np.sqrt(NC)).astype(int)
+sx = int(np.ceil(np.sqrt(NC)))
+sy = int(np.round(np.sqrt(NC)))
 plt.figure(figsize=(10,10))
 
 for cc in range(NC):
